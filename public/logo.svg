@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Jnana Deepika">
+  <defs>
+    <radialGradient id="disc" cx="42%" cy="38%" r="70%">
+      <stop offset="0%" stop-color="#5bbd5e"/>
+      <stop offset="55%" stop-color="#34a64b"/>
+      <stop offset="100%" stop-color="#1c7a31"/>
+    </radialGradient>
+    <linearGradient id="pageL" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7fe0ea"/>
+      <stop offset="100%" stop-color="#1f8fb0"/>
+    </linearGradient>
+    <linearGradient id="pageR" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5bc6e8"/>
+      <stop offset="100%" stop-color="#1769b8"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd23f"/>
+      <stop offset="45%" stop-color="#ff7a18"/>
+      <stop offset="100%" stop-color="#d81b8c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- green disc -->
+  <circle cx="120" cy="120" r="116" fill="url(#disc)"/>
+  <circle cx="120" cy="120" r="116" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
+
+  <!-- open book -->
+  <g>
+    <!-- left stack -->
+    <path d="M120 150 L48 134 Q42 133 42 139 L42 176 Q42 181 48 182 L120 196 Z" fill="url(#pageL)" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
+    <!-- right stack -->
+    <path d="M120 150 L192 134 Q198 133 198 139 L198 176 Q198 181 192 182 L120 196 Z" fill="url(#pageR)" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
+    <!-- page lines -->
+    <path d="M120 160 L60 148 M120 170 L60 160 M120 180 L60 171" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M120 160 L180 148 M120 170 L180 160 M120 180 L180 171" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- spine -->
+    <path d="M120 150 L120 196" stroke="#ffffff" stroke-width="2.5"/>
+  </g>
+
+  <!-- diya base -->
+  <ellipse cx="120" cy="142" rx="20" ry="6" fill="#6b3a12"/>
+  <path d="M101 140 Q120 152 139 140 Q132 132 120 132 Q108 132 101 140 Z" fill="#8a4a17"/>
+
+  <!-- flame -->
+  <path d="M120 70 C141 96 138 128 120 134 C102 128 99 96 120 70 Z" fill="url(#flame)"/>
+  <path d="M120 88 C132 104 130 124 120 129 C110 124 108 104 120 88 Z" fill="#ffd23f"/>
+  <ellipse cx="120" cy="126" rx="6" ry="8" fill="#3aa0ff"/>
+
+  <!-- name -->
+  <text x="120" y="214" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="22" fill="#ffffff" letter-spacing="1">JNANA</text>
+  <text x="120" y="232" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="18" fill="#ffffff" letter-spacing="1">DEEPIKA</text>
+</svg>

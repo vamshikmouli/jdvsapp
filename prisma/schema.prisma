@@ -1,0 +1,771 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direct (non-pooled) connection used for `prisma db push` / migrations.
+  // Falls back to DATABASE_URL locally where no pooler exists.
+  directUrl = env("DIRECT_URL")
+}
+
+// ========== Auth, Roles & Permissions ==========
+
+// Which app shell / dashboard a role lands in.
+enum Surface {
+  ADMIN
+  TEACHER
+  ACCOUNTANT
+  PARENT
+}
+
+// Fine-grained capabilities. Devs add new keys here; admins toggle them per role.
+enum Permission {
+  STUDENTS_VIEW
+  STUDENTS_MANAGE
+  CLASSES_VIEW
+  CLASSES_MANAGE
+  STAFF_VIEW
+  STAFF_MANAGE
+  ATTENDANCE_VIEW
+  ATTENDANCE_MARK
+  ATTENDANCE_LOCK
+  FEES_VIEW
+  FEES_COLLECT
+  FEES_RECEIPT
+  FEES_VIEW_ALL
+  FEES_CONCESSION_APPROVE // approve/reject fee concession requests
+  FEES_VOID // cancel/void a recorded payment
+  NOTICES_MANAGE // create circulars / send fee reminders to parents
+  MARKS_VIEW // view marks/assessments
+  MARKS_ENTER // teacher: enter & submit marks for assigned classes
+  MARKS_APPROVE // admin: verify/approve submitted marks, edit, publish
+  MARKS_SETUP // admin: manage subjects, assessments, grade bands
+  ANALYTICS_VIEW
+  REPORTS_EXPORT
+  SETTINGS_MANAGE
+  ROLES_MANAGE
+  USERS_MANAGE
+  ALL_CLASSES_ACCESS // see data for ALL classes; without it, scoped to assigned classes
+}
+
+// A role is data, not an enum. Admins can create custom roles.
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // machine key, e.g. "assistant_teacher"
+  name        String                   // display name, e.g. "Assistant Teacher"
+  description String?
+  isSystem    Boolean          @default(false) // built-in roles can't be deleted/renamed
+  isActive    Boolean          @default(true)
+  baseSurface Surface          @default(ADMIN)
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// One row per granted (role, permission).
+model RolePermission {
+  id         String     @id @default(cuid())
+  roleId     String
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission
+
+  @@unique([roleId, permission])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+
+  // Role (FK to Role table)
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+
+  // Password security
+  passwordHash      String
+  passwordChangedAt DateTime?
+
+  // Login security
+  lastLogin       DateTime?
+  lastLoginIp     String?
+  loginAttempts   Int       @default(0)
+  lockedUntil     DateTime?
+
+  // Account status
+  isActive        Boolean   @default(true)
+  emailVerified   DateTime?
+
+  // Relations
+  staff        Staff?            // if TEACHER/ACCOUNTANT
+  guardianOf   Student[] @relation("GuardianStudents") // if PARENT
+  sessions     UserSession[]
+  loginAudits  LoginAudit[]
+  resetTokens  PasswordReset[]
+  pushSubscriptions PushSubscription[]
+  marksEntered  MarkSheet[] @relation("MarksEnteredBy")
+  marksApproved MarkSheet[] @relation("MarksApprovedBy")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Web Push (PWA) subscriptions — one row per browser/device a user has
+// allowed notifications on. Used to deliver circulars & fee reminders to phones.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Active sessions per user/device — for multi-device listing + revocation.
+// (Sessions do NOT auto-expire; revocation is deliberate — see auth plan §2.5.)
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionToken String   @unique // jti / session id baked into the JWT
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  revokedAt    DateTime?
+}
+
+enum LoginAuditType {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_RESET
+  PASSWORD_CHANGED
+  ROLE_REASSIGNED
+  ROLE_PERMISSIONS_CHANGED
+  SESSION_REVOKED
+}
+
+model LoginAudit {
+  id        String         @id @default(cuid())
+  userId    String?
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String?        // captured even when user lookup fails
+  type      LoginAuditType
+  ip        String?
+  userAgent String?
+  detail    String?
+  createdAt DateTime       @default(now())
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Staff {
+  id          String   @id @default(cuid())
+  userId      String?  @unique
+  user        User?    @relation(fields: [userId], references: [id])
+  name        String
+  email       String?
+  phone       String?
+  designation String?   // "Assistant Teacher", "Admin", "Office Staff", "Driver", ...
+  dob                   DateTime? @db.Date
+  joiningDate           DateTime? @db.Date
+  serviceJoiningDate    DateTime? @db.Date
+  durationEmployment    String?
+  subjectSpecialization String?
+  experience            String?
+  classes     SchoolClass[] @relation("ClassTeachers")
+  archived    Boolean  @default(false) // soft-delete: hidden until restored
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ========== Academic Structure ==========
+enum ClassGroup {
+  PRE       // Pre-KG to UKG
+  PRIMARY   // 1st to 5th
+  SECONDARY // 6th to 10th
+}
+
+model SchoolClass {
+  id          String              @id
+  name        String
+  order       Int
+  room        String?
+  group       ClassGroup
+  teachers    Staff[]             @relation("ClassTeachers")
+  sections    Section[]
+  students    Student[]
+  attendance  AttendanceSession[]
+  classFees   ClassFee[]
+  classSubjects ClassSubject[]
+  markSheets  MarkSheet[]
+  enrollments Enrollment[]
+  archived    Boolean  @default(false) // soft-delete: hidden until restored
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Section {
+  id        String      @id @default(cuid())
+  name      String      // "A", "B", etc.
+  classId   String
+  class     SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students  Student[]
+  markSheets MarkSheet[]
+  enrollments Enrollment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, name])
+}
+
+enum Gender {
+  M
+  F
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Student {
+  id            String        @id
+  name          String
+  classId       String?
+  class         SchoolClass?  @relation(fields: [classId], references: [id], onDelete: SetNull)
+  sectionId     String?
+  section       Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  roll          String?
+  gender        Gender
+  dob           DateTime?     @db.Date
+  religion      String?
+  category      String?       // General / OBC / SC / ST / ...
+  caste         String?
+  address       String?
+  fatherName    String?
+  fatherPhone   String?
+  motherName    String?
+  motherPhone   String?
+  smsFor        String?       @default("FATHER") // FATHER | MOTHER | BOTH — which number receives SMS / is the login
+  photoUrl      String?
+  // Primary contact (auto-derived from smsFor) — used for the parent login + display.
+  guardianName  String
+  guardianPhone String
+  guardianUser  User?         @relation("GuardianStudents", fields: [guardianUserId], references: [id])
+  guardianUserId String?
+  village       String?
+  status        StudentStatus @default(ACTIVE)
+  joinedDate    DateTime?
+  attendance    AttendanceRecord[]
+  feeAssignments StudentFeeAssignment[]
+  payments       Payment[]
+  marks          Mark[]
+  enrollments    Enrollment[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Per-year enrollment: which class/section a student is in for a given academic
+// year. A student's class is resolved by the selected year via this record;
+// Student.classId/sectionId is the current-year denormalized pointer.
+model Enrollment {
+  id         String        @id @default(cuid())
+  studentId  String
+  student    Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  yearId     String
+  year       AcademicYear  @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  classId    String
+  class      SchoolClass   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  roll       String?
+  status     StudentStatus @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([studentId, yearId])
+  @@index([yearId, classId])
+}
+
+// ========== Attendance ==========
+// Sessions are configurable (school-wide) — see Settings.sessions JSON.
+// `slot` holds a session key (e.g. "MORNING", or a custom key).
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+  EXCUSED
+}
+
+model AttendanceSession {
+  id        String       @id @default(cuid())
+  classId   String
+  class     SchoolClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date      DateTime     @db.Date
+  slot      String       // session key, e.g. "MORNING" / custom
+  locked    Boolean      @default(false)
+  takenById String?
+  records   AttendanceRecord[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, date, slot])
+}
+
+model AttendanceRecord {
+  id         String            @id @default(cuid())
+  sessionId  String
+  session    AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status     AttendanceStatus
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([sessionId, studentId])
+}
+
+// ========== Settings ==========
+model Settings {
+  id              String @id @default("singleton")
+  // School profile
+  schoolName      String  @default("Jnana Deepika")
+  principalName   String?
+  address         String?
+  phone           String?
+  email           String?
+  academicYear    String  @default("2025-26")
+  currency        String  @default("INR")
+  timezone        String  @default("Asia/Kolkata")
+  dateFormat      String  @default("DD/MM/YYYY")
+  // Attendance — configurable sessions: [{ key, label, open, close }]
+  sessions        Json?
+  // Legacy fixed windows (kept for back-compat; sessions[] is the source of truth)
+  morningOpen     String  @default("08:30")
+  morningClose    String  @default("09:30")
+  afternoonOpen   String  @default("13:00")
+  afternoonClose  String  @default("14:00")
+  autoLock        Boolean @default(true)
+  notifyAbsence   Boolean @default(true)
+  // Fees — receipt + van billing config
+  receiptPrefix    String  @default("RCPT")
+  receiptNextNo    Int     @default(1)
+  vanBillingMonths Int     @default(12)
+  lateFeeEnabled   Boolean @default(false)
+  lateGraceDays    Int     @default(0)
+  lateFeeAmount    Int     @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+// ========== Fees ==========
+// Fee heads are DATA (FeeType), not an enum — admins configure them in Settings.
+// Each FeeType has a billingMode that controls how a student's charge is derived.
+enum FeeBillingMode {
+  CLASS_AMOUNT // fixed amount per class (Tuition, Annual, Development, Exam, ...)
+  VILLAGE      // amount from the student's village van route
+  ITEMIZED     // sum of per-student selected items (Uniform)
+  MANUAL       // amount entered per student (Old due / arrears)
+}
+
+enum PayMethod {
+  CASH
+  UPI
+  CARD
+  BANK
+  CHEQUE
+}
+
+// Switchable academic year — everything fee-related is scoped to one.
+model AcademicYear {
+  id          String   @id // "2026-27"
+  label       String
+  isActive    Boolean  @default(false)
+  classFees   ClassFee[]
+  vanFees     VanFee[]
+  uniformItems UniformItem[]
+  assignments StudentFeeAssignment[]
+  payments    Payment[]
+  assessments Assessment[]
+  enrollments Enrollment[]
+  createdAt   DateTime @default(now())
+}
+
+// A configurable fee head (Tuition, Admission, Annual, Van, Uniform, Old due...).
+model FeeType {
+  id              String         @id @default(cuid())
+  key             String         @unique // machine key, e.g. "tuition"
+  name            String                 // display, e.g. "Tuition Fee"
+  billingMode     FeeBillingMode
+  installmentable Boolean        @default(false) // can be split into installments
+  autoAssign      Boolean        @default(false) // auto-applied to a student on admission
+  order           Int            @default(0)
+  active          Boolean        @default(true)
+  classFees       ClassFee[]
+  charges         FeeCharge[]
+  concessions     Concession[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// Per-class amount for a CLASS_AMOUNT fee type, for a given year.
+model ClassFee {
+  id           String                @id @default(cuid())
+  yearId       String
+  year         AcademicYear          @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  classId      String
+  class        SchoolClass           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  feeTypeId    String
+  feeType      FeeType               @relation(fields: [feeTypeId], references: [id], onDelete: Cascade)
+  amount       Int
+  installments ClassFeeInstallment[]
+
+  @@unique([yearId, classId, feeTypeId])
+}
+
+// Tuition (installmentable class fee) split into N installments with due dates.
+model ClassFeeInstallment {
+  id         String   @id @default(cuid())
+  classFeeId String
+  classFee   ClassFee @relation(fields: [classFeeId], references: [id], onDelete: Cascade)
+  n          Int
+  amount     Int
+  dueDate    DateTime @db.Date
+
+  @@unique([classFeeId, n])
+}
+
+// Village-wise van fee (monthly rate + annualized total), per year.
+model VanFee {
+  id           String              @id @default(cuid())
+  yearId       String
+  year         AcademicYear        @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  village      String
+  monthlyFee   Int
+  annualFee    Int
+  installments VanFeeInstallment[]
+
+  @@unique([yearId, village])
+}
+
+model VanFeeInstallment {
+  id       String   @id @default(cuid())
+  vanFeeId String
+  vanFee   VanFee   @relation(fields: [vanFeeId], references: [id], onDelete: Cascade)
+  n        Int
+  amount   Int
+  dueDate  DateTime @db.Date
+
+  @@unique([vanFeeId, n])
+}
+
+// Uniform catalogue — items assigned individually to students.
+model UniformItem {
+  id         String             @id @default(cuid())
+  yearId     String
+  year       AcademicYear       @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  name       String
+  price      Int
+  defaultQty Int                @default(1)
+  active     Boolean            @default(true)
+  order      Int                @default(0)
+  selections UniformSelection[]
+
+  @@unique([yearId, name])
+}
+
+// One per student per year — header for what the student owes.
+model StudentFeeAssignment {
+  id               String             @id @default(cuid())
+  studentId        String
+  student          Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  yearId           String
+  year             AcademicYear       @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  oldDue           Int                @default(0)
+  concession       Int                @default(0)
+  concessionReason String?
+  note             String?
+  charges          FeeCharge[]
+  uniformSelections UniformSelection[]
+  concessions      Concession[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([studentId, yearId])
+}
+
+// Every payable line: a tuition installment, the van fee, a uniform bundle, an old due.
+// Payments allocate rupees onto these.
+model FeeCharge {
+  id            String              @id @default(cuid())
+  assignmentId  String
+  assignment    StudentFeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  feeTypeId     String
+  feeType       FeeType             @relation(fields: [feeTypeId], references: [id])
+  label         String                              // "Tuition — Installment 2", "Van fee", "Uniform"
+  amount        Int
+  dueDate       DateTime?           @db.Date
+  installmentNo Int?
+  allocations   PaymentAllocation[]
+  createdAt     DateTime            @default(now())
+}
+
+model UniformSelection {
+  id            String               @id @default(cuid())
+  assignmentId  String
+  assignment    StudentFeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  uniformItemId String
+  uniformItem   UniformItem          @relation(fields: [uniformItemId], references: [id], onDelete: Cascade)
+  qty           Int                  @default(1)
+
+  @@unique([assignmentId, uniformItemId])
+}
+
+// One receipt = one payment event; split across heads via allocations.
+model Payment {
+  id            String              @id @default(cuid())
+  studentId     String
+  student       Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  yearId        String
+  year          AcademicYear        @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  receiptNo     String              @unique
+  method        PayMethod
+  total         Int
+  note          String?
+  collectedById String?
+  paidAt        DateTime            @default(now())
+  voided        Boolean             @default(false)
+  voidedAt      DateTime?
+  voidReason    String?
+  voidedById    String?
+  allocations   PaymentAllocation[]
+}
+
+model PaymentAllocation {
+  id          String    @id @default(cuid())
+  paymentId   String
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  feeChargeId String
+  feeCharge   FeeCharge @relation(fields: [feeChargeId], references: [id], onDelete: Cascade)
+  amount      Int
+}
+
+// Fee concession (discount) on a head, with a request → admin-approval workflow.
+// Only APPROVED concessions reduce a student's balance.
+enum ConcessionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Concession {
+  id            String               @id @default(cuid())
+  assignmentId  String
+  assignment    StudentFeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  feeTypeId     String
+  feeType       FeeType              @relation(fields: [feeTypeId], references: [id])
+  amount        Int                                       // concession amount in rupees
+  reason        String
+  status        ConcessionStatus     @default(PENDING)
+  requestedById String?                                   // user id of requester
+  approvedById  String?                                   // user id of approver/rejecter
+  decisionNote  String?
+  decidedAt     DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+// ========== Parent communications ==========
+
+enum CircularAudience {
+  SCHOOL  // everyone
+  CLASS   // parents of students in classIds
+  STUDENT // parents of the specific studentIds (also used for snapshotted fee reminders)
+}
+
+enum CircularKind {
+  CIRCULAR
+  FEE_REMINDER
+}
+
+// A circular/notice or fee reminder, targeted at the whole school, classes, or students.
+model Circular {
+  id          String           @id @default(cuid())
+  title       String
+  body        String
+  category    String?          // "Notice" | "Event" | "Holiday" | "Exam" ...
+  kind        CircularKind     @default(CIRCULAR)
+  audience    CircularAudience @default(SCHOOL)
+  classIds    String[]         @default([]) // when audience = CLASS
+  studentIds  String[]         @default([]) // when audience = STUDENT
+  pinned      Boolean          @default(false)
+  createdById String?
+  sentSms     Boolean          @default(false) // for the future SMS channel
+  archived    Boolean          @default(false) // soft-delete: hidden until restored
+  publishedAt DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// School photo (event gallery). `url` may be a remote/static image.
+model Photo {
+  id        String   @id @default(cuid())
+  url       String
+  caption   String?
+  album     String?  // event / album name
+  takenAt   DateTime?
+  createdAt DateTime @default(now())
+}
+
+// ========== Assessments & Marks (FA / SA) ==========
+
+enum AssessmentType {
+  FORMATIVE  // FA
+  SUMMATIVE  // SA
+}
+
+// Teacher fills a sheet → submits → admin approves. Marks reach parents only
+// when the sheet is APPROVED and the parent assessment is published.
+enum MarkSheetStatus {
+  DRAFT      // being entered
+  SUBMITTED  // teacher submitted for approval
+  APPROVED   // admin verified & approved (locked)
+}
+
+// A taught subject (English, Maths, EVS...). Applied to classes via ClassSubject.
+model Subject {
+  id        String         @id @default(cuid())
+  name      String
+  code      String?        // short code, e.g. "ENG"
+  order     Int            @default(0)
+  active    Boolean        @default(true)
+  gradeOnly Boolean        @default(false) // co-scholastic: show a grade, exclude from the marks total
+  classes   ClassSubject[]
+  markSheets MarkSheet[]
+  assessmentMaxes AssessmentSubject[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+// Per-assessment override of a subject's max marks (e.g. SA Maths /80, FA English /20).
+// Falls back to Assessment.defaultMax when there is no row.
+model AssessmentSubject {
+  id           String     @id @default(cuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  subjectId    String
+  subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  maxMarks     Int
+
+  @@unique([assessmentId, subjectId])
+  @@index([assessmentId])
+}
+
+// Which subjects apply to which class.
+model ClassSubject {
+  id        String      @id @default(cuid())
+  classId   String
+  class     SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  order     Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  @@unique([classId, subjectId])
+  @@index([classId])
+}
+
+// One exam in a year (admin-defined: FA1, SA1, ...). defaultMax seeds new sheets.
+model Assessment {
+  id                 String         @id @default(cuid())
+  yearId             String
+  year               AcademicYear   @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  name               String         // "FA1", "SA1", "Mid-term"...
+  type               AssessmentType
+  term               String?        // optional grouping, e.g. "Term 1"
+  order              Int            @default(0)
+  defaultMax         Int            @default(100)
+  publishedToParents Boolean        @default(false)
+  markSheets         MarkSheet[]
+  subjectMaxes       AssessmentSubject[]
+  archived           Boolean        @default(false) // soft-delete: hidden until restored
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([yearId])
+}
+
+// The unit a teacher fills / admin approves: one (assessment, class, section, subject).
+model MarkSheet {
+  id           String          @id @default(cuid())
+  assessmentId String
+  assessment   Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  classId      String
+  class        SchoolClass     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId    String?
+  section      Section?        @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  subjectId    String
+  subject      Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  maxMarks     Int
+  status       MarkSheetStatus @default(DRAFT)
+  enteredById  String?
+  enteredBy    User?           @relation("MarksEnteredBy", fields: [enteredById], references: [id])
+  approvedById String?
+  approvedBy   User?           @relation("MarksApprovedBy", fields: [approvedById], references: [id])
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  marks        Mark[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([assessmentId, classId, sectionId, subjectId])
+  @@index([assessmentId])
+  @@index([classId])
+}
+
+// One student's mark on a sheet.
+model Mark {
+  id            String    @id @default(cuid())
+  markSheetId   String
+  markSheet     MarkSheet @relation(fields: [markSheetId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  marksObtained Int?      // null when not yet entered or absent
+  isAbsent      Boolean   @default(false)
+  remark        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([markSheetId, studentId])
+  @@index([studentId])
+}
+
+// Configurable grade scale (A1/A2... by percentage). Used for parent display.
+model GradeBand {
+  id         String   @id @default(cuid())
+  label      String   // "A1", "A", "Pass"...
+  minPercent Int
+  maxPercent Int
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
