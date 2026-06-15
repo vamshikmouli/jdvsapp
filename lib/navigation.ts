@@ -15,7 +15,7 @@ export const STAFF_NAV: NavGroup[] = [
     label: 'Manage',
     items: [
       { id: 'students', label: 'Students', icon: 'Users', perm: 'STUDENTS_VIEW' },
-      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_VIEW' },
+      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_MANAGE' }, // admin-only by default; hidden for teacher/accountant
       { id: 'classes', label: 'Classes', icon: 'BookOpen', perm: 'CLASSES_VIEW' },
       { id: 'staff', label: 'Staff', icon: 'UserCog', perm: 'STAFF_VIEW' },
       { id: 'fees', label: 'Fees', icon: 'CreditCard', perm: 'FEES_VIEW' },

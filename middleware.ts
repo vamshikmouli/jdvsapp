@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 const ADMIN_ROUTE_PERMS: { prefix: string; perm: string }[] = [
   { prefix: '/admin/attendance', perm: 'ATTENDANCE_VIEW' },
   { prefix: '/admin/students', perm: 'STUDENTS_VIEW' },
-  { prefix: '/admin/hall-tickets', perm: 'STUDENTS_VIEW' },
+  { prefix: '/admin/hall-tickets', perm: 'STUDENTS_MANAGE' },
   { prefix: '/admin/classes', perm: 'CLASSES_VIEW' },
   { prefix: '/admin/staff', perm: 'STAFF_VIEW' },
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
