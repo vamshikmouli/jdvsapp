@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, Modal, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
+import { PageHeader, Button, Card, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 type Status = 'PRESENT' | 'ABSENT' | 'LEAVE';
 
@@ -71,36 +72,59 @@ export default function AttendancePage() {
     try { await downloadBackup('attendance'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
-  // Restore attendance from a previously exported workbook (upsert by id).
-  const canImport = myPerms.includes('ATTENDANCE_MARK') || myPerms.includes('ATTENDANCE_LOCK') || myPerms.includes('SETTINGS_MANAGE');
+  // Friendly attendance upload: a name-based Excel with a Status dropdown fills
+  // the grid for review (no IDs). Apply to the currently selected class/date/session.
+  const canImport = myPerms.includes('ATTENDANCE_MARK');
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [pendingImport, setPendingImport] = useState<File | null>(null);
-  const [importResult, setImportResult] = useState<
-    { ok: boolean; totals: { upserted: number; failed: number }; results: { sheet: string; total: number; upserted: number; failed: number; errors: string[] }[]; error?: string } | null
-  >(null);
+  const [importMsg, setImportMsg] = useState('');
 
-  const pickImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const downloadAttTemplate = async () => {
+    if (!classId) { alert('Pick a class first.'); return; }
+    try {
+      const qs = new URLSearchParams({ classId, date, slot });
+      const res = await fetch('/api/attendance/template?' + qs.toString());
+      if (!res.ok) throw new Error(`Template failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `attendance-${classId}-${date}-${slot}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert(e instanceof Error ? e.message : 'Could not download template'); }
+  };
+
+  const pickImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
-    if (f) setPendingImport(f);
-  };
-  const doImport = async () => {
-    if (!pendingImport) return;
-    const file = pendingImport;
-    setPendingImport(null);
-    setImporting(true);
+    if (!f) return;
+    if (locked) { setImportMsg('This session is locked — reopen it before importing.'); return; }
+    setImportMsg('');
     try {
-      const res = await fetch('/api/backup/import?group=attendance', { method: 'POST', body: file });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
-      setImportResult(data);
-      await loadAttendance();
-      await loadOverview();
+      const buf = await f.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const norm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+      const statusOf = (t: string): Status | null => {
+        const k = norm(t);
+        if (k.startsWith('P')) return 'PRESENT';
+        if (k.startsWith('A')) return 'ABSENT';
+        if (k.startsWith('L') || k.startsWith('ONLEAVE')) return 'LEAVE';
+        return null;
+      };
+      const next: Record<string, Status> = { ...marks };
+      let applied = 0, skipped = 0;
+      for (const r of rows) {
+        const adm = String(r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? r['Id'] ?? '').trim();
+        const nm = String(r['Name'] ?? r['Student'] ?? '').trim();
+        const st = statusOf(String(r['Status'] ?? ''));
+        if (!st) continue;
+        const stu = roster.find((s) => s.id === adm) || (nm ? roster.find((s) => norm(s.name) === norm(nm)) : undefined);
+        if (stu) { next[stu.id] = st; applied++; } else { skipped++; }
+      }
+      setMarks(next);
+      setImportMsg(`Imported ${applied} mark${applied === 1 ? '' : 's'}${skipped ? ` · ${skipped} row(s) didn’t match a student` : ''}. Review below, then Submit.`);
     } catch (err) {
-      setImportResult({ ok: false, totals: { upserted: 0, failed: 0 }, results: [], error: err instanceof Error ? err.message : 'Import failed' });
-    } finally {
-      setImporting(false);
+      setImportMsg(err instanceof Error ? err.message : 'Could not read the file.');
     }
   };
 
@@ -294,9 +318,10 @@ export default function AttendancePage() {
               </Button>
             )}
             {canImport && (
-              <Button icon="Upload" onClick={() => importInputRef.current?.click()} disabled={importing}>
-                {importing ? 'Importing…' : 'Import'}
-              </Button>
+              <Button icon="FileSpreadsheet" onClick={downloadAttTemplate} disabled={!classId}>Template</Button>
+            )}
+            {canImport && (
+              <Button icon="Upload" onClick={() => importInputRef.current?.click()} disabled={locked || total === 0}>Import</Button>
             )}
             {canMark && (
               <Button icon="CheckCheck" onClick={markAllPresent} disabled={locked || total === 0}>
@@ -423,6 +448,12 @@ export default function AttendancePage() {
       {message && (
         <div className="mt-3 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-md text-sm">{message}</div>
       )}
+      {importMsg && (
+        <div className="mt-3 px-4 py-2.5 bg-info-50 text-info-700 rounded-md text-sm flex items-center justify-between">
+          <span>{importMsg}</span>
+          <button onClick={() => setImportMsg('')}><Icon name="X" size={15} /></button>
+        </div>
+      )}
 
       {/* Roster table */}
       <Card className="mt-4" padded={false}>
@@ -498,74 +529,8 @@ export default function AttendancePage() {
         )}
       </Card>
 
-      {/* Hidden file picker for attendance import */}
-      <input ref={importInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={pickImport} />
-
-      {/* Confirm before overwriting */}
-      <Modal
-        open={!!pendingImport}
-        onClose={() => setPendingImport(null)}
-        title="Import attendance?"
-        subtitle={pendingImport?.name || ''}
-        width={440}
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setPendingImport(null)}>Cancel</Button>
-            <Button kind="primary" icon="Upload" onClick={doImport} disabled={importing}>
-              {importing ? 'Importing…' : 'Restore attendance'}
-            </Button>
-          </div>
-        }
-      >
-        <p className="text-sm text-slate-600">
-          This reads the <b>AttendanceSessions</b> and <b>AttendanceRecords</b> sheets from a previously
-          exported workbook and restores each row by its id — updating existing sessions and re-creating
-          any that are missing. Other data is left untouched.
-        </p>
-      </Modal>
-
-      {/* Result */}
-      <Modal
-        open={!!importResult}
-        onClose={() => setImportResult(null)}
-        title="Import complete"
-        width={460}
-        footer={<div className="flex justify-end"><Button kind="primary" onClick={() => setImportResult(null)}>Done</Button></div>}
-      >
-        {importResult?.error ? (
-          <div className="px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{importResult.error}</div>
-        ) : importResult ? (
-          <div>
-            <div className={`px-4 py-2.5 rounded-md text-sm mb-3 ${importResult.ok ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
-              Restored {importResult.totals.upserted} record{importResult.totals.upserted === 1 ? '' : 's'}
-              {importResult.totals.failed > 0 ? ` · ${importResult.totals.failed} failed` : ''}.
-            </div>
-            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
-              {importResult.results.filter((r) => r.total > 0 || r.failed > 0).map((r) => (
-                <div key={r.sheet} className="px-4 py-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-800">{r.sheet}</span>
-                    <span className="text-slate-500">
-                      {r.upserted}/{r.total}
-                      {r.failed > 0 && <span className="text-danger-600"> · {r.failed} failed</span>}
-                    </span>
-                  </div>
-                  {r.errors.length > 0 && (
-                    <ul className="mt-1 text-xs text-danger-600 list-disc list-inside">
-                      {r.errors.map((e, i) => <li key={i}>{e}</li>)}
-                    </ul>
-                  )}
-                </div>
-              ))}
-              {importResult.results.every((r) => r.total === 0 && r.failed === 0) && (
-                <div className="px-4 py-3 text-sm text-slate-500">
-                  No attendance rows found in this file. Make sure you uploaded an attendance export.
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </Modal>
+      {/* Hidden file picker for the friendly attendance import */}
+      <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={pickImport} />
     </>
   );
 }

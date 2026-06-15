@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import * as XLSX from 'xlsx';
 
 const shortClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '—');
 
@@ -52,6 +53,7 @@ export function EntryTab() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   useEffect(() => { (async () => {
     const [a, c] = await Promise.all([fetch('/api/assessments'), fetch('/api/classes')]);
@@ -176,6 +178,7 @@ export function EntryTab() {
             <div className="text-xs text-slate-500">Type a mark, or <b>A</b> for absent. {anyInvalid && <span className="text-danger-600 font-medium">Some marks exceed the max.</span>}</div>
             <div className="flex items-center gap-2">
               {toast && <span className="text-xs text-success-600 inline-flex items-center gap-1"><Icon name="Check" size={14} />{toast}</span>}
+              {editableSubjects.length > 0 && <Button icon="Upload" onClick={() => setUploadOpen(true)}>Upload marks</Button>}
               {editableSubjects.length > 0 ? (<>
                 <Button onClick={() => save('save')} disabled={busy || anyInvalid}>Save draft</Button>
                 <Button kind="primary" icon="Send" onClick={() => save('submit')} disabled={busy || anyInvalid}>Submit for approval</Button>
@@ -184,7 +187,178 @@ export function EntryTab() {
           </div>
         </Card>
       )}
+
+      {uploadOpen && grid && (
+        <UploadMarksModal
+          assessmentId={aId}
+          classId={cId}
+          sectionId={secId || null}
+          assessmentName={grid.assessment.name}
+          className={shortClass(grid.class.name)}
+          sectionName={grid.section?.name || null}
+          subjects={grid.subjects.filter((s) => s.canEdit).map((s) => ({ id: s.id, name: s.name, max: s.max }))}
+          students={grid.students}
+          onClose={() => setUploadOpen(false)}
+          onApplied={() => { setUploadOpen(false); setToast('Marks imported as draft — review and submit'); loadGrid(); setTimeout(() => setToast(''), 3500); }}
+        />
+      )}
     </div>
+  );
+}
+
+/* ---------------- Upload marks (typed PDF / Excel → draft) ---------------- */
+interface UploadSubject { id: string; name: string; max: number }
+interface UploadStudent { id: string; name: string; roll: string | null }
+interface UploadPreview {
+  roster: number; matched: number; maxMarks: number;
+  rows: { studentId: string; name: string; roll: string | null; marks: number | null; isAbsent: boolean; matchedBy: 'admission' | 'roll' | 'name' | null }[];
+  extraneous: string[];
+}
+
+function UploadMarksModal({
+  assessmentId, classId, sectionId, assessmentName, className, sectionName, subjects, students, onClose, onApplied,
+}: {
+  assessmentId: string; classId: string; sectionId: string | null;
+  assessmentName: string; className: string; sectionName: string | null;
+  subjects: UploadSubject[]; students: UploadStudent[];
+  onClose: () => void; onApplied: () => void;
+}) {
+  const [subjectId, setSubjectId] = useState(subjects[0]?.id || '');
+  const [file, setFile] = useState<File | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState<UploadPreview | null>(null);
+
+  const sub = subjects.find((s) => s.id === subjectId);
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet(students.map((s, i) => ({ 'Admission No': s.id, 'Roll': s.roll ?? i + 1, 'Name': s.name, 'Marks': '' })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Marks');
+    XLSX.writeFile(wb, `marks-${className}-${(sub?.name || 'subject').replace(/\s+/g, '_')}.xlsx`);
+  };
+
+  const copyPrompt = async () => {
+    const text = `You are given a photo or scan of a handwritten marks sheet for "${sub?.name}" (${assessmentName}), Class ${className}${sectionName ? ' ' + sectionName : ''}, maximum marks ${sub?.max}.
+Transcribe it into a plain text table with ONE LINE PER STUDENT in exactly this format (no extra text, no markdown):
+Admission No | Name | Marks
+Rules:
+- Copy the Admission No exactly as printed.
+- Put the handwritten mark in the Marks column. Write AB if the student was absent.
+- Do not invent students or marks.
+Then export or print the result as a PDF and upload that PDF.`;
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+  };
+
+  const send = async (apply: boolean, f: File | null) => {
+    if (!f || !subjectId) return;
+    if (apply) setApplying(true); else setBusy(true);
+    setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('assessmentId', assessmentId);
+      fd.append('classId', classId);
+      if (sectionId) fd.append('sectionId', sectionId);
+      fd.append('subjectId', subjectId);
+      fd.append('apply', apply ? 'true' : 'false');
+      const r = await fetch('/api/marks/upload', { method: 'POST', body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Upload failed');
+      if (apply) { onApplied(); return; }
+      setPreview(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed');
+      setPreview(null);
+    } finally {
+      setBusy(false); setApplying(false);
+    }
+  };
+
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    e.target.value = '';
+    setPreview(null); setError('');
+    setFile(f); setFileName(f?.name || '');
+    if (f) send(false, f);
+  };
+
+  const blanks = preview ? preview.rows.filter((r) => !r.matchedBy).map((r) => r.name) : [];
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Upload marks"
+      subtitle={`${assessmentName} · ${className}${sectionName ? ' ' + sectionName : ''}`}
+      width={620}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" icon="Check" onClick={() => send(true, file)} disabled={!preview || applying || preview.matched === 0}>
+            {applying ? 'Importing…' : `Import ${preview?.matched || 0} as draft`}
+          </Button>
+        </div>
+      }
+    >
+      {subjects.length === 0 ? (
+        <EmptyState icon="Lock" title="Nothing to upload" body="All subjects here are approved and locked." />
+      ) : (
+        <div className="space-y-4">
+          <Field label="Subject">
+            <Select value={subjectId} onChange={(e) => { setSubjectId(e.target.value); setPreview(null); }}>
+              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name} (max {s.max})</option>)}
+            </Select>
+          </Field>
+
+          <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600 space-y-1.5">
+            <div className="font-semibold text-slate-700">How it works</div>
+            <div>1. <b>Download the template</b> (or write marks on the printed sheet).</div>
+            <div>2. <b>Handwritten?</b> Give your scan + the <b>copied prompt</b> to Gemini or Claude to get a clean typed PDF.</div>
+            <div>3. <b>Upload</b> the typed PDF (or the filled Excel). Marks are matched by Admission No and saved as a draft for you to review.</div>
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" icon="Download" onClick={downloadTemplate}>Template</Button>
+              <Button size="sm" icon={copied ? 'Check' : 'Copy'} onClick={copyPrompt}>{copied ? 'Copied' : 'Copy AI prompt'}</Button>
+            </div>
+          </div>
+
+          <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-slate-300 text-sm text-slate-600 cursor-pointer hover:bg-slate-50">
+            <Icon name="Upload" size={16} /> {busy ? 'Reading…' : fileName || 'Choose PDF / Excel file'}
+            <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onPick} disabled={busy || applying} />
+          </label>
+
+          {error && <div className="px-3 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{error}</div>}
+
+          {preview && (
+            <div>
+              <div className={`px-3 py-2 rounded-md text-sm mb-2 ${preview.matched > 0 ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
+                Matched <b>{preview.matched}</b> of {preview.roster} students (max {preview.maxMarks}).
+              </div>
+              <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-50">
+                {preview.rows.map((r) => (
+                  <div key={r.studentId} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                    <span className="text-slate-700 truncate">{r.name}</span>
+                    <span className="flex items-center gap-2 flex-shrink-0">
+                      {r.matchedBy
+                        ? <span className="tabular-nums font-medium text-slate-900">{r.isAbsent ? 'AB' : r.marks}</span>
+                        : <span className="text-[11px] text-amber-600">no mark</span>}
+                      {r.matchedBy && r.matchedBy !== 'admission' && <span className="text-[10px] text-slate-400">by {r.matchedBy}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {blanks.length > 0 && <div className="text-[11px] text-amber-700 mt-2">{blanks.length} student{blanks.length === 1 ? '' : 's'} got no mark — fill them in the grid after importing.</div>}
+              {preview.extraneous.length > 0 && (
+                <div className="text-[11px] text-slate-500 mt-1">{preview.extraneous.length} line(s) in the file didn’t match any student.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
