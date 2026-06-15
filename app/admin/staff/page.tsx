@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Avatar, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Chip, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
+import { downloadBackup } from '@/lib/utils';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
 
@@ -33,7 +34,14 @@ const emptyForm = { name: '', email: '', phone: '', designation: '', roleId: '',
 
 export default function StaffPage() {
   const { data: session } = useSession();
-  const canManage = (((session?.user as any)?.perms as string[]) || []).includes('STAFF_MANAGE');
+  const perms = ((session?.user as any)?.perms as string[]) || [];
+  const canManage = perms.includes('STAFF_MANAGE');
+  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try { await downloadBackup('staff'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+  };
   const [staffImportOpen, setStaffImportOpen] = useState(false);
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -206,10 +214,11 @@ export default function StaffPage() {
         eyebrow="Manage"
         title="Staff"
         meta={`${staff.length} staff members`}
-        actions={canManage ? (
+        actions={(canExport || canManage) ? (
           <>
-            <Button icon="Upload" onClick={() => setStaffImportOpen(true)}>Import</Button>
-            <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add staff</Button>
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canManage && <Button icon="Upload" onClick={() => setStaffImportOpen(true)}>Import</Button>}
+            {canManage && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add staff</Button>}
           </>
         ) : undefined}
       />

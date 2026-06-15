@@ -2,6 +2,24 @@
  * Utility functions for Jnana Deepika ERP
  */
 
+// Download a page's data as an Excel backup. `group` is one of
+// students | classes | fees | attendance | staff (omit for a full backup).
+// The file re-imports losslessly via Settings → Backup & restore.
+export async function downloadBackup(group?: string): Promise<void> {
+  const qs = group ? `?group=${encodeURIComponent(group)}` : '';
+  const res = await fetch(`/api/backup/export${qs}`);
+  if (!res.ok) throw new Error(`Export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jnana-${group || 'backup'}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function initials(name: string): string {
   return name
     .split(' ')

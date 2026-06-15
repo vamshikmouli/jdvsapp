@@ -25,6 +25,7 @@ import {
   type SortState,
 } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { downloadBackup } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 interface SchoolClass {
@@ -84,7 +85,14 @@ function shortClassName(name: string) {
 
 export default function StudentsPage() {
   const { data: session } = useSession();
-  const canManage = (((session?.user as any)?.perms as string[]) || []).includes('STUDENTS_MANAGE');
+  const perms = ((session?.user as any)?.perms as string[]) || [];
+  const canManage = perms.includes('STUDENTS_MANAGE');
+  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try { await downloadBackup('students'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+  };
 
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -289,12 +297,15 @@ export default function StudentsPage() {
         title="Students"
         meta={`${totalStudents} students · ${active} active shown`}
         actions={
-          canManage ? (
+          (canExport || canManage) ? (
             <>
-              <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>
-              <Button kind="primary" icon="UserPlus" onClick={openAdd}>
-                Add student
-              </Button>
+              {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+              {canManage && <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>}
+              {canManage && (
+                <Button kind="primary" icon="UserPlus" onClick={openAdd}>
+                  Add student
+                </Button>
+              )}
             </>
           ) : undefined
         }

@@ -36,7 +36,7 @@ interface DeviceSession {
   isCurrent: boolean;
 }
 
-type Tab = 'school' | 'attendance' | 'account';
+type Tab = 'school' | 'attendance' | 'backup' | 'account';
 
 // Small toggle switch
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -74,6 +74,7 @@ function deviceLabel(ua: string | null) {
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'school', label: 'School profile', icon: 'Building2' },
   { id: 'attendance', label: 'Attendance', icon: 'Calendar' },
+  { id: 'backup', label: 'Backup & restore', icon: 'Database' },
   { id: 'account', label: 'My account', icon: 'UserCircle' },
 ];
 
@@ -155,7 +156,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.id !== 'backup' || canManage).map((t) => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setNotice(''); setError(''); }}
@@ -357,8 +358,154 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {tab === 'backup' && canManage && <BackupTab />}
+
       {tab === 'account' && <AccountTab session={session} />}
     </>
+  );
+}
+
+// ---------- Backup & restore tab ----------
+interface RestoreRow { sheet: string; total: number; upserted: number; failed: number; errors: string[] }
+
+function BackupTab() {
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; totals: { upserted: number; failed: number }; results: RestoreRow[] } | null>(null);
+  const [error, setError] = useState('');
+
+  const doExport = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const res = await fetch('/api/backup/export');
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `jnana-backup-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!f) return;
+    setFileName(f.name);
+    setResult(null);
+    setError('');
+    setPendingFile(f);
+    setConfirmRestore(true);
+  };
+
+  const doImport = async () => {
+    if (!pendingFile) return;
+    setConfirmRestore(false);
+    setImporting(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch('/api/backup/import', { method: 'POST', body: pendingFile });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Restore failed (${res.status})`);
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Restore failed');
+    } finally {
+      setImporting(false);
+      setPendingFile(null);
+    }
+  };
+
+  return (
+    <div className="mt-6 max-w-3xl space-y-6">
+      <Card title="Export data">
+        <p className="text-sm text-slate-600">
+          Download a full backup of students, staff, classes, fees, attendance and marks as a single Excel
+          workbook (one sheet per table). Every row keeps its identifiers, so re-importing the same file
+          restores the exact data.
+        </p>
+        <div className="flex justify-end mt-4">
+          <Button kind="primary" icon="Download" onClick={doExport} disabled={exporting}>
+            {exporting ? 'Preparing…' : 'Export backup (.xlsx)'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Restore from backup">
+        <p className="text-sm text-slate-600">
+          Upload a workbook previously exported here (full backup, or any single-page export). Each row is matched
+          by its identifier — existing records are updated and missing ones are re-created. Records in the database
+          that aren't in the file are kept.
+        </p>
+        <div className="mt-4">
+          <label className="inline-flex items-center gap-2 cursor-pointer">
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <Icon name="Upload" size={16} /> {importing ? 'Restoring…' : 'Choose backup file'}
+            </span>
+            <input type="file" accept=".xlsx,.xls" className="hidden" disabled={importing} onChange={pickFile} />
+          </label>
+          {fileName && <span className="ml-3 text-xs text-slate-500">{fileName}</span>}
+        </div>
+
+        {confirmRestore && (
+          <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
+            <div className="text-sm font-medium text-amber-900 flex items-center gap-2">
+              <Icon name="AlertTriangle" size={16} /> Overwrite data from “{fileName}”?
+            </div>
+            <p className="text-xs text-amber-700 mt-1">
+              This updates existing students, classes, fees and attendance to match the file. This cannot be undone —
+              consider exporting a fresh backup first.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <Button kind="primary" onClick={doImport}>Yes, restore</Button>
+              <Button onClick={() => { setConfirmRestore(false); setPendingFile(null); setFileName(''); }}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {error && <div className="mt-4 px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{error}</div>}
+
+        {result && (
+          <div className="mt-4">
+            <div className={`px-4 py-2.5 rounded-md text-sm mb-3 ${result.ok ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
+              Restored {result.totals.upserted} record{result.totals.upserted === 1 ? '' : 's'}
+              {result.totals.failed > 0 ? ` · ${result.totals.failed} failed` : ''}.
+            </div>
+            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
+              {result.results.filter((r) => r.total > 0 || r.failed > 0).map((r) => (
+                <div key={r.sheet} className="px-4 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-800">{r.sheet}</span>
+                    <span className="text-slate-500">
+                      {r.upserted}/{r.total}
+                      {r.failed > 0 && <span className="text-danger-600"> · {r.failed} failed</span>}
+                    </span>
+                  </div>
+                  {r.errors.length > 0 && (
+                    <ul className="mt-1 text-xs text-danger-600 list-disc list-inside">
+                      {r.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 

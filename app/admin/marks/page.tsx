@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal, Drawer } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { downloadBackup } from '@/lib/utils';
 import { EntryTab, ApprovalsTab } from './entry-ui';
 
 type Tab = 'entry' | 'approvals' | 'subjects' | 'classmap' | 'assessments' | 'grades';
@@ -25,6 +26,44 @@ export default function MarksPage() {
   const tab: Tab | undefined = picked && tabs.some((t) => t.id === picked) ? picked : tabs[0]?.id;
   const wide = tab === 'entry' || tab === 'approvals';
 
+  // ----- Export / import (configuration + mark sheets + marks) -----
+  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const canImport = perms.includes('MARKS_SETUP') || perms.includes('MARKS_APPROVE') || perms.includes('SETTINGS_MANAGE');
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try { await downloadBackup('marks'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+  };
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [importResult, setImportResult] = useState<
+    { ok: boolean; totals: { upserted: number; failed: number }; results: { sheet: string; total: number; upserted: number; failed: number; errors: string[] }[]; error?: string } | null
+  >(null);
+  const pickImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) setPendingImport(f);
+  };
+  const doImport = async () => {
+    if (!pendingImport) return;
+    const file = pendingImport;
+    setPendingImport(null);
+    setImporting(true);
+    try {
+      const res = await fetch('/api/backup/import?group=marks', { method: 'POST', body: file });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+      setImportResult(data);
+      setRefreshKey((k) => k + 1); // re-fetch the active config tab
+    } catch (err) {
+      setImportResult({ ok: false, totals: { upserted: 0, failed: 0 }, results: [], error: err instanceof Error ? err.message : 'Import failed' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (tabs.length === 0) {
     return (
       <>
@@ -36,7 +75,17 @@ export default function MarksPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Academics" title="Marks" meta="Enter, approve and configure Formative & Summative assessment marks." />
+      <PageHeader
+        eyebrow="Academics"
+        title="Marks"
+        meta="Enter, approve and configure Formative & Summative assessment marks."
+        actions={(canExport || canImport) ? (
+          <>
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canImport && <Button icon="Upload" onClick={() => importInputRef.current?.click()} disabled={importing}>{importing ? 'Importing…' : 'Import'}</Button>}
+          </>
+        ) : undefined}
+      />
 
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {tabs.map((t) => (
@@ -47,7 +96,7 @@ export default function MarksPage() {
         ))}
       </div>
 
-      <div className={`mt-5 ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}>
+      <div key={refreshKey} className={`mt-5 ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}>
         {tab === 'entry' && <EntryTab />}
         {tab === 'approvals' && <ApprovalsTab />}
         {tab === 'subjects' && <SubjectsTab />}
@@ -55,6 +104,75 @@ export default function MarksPage() {
         {tab === 'assessments' && <AssessmentsTab />}
         {tab === 'grades' && <GradesTab />}
       </div>
+
+      {/* Hidden file picker for marks import */}
+      <input ref={importInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={pickImport} />
+
+      {/* Confirm before overwriting */}
+      <Modal
+        open={!!pendingImport}
+        onClose={() => setPendingImport(null)}
+        title="Import marks?"
+        subtitle={pendingImport?.name || ''}
+        width={460}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setPendingImport(null)}>Cancel</Button>
+            <Button kind="primary" icon="Upload" onClick={doImport} disabled={importing}>
+              {importing ? 'Importing…' : 'Restore marks'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Restores the marks configuration (<b>Subjects, Grade scale, Assessments, Class subjects, per-assessment
+          max marks</b>) and the <b>mark sheets &amp; marks</b> from a previously exported workbook. Each row is
+          matched by its id — existing records are updated and missing ones re-created. Other data is left untouched.
+        </p>
+      </Modal>
+
+      {/* Result */}
+      <Modal
+        open={!!importResult}
+        onClose={() => setImportResult(null)}
+        title="Import complete"
+        width={460}
+        footer={<div className="flex justify-end"><Button kind="primary" onClick={() => setImportResult(null)}>Done</Button></div>}
+      >
+        {importResult?.error ? (
+          <div className="px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{importResult.error}</div>
+        ) : importResult ? (
+          <div>
+            <div className={`px-4 py-2.5 rounded-md text-sm mb-3 ${importResult.ok ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
+              Restored {importResult.totals.upserted} record{importResult.totals.upserted === 1 ? '' : 's'}
+              {importResult.totals.failed > 0 ? ` · ${importResult.totals.failed} failed` : ''}.
+            </div>
+            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {importResult.results.filter((r) => r.total > 0 || r.failed > 0).map((r) => (
+                <div key={r.sheet} className="px-4 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-800">{r.sheet}</span>
+                    <span className="text-slate-500">
+                      {r.upserted}/{r.total}
+                      {r.failed > 0 && <span className="text-danger-600"> · {r.failed} failed</span>}
+                    </span>
+                  </div>
+                  {r.errors.length > 0 && (
+                    <ul className="mt-1 text-xs text-danger-600 list-disc list-inside">
+                      {r.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  )}
+                </div>
+              ))}
+              {importResult.results.every((r) => r.total === 0 && r.failed === 0) && (
+                <div className="px-4 py-3 text-sm text-slate-500">
+                  No marks rows found in this file. Make sure you uploaded a marks export.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </>
   );
 }

@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptyState, Skeleton, TableRowSkeleton, Avatar, Chip, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { downloadBackup } from '@/lib/utils';
 import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type ChargeStatus, type AccountSummary } from '@/lib/fees';
 import { CLASSES, CLASS_ID_BY_KEY, uniformItemsFor, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, type Gender as FeeGender } from '@/lib/feeStructure';
 import { AccountView, CollectDrawer, AssignDrawer, type Account } from './account-ui';
@@ -32,12 +33,23 @@ export default function FeesPage() {
   const canManage = perms.includes('SETTINGS_MANAGE');
   const canVoid = perms.includes('FEES_VOID');
   const canNotify = perms.includes('NOTICES_MANAGE');
+  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
 
   const [tab, setTab] = useState<Tab>('collection');
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try { await downloadBackup('fees'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+  };
 
   return (
     <>
-      <PageHeader eyebrow="Fees" title="Fee management" meta="Collect fees, configure fee structure, and track balances." />
+      <PageHeader
+        eyebrow="Fees"
+        title="Fee management"
+        meta="Collect fees, configure fee structure, and track balances."
+        actions={canExport ? <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button> : undefined}
+      />
 
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {TABS.filter((t) => !t.perm || perms.includes(t.perm)).map((t) => (

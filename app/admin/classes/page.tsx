@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { downloadBackup } from '@/lib/utils';
 
 interface SchoolClass {
   id: string;
@@ -32,7 +33,14 @@ const emptyForm = { id: '', name: '', room: '', group: 'PRIMARY' as SchoolClass[
 
 export default function ClassesPage() {
   const { data: session } = useSession();
-  const canManage = (((session?.user as any)?.perms as string[]) || []).includes('CLASSES_MANAGE');
+  const perms = ((session?.user as any)?.perms as string[]) || [];
+  const canManage = perms.includes('CLASSES_MANAGE');
+  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try { await downloadBackup('classes'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+  };
 
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [sort, setSort] = useState<SortState>({ key: 'name', dir: 'asc' });
@@ -174,7 +182,12 @@ export default function ClassesPage() {
         eyebrow="Manage"
         title="Classes"
         meta={`${classes.length} classes · ${totalStudents} students`}
-        actions={canManage ? <Button kind="primary" icon="Plus" onClick={openAdd}>Add class</Button> : undefined}
+        actions={(canExport || canManage) ? (
+          <>
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canManage && <Button kind="primary" icon="Plus" onClick={openAdd}>Add class</Button>}
+          </>
+        ) : undefined}
       />
 
       {/* Compact summary chips */}
