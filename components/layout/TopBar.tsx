@@ -77,11 +77,6 @@ export function TopBar({ title, subtitle, onMenu }: TopBarProps) {
             <span className="hidden sm:inline">Parent app</span>
           </a>
         )}
-
-        <button className="p-2 hover:bg-slate-100 rounded-md relative">
-          <Icon name="Bell" size={20} className="text-slate-600" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-danger-500 rounded-full"></span>
-        </button>
       </div>
     </header>
   );
