@@ -7,6 +7,7 @@ import { normalizePhone } from '@/lib/auth/provision';
 import { ensureParentUser, pickPrimaryContact } from '@/lib/services/parents';
 import { getActiveYear } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
+import { generateAdmissionNo } from '@/lib/services/admissionNo';
 
 export async function GET(req: NextRequest) {
   try {
@@ -77,6 +78,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
+    const year = await getActiveYear();
+
+    // Admission number: JDVS+YY+CC+RR (snapshot at admission). Falls back to a
+    // timestamp id only when class/roll are missing so creation never fails.
+    let admissionNo = String(body.id || '').trim();
+    if (!admissionNo) {
+      admissionNo = (await generateAdmissionNo({ classId: body.classId, roll: body.roll, yearId: year.id })) || `JD${Date.now()}`;
+    }
 
     // Primary contact (from SMS-for) drives the Parent login (keyed by phone → siblings share it)
     const primary = pickPrimaryContact(body);
@@ -84,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     const student = await prisma.student.create({
       data: {
-        id: body.id || `JD${Date.now()}`,
+        id: admissionNo,
         name: body.name,
         classId: body.classId || null,
         roll: body.roll || null,
@@ -110,7 +119,6 @@ export async function POST(req: NextRequest) {
 
     // Record the year's enrollment so the student appears in the selected year.
     if (student.classId) {
-      const year = await getActiveYear();
       await upsertEnrollment(student.id, year.id, student.classId, student.sectionId, student.roll);
     }
 

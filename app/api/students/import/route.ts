@@ -6,6 +6,7 @@ import { can } from '@/lib/rbac/roles';
 import { ensureParentUser } from '@/lib/services/parents';
 import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
+import { generateAdmissionNo } from '@/lib/services/admissionNo';
 
 const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
 
@@ -114,7 +115,9 @@ export async function POST(req: NextRequest) {
         if (existingIds.has(id)) { errors.push({ row: rowNo, name, reason: `Admission no "${id}" already exists in the system` }); continue; }
         if (seenIds.has(id)) { errors.push({ row: rowNo, name, reason: `Duplicate admission no "${id}" within this file` }); continue; }
       } else {
-        id = `JD${stamp}${String(++seq).padStart(3, '0')}`;
+        // JDVS+YY+CC+RR from the row's class + roll; fall back to a unique id if roll is blank.
+        id = (await generateAdmissionNo({ classId, roll: r.roll, yearId: activeYear.id, taken: seenIds }))
+          || `JD${stamp}${String(++seq).padStart(3, '0')}`;
       }
       seenIds.add(id);
 
