@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
+import { Button, Card, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 
@@ -178,20 +178,9 @@ export default function ClassesPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Manage"
-        title="Classes"
-        meta={`${classes.length} classes · ${totalStudents} students`}
-        actions={(canExport || canManage) ? (
-          <>
-            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
-            {canManage && <Button kind="primary" icon="Plus" onClick={openAdd}>Add class</Button>}
-          </>
-        ) : undefined}
-      />
-
-      {/* Compact summary chips */}
-      <div className="flex flex-wrap gap-2.5 mt-4">
+      {/* KPI summary + actions (compact, no separate page header) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+        <div className="flex flex-wrap gap-2.5">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={52} width={150} rounded="lg" />)
           : [
@@ -213,6 +202,13 @@ export default function ClassesPage() {
                 </div>
               </div>
             ))}
+        </div>
+        {(canExport || canManage) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canManage && <Button kind="primary" icon="Plus" onClick={openAdd}>Add class</Button>}
+          </div>
+        )}
       </div>
 
       <Card className="mt-6" padded={false} title={showArchived ? 'Archived classes' : 'Classes and sections'}

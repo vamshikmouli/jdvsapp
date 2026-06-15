@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import {
-  PageHeader,
   Button,
   Card,
   Select,
@@ -292,27 +291,9 @@ export default function StudentsPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Manage"
-        title="Students"
-        meta={`${totalStudents} students · ${active} active shown`}
-        actions={
-          (canExport || canManage) ? (
-            <>
-              {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
-              {canManage && <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>}
-              {canManage && (
-                <Button kind="primary" icon="UserPlus" onClick={openAdd}>
-                  Add student
-                </Button>
-              )}
-            </>
-          ) : undefined
-        }
-      />
-
-      {/* Compact summary chips */}
-      <div className="flex flex-wrap gap-2.5 mt-4">
+      {/* KPI summary + actions (compact, no separate page header) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+        <div className="flex flex-wrap gap-2.5">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={52} width={150} rounded="lg" />)
           : [
@@ -334,6 +315,14 @@ export default function StudentsPage() {
                 </div>
               </div>
             ))}
+        </div>
+        {(canExport || canManage) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canManage && <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>}
+            {canManage && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add student</Button>}
+          </div>
+        )}
       </div>
 
       {/* Class filter pills */}

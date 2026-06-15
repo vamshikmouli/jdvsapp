@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, Avatar, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Chip, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
+import { Button, Card, Avatar, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Chip, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { downloadBackup } from '@/lib/utils';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
@@ -210,21 +210,9 @@ export default function StaffPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Manage"
-        title="Staff"
-        meta={`${staff.length} staff members`}
-        actions={(canExport || canManage) ? (
-          <>
-            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
-            {canManage && <Button icon="Upload" onClick={() => setStaffImportOpen(true)}>Import</Button>}
-            {canManage && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add staff</Button>}
-          </>
-        ) : undefined}
-      />
-
-      {/* Compact summary chips */}
-      <div className="flex flex-wrap gap-2.5 mt-4">
+      {/* KPI summary + actions (compact, no separate page header) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+        <div className="flex flex-wrap gap-2.5">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={52} width={150} rounded="lg" />)
           : [
@@ -246,6 +234,14 @@ export default function StaffPage() {
                 </div>
               </div>
             ))}
+        </div>
+        {(canExport || canManage) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+            {canManage && <Button icon="Upload" onClick={() => setStaffImportOpen(true)}>Import</Button>}
+            {canManage && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add staff</Button>}
+          </div>
+        )}
       </div>
 
       <Card className="mt-6" padded={false} title={showArchived ? 'Archived staff' : 'Staff directory'}
