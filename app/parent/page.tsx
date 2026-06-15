@@ -22,10 +22,10 @@ interface Child {
 }
 
 const STATUS_META: Record<string, { label: string; chip: string; cell: string; dot: string }> = {
-  PRESENT: { label: 'Present', chip: 'bg-success-50 text-success-700', cell: 'bg-success-100 text-success-800', dot: 'bg-success-500' },
-  LATE: { label: 'Late', chip: 'bg-marigold-50 text-marigold-700', cell: 'bg-marigold-100 text-marigold-800', dot: 'bg-marigold-500' },
-  LEAVE: { label: 'On leave', chip: 'bg-info-50 text-info-700', cell: 'bg-info-100 text-info-800', dot: 'bg-info-500' },
-  ABSENT: { label: 'Absent', chip: 'bg-danger-50 text-danger-700', cell: 'bg-danger-100 text-danger-800', dot: 'bg-danger-500' },
+  PRESENT: { label: 'Present', chip: 'bg-success-50 text-success-700', cell: 'bg-success-500 text-white', dot: 'bg-success-500' },
+  LATE: { label: 'Late', chip: 'bg-marigold-50 text-marigold-700', cell: 'bg-marigold-600 text-white', dot: 'bg-marigold-500' },
+  LEAVE: { label: 'On leave', chip: 'bg-info-50 text-info-700', cell: 'bg-info-500 text-white', dot: 'bg-info-500' },
+  ABSENT: { label: 'Absent', chip: 'bg-danger-50 text-danger-700', cell: 'bg-danger-500 text-white', dot: 'bg-danger-500' },
   none: { label: 'Not marked', chip: 'bg-slate-100 text-slate-500', cell: '', dot: 'bg-slate-200' },
 };
 
@@ -128,10 +128,10 @@ function ChildCalendar({ studentId }: { studentId: string }) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-500">
-        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-success-100 border border-success-300" /> Present</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-danger-100 border border-danger-300" /> Absent</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-info-100 border border-info-300" /> Leave</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-marigold-100 border border-marigold-300" /> Late</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-success-500" /> Present</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-danger-500" /> Absent</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-info-500" /> Leave</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-marigold-600" /> Late</span>
       </div>
     </div>
   );
@@ -198,9 +198,9 @@ function ChildCard({ child, fee }: { child: Child; fee: FeeData | null }) {
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Last 2 weeks</span>
           <div className="flex items-center gap-2 text-[10px] text-slate-400">
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-success-200" />P</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-danger-200" />A</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-info-200" />L</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-success-500" />P</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-danger-500" />A</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-info-500" />L</span>
           </div>
         </div>
         <div className="flex gap-1">
@@ -448,6 +448,29 @@ function marksInitials(name: string) {
 function MarksScreen() {
   const [reports, setReports] = useState<Report[] | null>(null);
   const [error, setError] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Share one assessment result via the native share sheet (WhatsApp, Facebook,
+  // etc. on mobile); falls back to copying the text on desktop browsers.
+  const shareResult = async (rep: Report, a: ReportAssessment) => {
+    const lines = a.subjects.map((s) =>
+      `• ${s.name}: ${s.isAbsent ? 'Absent' : s.gradeOnly ? (s.grade || '—') : `${s.marks}/${s.max}${s.grade ? ` (${s.grade})` : ''}`}`
+    );
+    const head = `${a.type === 'SUMMATIVE' ? 'SA' : 'FA'} · ${a.name}${a.term ? ` (${a.term})` : ''}`;
+    const score = `Total: ${a.totalObtained}/${a.totalMax}${a.percent != null ? ` · ${a.percent}%` : ''}${a.grade ? ` · Grade ${a.grade}` : ''}`;
+    const text = `📋 ${rep.student.name} — Result\n${head}\n${score}\n\n${lines.join('\n')}\n\n— Jnana Deepika School`;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title: `${rep.student.name} — ${a.name}`, text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        setCopiedId(a.id);
+        setTimeout(() => setCopiedId(null), 2000);
+      }
+    } catch {
+      /* user dismissed the share sheet — ignore */
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -495,42 +518,63 @@ function MarksScreen() {
               No results published yet.
             </div>
           ) : (
-            rep.assessments.map((a) => (
-              <div key={a.id} className="border-b last:border-b-0 border-slate-100">
-                <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50/70">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${a.type === 'SUMMATIVE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>{a.type === 'SUMMATIVE' ? 'SA' : 'FA'}</span>
-                    <span className="text-sm font-semibold text-slate-900 truncate">{a.name}</span>
-                    {a.term && <span className="text-[11px] text-slate-400">{a.term}</span>}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {a.percent != null && <span className="text-sm font-bold text-purple-700 tabular-nums">{a.percent}%</span>}
-                    {a.grade && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-purple-600 text-white">{a.grade}</span>}
-                  </div>
-                </div>
-                <div>
-                  {a.subjects.map((s) => (
-                    <div key={s.name} className="flex items-center justify-between px-4 py-2 text-sm border-t border-slate-50">
-                      <span className="text-slate-700 truncate">{s.name}{s.gradeOnly && <span className="ml-1.5 text-[10px] text-slate-400">(grade)</span>}</span>
-                      <div className="flex items-center gap-2.5 flex-shrink-0">
-                        {s.gradeOnly ? (
-                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 min-w-[24px] text-center">{s.isAbsent ? 'AB' : (s.grade || '—')}</span>
-                        ) : (
-                          <>
-                            <span className={`tabular-nums ${s.isAbsent ? 'text-slate-400' : 'text-slate-900 font-medium'}`}>{s.isAbsent ? 'AB' : `${s.marks}/${s.max}`}</span>
-                            {s.grade && <span className="text-[10px] font-semibold w-6 text-center text-slate-500">{s.grade}</span>}
-                          </>
-                        )}
+            rep.assessments.map((a) => {
+              const isSA = a.type === 'SUMMATIVE';
+              const grad = isSA ? 'from-indigo-500 to-purple-600' : 'from-marigold-500 to-marigold-700';
+              return (
+                <div key={a.id} className="border-b last:border-b-0 border-slate-100">
+                  {/* Gradient result header */}
+                  <div className={`bg-gradient-to-r ${grad} text-white px-4 py-3`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] font-extrabold tracking-wide px-1.5 py-0.5 rounded bg-white/25">{isSA ? 'SA' : 'FA'}</span>
+                        <span className="text-sm font-bold truncate">{a.name}</span>
+                        {a.term && <span className="text-[11px] text-white/75 truncate">{a.term}</span>}
                       </div>
+                      <button
+                        onClick={() => shareResult(rep, a)}
+                        className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold bg-white/20 hover:bg-white/30 active:bg-white/40 rounded-full px-2.5 py-1 transition-colors"
+                        title="Share result"
+                      >
+                        <Icon name={copiedId === a.id ? 'Check' : 'Share2'} size={13} />
+                        {copiedId === a.id ? 'Copied' : 'Share'}
+                      </button>
                     </div>
-                  ))}
-                  <div className="flex items-center justify-between px-4 py-2 text-sm font-semibold bg-slate-50/50 border-t border-slate-100">
-                    <span className="text-slate-700">Total</span>
-                    <span className="tabular-nums text-slate-900">{a.totalObtained}/{a.totalMax}</span>
+                    {a.percent != null && (
+                      <div className="mt-2.5 flex items-center gap-2.5">
+                        <div className="flex-1 h-1.5 rounded-full bg-white/25 overflow-hidden">
+                          <div className="h-full bg-white rounded-full" style={{ width: `${Math.max(0, Math.min(100, a.percent))}%` }} />
+                        </div>
+                        <span className="text-lg font-extrabold tabular-nums leading-none">{a.percent}%</span>
+                        {a.grade && <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-white text-slate-900">{a.grade}</span>}
+                      </div>
+                    )}
+                  </div>
+                  {/* Subjects */}
+                  <div>
+                    {a.subjects.map((s) => (
+                      <div key={s.name} className="flex items-center justify-between px-4 py-2 text-sm border-t border-slate-50">
+                        <span className="text-slate-700 truncate">{s.name}{s.gradeOnly && <span className="ml-1.5 text-[10px] text-slate-400">(grade)</span>}</span>
+                        <div className="flex items-center gap-2.5 flex-shrink-0">
+                          {s.gradeOnly ? (
+                            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 min-w-[24px] text-center">{s.isAbsent ? 'AB' : (s.grade || '—')}</span>
+                          ) : (
+                            <>
+                              <span className={`tabular-nums ${s.isAbsent ? 'text-danger-600 font-semibold' : 'text-slate-900 font-medium'}`}>{s.isAbsent ? 'AB' : `${s.marks}/${s.max}`}</span>
+                              {s.grade && <span className="text-[10px] font-bold w-6 text-center text-slate-500">{s.grade}</span>}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-4 py-2.5 text-sm font-bold bg-slate-50 border-t border-slate-100">
+                      <span className="text-slate-700">Total</span>
+                      <span className="tabular-nums text-slate-900">{a.totalObtained}<span className="font-medium text-slate-400">/{a.totalMax}</span></span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       ))}
