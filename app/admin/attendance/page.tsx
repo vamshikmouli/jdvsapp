@@ -95,20 +95,6 @@ export default function AttendancePage() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState('');
 
-  const downloadAttTemplate = async () => {
-    if (!classId) { alert('Pick a class first.'); return; }
-    try {
-      const qs = new URLSearchParams({ classId, date, slot });
-      const res = await fetch('/api/attendance/template?' + qs.toString());
-      if (!res.ok) throw new Error(`Template failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `attendance-${classId}-${date}-${slot}.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Could not download template'); }
-  };
-
   const pickImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
@@ -349,9 +335,6 @@ export default function AttendancePage() {
           <>
             {canExport && (
               <Button icon="Download" onClick={() => setExportOpen(true)}>Export</Button>
-            )}
-            {canImport && (
-              <Button icon="FileSpreadsheet" onClick={downloadAttTemplate} disabled={!classId}>Template</Button>
             )}
             {canImport && (
               <Button icon="Upload" onClick={() => importInputRef.current?.click()}>Import</Button>
