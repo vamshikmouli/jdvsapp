@@ -38,6 +38,8 @@ export default function FeesPage() {
 
   const [tab, setTab] = useState<Tab>('collection');
   const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [feeRefreshKey, setFeeRefreshKey] = useState(0);
   const doExport = async () => {
     setExporting(true);
     try { await downloadBackup('fees'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
@@ -49,15 +51,20 @@ export default function FeesPage() {
         eyebrow="Fees"
         title="Fee management"
         meta="Collect fees, configure fee structure, and track balances."
-        actions={canExport ? <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button> : undefined}
+        actions={(canManage || canExport) ? (
+          <>
+            {canManage && <Button icon="Upload" onClick={() => setImportOpen(true)}>Bulk import (Excel)</Button>}
+            {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
+          </>
+        ) : undefined}
       />
 
-      <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div className="flex flex-wrap items-center gap-1 mt-6 border-b border-slate-200">
         {TABS.filter((t) => !t.perm || perms.includes(t.perm)).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap flex-shrink-0 transition-colors ${
+            className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
               tab === t.id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -67,11 +74,13 @@ export default function FeesPage() {
         ))}
       </div>
 
-      {tab === 'collection' && <CollectionTab canCollect={canCollect} canVoid={canVoid} canNotify={canNotify} canManage={canManage} />}
+      {tab === 'collection' && <CollectionTab refreshKey={feeRefreshKey} canCollect={canCollect} canVoid={canVoid} canNotify={canNotify} canManage={canManage} />}
       {tab === 'counter' && <CounterTab />}
       {tab === 'concessions' && <ConcessionsTab />}
       {tab === 'setup' && <SetupTab canManage={canManage} />}
       {tab === 'reports' && <ReportsTab />}
+
+      {importOpen && <FeeImportDrawer onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); setFeeRefreshKey((k) => k + 1); }} />}
     </>
   );
 }
@@ -317,8 +326,7 @@ interface AccountRow {
   status: ChargeStatus;
 }
 
-function CollectionTab({ canCollect, canVoid, canNotify, canManage }: { canCollect: boolean; canVoid?: boolean; canNotify?: boolean; canManage?: boolean }) {
-  const [importOpen, setImportOpen] = useState(false);
+function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }: { refreshKey?: number; canCollect: boolean; canVoid?: boolean; canNotify?: boolean; canManage?: boolean }) {
   const [rows, setRows] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -352,7 +360,7 @@ function CollectionTab({ canCollect, canVoid, canNotify, canManage }: { canColle
   useEffect(() => {
     const t = setTimeout(fetchRows, 250);
     return () => clearTimeout(t);
-  }, [fetchRows]);
+  }, [fetchRows, refreshKey]); // reload after a bulk import from the header
 
   const kpis = useMemo(() => {
     const billed = rows.reduce((t, r) => t + r.totalCharged, 0);
@@ -387,11 +395,6 @@ function CollectionTab({ canCollect, canVoid, canNotify, canManage }: { canColle
 
   return (
     <>
-      {canManage && (
-        <div className="flex justify-end mt-4">
-          <Button icon="Upload" onClick={() => setImportOpen(true)}>Bulk import (Excel)</Button>
-        </div>
-      )}
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 mt-4">
         {[
           { label: 'Total billed', value: feeMoney(kpis.billed), icon: 'ReceiptText', badge: 'bg-purple-100 text-purple-700' },
@@ -558,7 +561,6 @@ function CollectionTab({ canCollect, canVoid, canNotify, canManage }: { canColle
           onDone={() => { setBulkOpen(false); setSelected(new Set()); }}
         />
       )}
-      {importOpen && <FeeImportDrawer onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); fetchRows(); }} />}
     </>
   );
 }
