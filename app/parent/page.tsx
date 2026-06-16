@@ -445,30 +445,117 @@ function marksInitials(name: string) {
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 }
 
+function truncateText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
+
+// Draw one assessment result as a shareable PNG (no external libraries).
+async function renderResultImage(rep: Report, a: ReportAssessment): Promise<Blob> {
+  const isSA = a.type === 'SUMMATIVE';
+  const W = 720, PAD = 28, rowH = 46, headerH = 208, totalH = 58, footerH = 46;
+  const H = headerH + a.subjects.length * rowH + totalH + footerH;
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = W * scale; canvas.height = H * scale;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
+  const rr = (x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    if ((ctx as any).roundRect) (ctx as any).roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+  };
+
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+
+  // Header band
+  const grad = ctx.createLinearGradient(0, 0, W, headerH);
+  if (isSA) { grad.addColorStop(0, '#6366f1'); grad.addColorStop(1, '#7c3aed'); }
+  else { grad.addColorStop(0, '#f59e0b'); grad.addColorStop(1, '#b45309'); }
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, headerH);
+
+  const cls = (rep.student.className || '').replace(/\s?STD$/i, '');
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '600 15px Arial'; ctx.textAlign = 'left';
+  ctx.fillText(`Jnana Deepika  ·  ${cls}${rep.student.section ? ' ' + rep.student.section : ''}  ·  ${rep.year}`, PAD, 42);
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 30px Arial';
+  ctx.fillText(truncateText(ctx, rep.student.name, W - PAD * 2 - 150), PAD, 80);
+
+  const badge = isSA ? 'SA' : 'FA';
+  ctx.font = '700 14px Arial';
+  const bw = ctx.measureText(badge).width + 18;
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; rr(PAD, 96, bw, 24, 6); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.fillText(badge, PAD + 9, 113);
+  ctx.font = '600 18px Arial';
+  ctx.fillText(`${a.name}${a.term ? '  ·  ' + a.term : ''}`, PAD + bw + 12, 114);
+
+  if (a.percent != null) {
+    ctx.textAlign = 'right'; ctx.font = '800 44px Arial'; ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${a.percent}%`, W - PAD, 86);
+    if (a.grade) {
+      ctx.font = '700 16px Arial';
+      const gw = ctx.measureText(a.grade).width + 18;
+      ctx.fillStyle = '#ffffff'; rr(W - PAD - gw, 98, gw, 26, 6); ctx.fill();
+      ctx.fillStyle = isSA ? '#4338ca' : '#92400e'; ctx.textAlign = 'center';
+      ctx.fillText(a.grade, W - PAD - gw / 2, 116);
+    }
+    const barY = 152, barW = W - PAD * 2, barH = 10;
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; rr(PAD, barY, barW, barH, 5); ctx.fill();
+    ctx.fillStyle = '#ffffff'; rr(PAD, barY, barW * Math.min(100, Math.max(0, a.percent)) / 100, barH, 5); ctx.fill();
+  }
+
+  let y = headerH;
+  a.subjects.forEach((s, i) => {
+    if (i % 2 === 1) { ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, y, W, rowH); }
+    ctx.fillStyle = '#334155'; ctx.textAlign = 'left'; ctx.font = '500 17px Arial';
+    ctx.fillText(truncateText(ctx, s.name, W * 0.55), PAD, y + 30);
+    ctx.textAlign = 'right';
+    const val = s.isAbsent ? 'AB' : (s.gradeOnly ? (s.grade || '—') : `${s.marks}/${s.max}`);
+    ctx.fillStyle = s.isAbsent ? '#dc2626' : '#0f172a'; ctx.font = '600 17px Arial';
+    ctx.fillText(val, W - PAD, y + 30);
+    y += rowH;
+  });
+
+  ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, y, W, totalH);
+  ctx.fillStyle = '#0f172a'; ctx.textAlign = 'left'; ctx.font = '700 19px Arial';
+  ctx.fillText('Total', PAD, y + 37);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${a.totalObtained}/${a.totalMax}`, W - PAD, y + 37);
+  y += totalH;
+
+  ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.font = '400 13px Arial';
+  ctx.fillText('Shared from Jnana Deepika · Parent app', W / 2, y + 28);
+
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('render failed'))), 'image/png'),
+  );
+}
+
 function MarksScreen() {
   const [reports, setReports] = useState<Report[] | null>(null);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Share one assessment result via the native share sheet (WhatsApp, Facebook,
-  // etc. on mobile); falls back to copying the text on desktop browsers.
+  // Share the result as an IMAGE via the native share sheet (WhatsApp, etc.);
+  // on desktop / where file-share isn't supported, the image is downloaded.
   const shareResult = async (rep: Report, a: ReportAssessment) => {
-    const lines = a.subjects.map((s) =>
-      `• ${s.name}: ${s.isAbsent ? 'Absent' : s.gradeOnly ? (s.grade || '—') : `${s.marks}/${s.max}${s.grade ? ` (${s.grade})` : ''}`}`
-    );
-    const head = `${a.type === 'SUMMATIVE' ? 'SA' : 'FA'} · ${a.name}${a.term ? ` (${a.term})` : ''}`;
-    const score = `Total: ${a.totalObtained}/${a.totalMax}${a.percent != null ? ` · ${a.percent}%` : ''}${a.grade ? ` · Grade ${a.grade}` : ''}`;
-    const text = `📋 ${rep.student.name} — Result\n${head}\n${score}\n\n${lines.join('\n')}\n\n— Jnana Deepika School`;
     try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: `${rep.student.name} — ${a.name}`, text });
+      const blob = await renderResultImage(rep, a);
+      const file = new File([blob], `${rep.student.name.replace(/\s+/g, '_')}-${a.name}.png`, { type: 'image/png' });
+      const nav = navigator as any;
+      if (nav.canShare?.({ files: [file] }) && nav.share) {
+        await nav.share({ files: [file], title: `${rep.student.name} — ${a.name}` });
       } else {
-        await navigator.clipboard.writeText(text);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = file.name;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(url);
         setCopiedId(a.id);
         setTimeout(() => setCopiedId(null), 2000);
       }
     } catch {
-      /* user dismissed the share sheet — ignore */
+      /* user dismissed the share sheet, or rendering failed — ignore */
     }
   };
 
@@ -537,7 +624,7 @@ function MarksScreen() {
                         title="Share result"
                       >
                         <Icon name={copiedId === a.id ? 'Check' : 'Share2'} size={13} />
-                        {copiedId === a.id ? 'Copied' : 'Share'}
+                        {copiedId === a.id ? 'Saved' : 'Share'}
                       </button>
                     </div>
                     {a.percent != null && (
