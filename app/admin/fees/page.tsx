@@ -42,7 +42,15 @@ export default function FeesPage() {
   const [feeRefreshKey, setFeeRefreshKey] = useState(0);
   const doExport = async () => {
     setExporting(true);
-    try { await downloadBackup('fees'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try {
+      const res = await fetch('/api/fees/export');
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `fees-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
   return (
