@@ -52,8 +52,7 @@ export async function GET(req: NextRequest) {
 
     const rows: Record<string, string>[] = [];
     for (const s of sessions) {
-      const iso = s.date.toISOString().slice(0, 10); // YYYY-MM-DD
-      const dateStr = iso.split('-').reverse().join('/'); // DD/MM/YYYY
+      const dateStr = s.date.toISOString().slice(0, 10); // ISO YYYY-MM-DD (unambiguous for re-import)
       const sName = slotLabel.get(s.slot) || s.slot;
       const marker = s.takenById ? (userName.get(s.takenById) || '') : '';
       for (const r of s.records) {

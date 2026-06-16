@@ -11,12 +11,21 @@ export const maxDuration = 120;
 
 const norm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
 function parseDate(s: any): Date | null {
-  const t = String(s ?? '').trim();
-  let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // dd/mm/yyyy
-  if (m) { let y = +m[3]; if (y < 100) y += 2000; const d = new Date(Date.UTC(y, +m[2] - 1, +m[1])); return isNaN(d.getTime()) ? null : d; }
-  m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // iso
+  if (s == null || s === '') return null;
+  // Excel may store the date as a serial number or a Date object (when edited/saved).
+  if (typeof s === 'number' && s > 0) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(s) * 86400000);
+    return isNaN(d.getTime()) ? null : utcDay(d);
+  }
+  if (s instanceof Date) return isNaN(s.getTime()) ? null : utcDay(s);
+  const t = String(s).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // iso (preferred, unambiguous)
   if (m) { const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return isNaN(d.getTime()) ? null : d; }
+  m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // dd/mm/yyyy
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; const d = new Date(Date.UTC(y, +m[2] - 1, +m[1])); return isNaN(d.getTime()) ? null : d; }
   return null;
 }
 
@@ -69,20 +78,31 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      const classId = classByNorm.get(norm(r['Class'] ?? r['class']));
-      const date = parseDate(r['Date'] ?? r['date']);
-      const slot = slotByNorm.get(norm(r['Session'] ?? r['session'] ?? r['Slot'])) || String(r['Session'] ?? r['Slot'] ?? '').trim();
-      const status = statusOf(r['Status'] ?? r['status']);
-      let sid = String(r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? '').trim();
-      if (!studentIds.has(sid)) sid = studentByName.get(norm(r['Student Name'] ?? r['Name'])) || '';
+      const rawClass = String(r['Class'] ?? r['class'] ?? '').trim();
+      const rawSession = String(r['Session'] ?? r['session'] ?? r['Slot'] ?? '').trim();
+      const rawAdm = String(r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? '').trim();
+      const rawName = String(r['Student Name'] ?? r['Name'] ?? '').trim();
 
-      if (!classId || !date || !slot || !status || !sid) {
-        if (errors.length < 25) errors.push(`Row ${i + 2}: couldn't match class/date/session/student/status`);
+      const classId = classByNorm.get(norm(rawClass));
+      const date = parseDate(r['Date'] ?? r['date']);
+      const slot = slotByNorm.get(norm(rawSession)) || rawSession;
+      const status = statusOf(r['Status'] ?? r['status']);
+      let sid = studentIds.has(rawAdm) ? rawAdm : '';
+      if (!sid && rawName) sid = studentByName.get(norm(rawName)) || '';
+
+      const probs: string[] = [];
+      if (!classId) probs.push(`class "${rawClass}"`);
+      if (!date) probs.push(`date "${String(r['Date'] ?? '')}"`);
+      if (!slot) probs.push('session (blank)');
+      if (!status) probs.push(`status "${String(r['Status'] ?? '')}"`);
+      if (!sid) probs.push(`student "${rawAdm || rawName}"`);
+      if (probs.length) {
+        if (errors.length < 25) errors.push(`Row ${i + 2}: unknown ${probs.join(', ')}`);
         continue;
       }
-      const key = `${classId}|${date.toISOString().slice(0, 10)}|${slot}`;
-      const g = groups.get(key) || { classId, date, slot, recs: [] };
-      g.recs.push({ studentId: sid, status });
+      const key = `${classId}|${date!.toISOString().slice(0, 10)}|${slot}`;
+      const g = groups.get(key) || { classId: classId!, date: date!, slot, recs: [] };
+      g.recs.push({ studentId: sid, status: status! });
       groups.set(key, g);
     }
 

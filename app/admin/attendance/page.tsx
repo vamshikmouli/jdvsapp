@@ -130,7 +130,8 @@ export default function AttendancePage() {
         const res = await fetch('/api/attendance/bulk-import', { method: 'POST', body: f });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(d.error || 'Import failed');
-        setImportMsg(`Imported ${d.records} record${d.records === 1 ? '' : 's'} across ${d.sessions} session${d.sessions === 1 ? '' : 's'}${d.skippedLocked ? ` · ${d.skippedLocked} skipped (locked)` : ''}${d.errors?.length ? ` · ${d.errors.length} row(s) unmatched` : ''}.`);
+        const summary = `Imported ${d.records} record${d.records === 1 ? '' : 's'} across ${d.sessions} session${d.sessions === 1 ? '' : 's'}${d.skippedLocked ? ` · ${d.skippedLocked} skipped (locked)` : ''}${d.errors?.length ? ` · ${d.errors.length} row(s) unmatched` : ''}.`;
+        setImportMsg(d.records === 0 && d.errors?.length ? `${summary} First problem — ${d.errors[0]}` : summary);
         await loadAttendance();
         await loadOverview();
         return;
