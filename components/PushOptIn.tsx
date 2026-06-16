@@ -20,7 +20,10 @@ type State = 'unsupported' | 'default' | 'granted' | 'denied' | 'busy';
  * Lets a parent turn on phone push notifications (PWA / Web Push).
  * Renders a small banner on the parent Home; hides itself once enabled.
  */
-export function PushOptIn() {
+export function PushOptIn({
+  title = 'Get alerts on your phone',
+  subtitle = 'Fee reminders, circulars & notices — delivered like an app notification.',
+}: { title?: string; subtitle?: string } = {}) {
   const [state, setState] = useState<State>('default');
   const [subscribed, setSubscribed] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -85,8 +88,8 @@ export function PushOptIn() {
     <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-white px-4 py-3.5 flex items-center gap-3">
       <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0"><Icon name="Bell" size={20} /></div>
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold text-slate-900">Get alerts on your phone</div>
-        <div className="text-xs text-slate-500 mt-0.5">Fee reminders, circulars & notices — delivered like an app notification.</div>
+        <div className="text-sm font-semibold text-slate-900">{title}</div>
+        <div className="text-xs text-slate-500 mt-0.5">{subtitle}</div>
         {error && <div className="text-xs text-danger-600 mt-1">{error}</div>}
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">

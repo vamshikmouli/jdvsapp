@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { PushOptIn } from '@/components/PushOptIn';
 
 interface DashboardData {
   kpis: { studentsTotal: number; studentsActive: number; staffTotal: number; classesTotal: number };
@@ -113,6 +114,10 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{greeting}, {firstName} 👋</h1>
         <span className="text-xs sm:text-sm text-slate-400">{todayHeading()}</span>
+      </div>
+
+      <div className="mt-4">
+        <PushOptIn title="Get notified on your phone" subtitle="Alerts when an admin returns your marks for review, and other staff updates." />
       </div>
 
       {/* ===== Loading ===== */}

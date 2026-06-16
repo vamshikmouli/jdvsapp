@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import type { MarkSheetStatus } from '@prisma/client';
 import { gradeFor } from '@/lib/grades';
 import { rosterForClass } from '@/lib/services/enrollment';
+import { sendPushToUsers } from '@/lib/push';
 
 export interface SheetSelector {
   assessmentId: string;
@@ -181,6 +182,22 @@ export async function decideMarkSheet(sheetId: string, action: 'approve' | 'retu
     await prisma.markSheet.update({ where: { id: sheetId }, data: { status: 'APPROVED', approvedById: userId, approvedAt: new Date() } });
   } else {
     await prisma.markSheet.update({ where: { id: sheetId }, data: { status: 'DRAFT', approvedById: null, approvedAt: null } });
+    // Tell the teacher who entered it that the admin wants a revision.
+    if (sheet.enteredById) {
+      const [assessment, klass, section, subject] = await Promise.all([
+        prisma.assessment.findUnique({ where: { id: sheet.assessmentId }, select: { name: true } }),
+        prisma.schoolClass.findUnique({ where: { id: sheet.classId }, select: { name: true } }),
+        sheet.sectionId ? prisma.section.findUnique({ where: { id: sheet.sectionId }, select: { name: true } }) : Promise.resolve(null),
+        prisma.subject.findUnique({ where: { id: sheet.subjectId }, select: { name: true } }),
+      ]);
+      const where = `${(klass?.name || '').replace(/\s?STD$/i, '')}${section?.name ? ' ' + section.name : ''} · ${subject?.name || ''}`;
+      await sendPushToUsers([sheet.enteredById], {
+        title: 'Marks returned for review',
+        body: `${assessment?.name || 'Assessment'} — ${where}: please review and resubmit.`,
+        url: '/admin/marks',
+        tag: `marks-return-${sheetId}`,
+      });
+    }
   }
   return { ok: true };
 }
