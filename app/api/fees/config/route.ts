@@ -10,6 +10,7 @@ import {
   updateFeeType,
   reorderFeeTypes,
   deleteFeeType,
+  autoAssignClassFees,
 } from '@/lib/services/fees';
 import { FeeBillingMode } from '@prisma/client';
 import { VILLAGE_VAN_FEES, UNIFORM_ITEMS } from '@/lib/feeStructure';
@@ -90,6 +91,21 @@ export async function POST(req: NextRequest) {
     if (body.action === 'reorderFeeTypes' && Array.isArray(body.order)) {
       await reorderFeeTypes(body.order);
       return NextResponse.json({ ok: true });
+    }
+
+    // Assign the auto-applied class fees to all active students (for students
+    // added before fees were configured). Idempotent — skips heads already charged.
+    if (body.action === 'assignAllClassFees') {
+      const year = await getActiveYear();
+      const students = await prisma.student.findMany({
+        where: { status: 'ACTIVE', classId: { not: null } },
+        select: { id: true, classId: true },
+      });
+      let assigned = 0;
+      for (const s of students) {
+        try { await autoAssignClassFees(s.id, s.classId!, year.id); assigned++; } catch (e) { console.error('assign failed', s.id, e); }
+      }
+      return NextResponse.json({ ok: true, assigned, total: students.length });
     }
 
     // Save the uniform price matrix (class × gender) for the active year.

@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can, getClassScope } from '@/lib/rbac/roles';
 import { normalizePhone } from '@/lib/auth/provision';
 import { ensureParentUser, pickPrimaryContact } from '@/lib/services/parents';
-import { getActiveYear } from '@/lib/services/fees';
+import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
 
@@ -117,9 +117,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Record the year's enrollment so the student appears in the selected year.
+    // Record the year's enrollment so the student appears in the selected year,
+    // and auto-assign the class fees (Tuition, etc.) — same as the Excel import.
     if (student.classId) {
       await upsertEnrollment(student.id, year.id, student.classId, student.sectionId, student.roll);
+      try { await autoAssignClassFees(student.id, student.classId, year.id); } catch (e) { console.error('auto-assign failed for', student.id, e); }
     }
 
     return NextResponse.json(

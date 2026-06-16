@@ -974,6 +974,16 @@ function SetupTab({ canManage }: { canManage: boolean }) {
     try { await post({ action: 'seedUniformMatrix' }); await load(); }
     catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to load matrix'); }
   };
+  const [assignMsg, setAssignMsg] = useState('');
+  const assignAll = async () => {
+    setSetupErr(''); setAssignMsg('Assigning…');
+    try {
+      const r = await fetch('/api/fees/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'assignAllClassFees' }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setAssignMsg(`Done — class fees assigned across ${d.assigned}/${d.total} students.`);
+    } catch (e) { setAssignMsg(''); setSetupErr(e instanceof Error ? e.message : 'Failed to assign'); }
+  };
 
   if (loading || !cfg) return <div className="mt-6 space-y-3 max-w-3xl">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
 
@@ -1027,6 +1037,12 @@ function SetupTab({ canManage }: { canManage: boolean }) {
               ))}
             </tbody>
           </table>
+          {canManage && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-slate-100">
+              <span className="text-xs text-slate-500">{assignMsg || 'New students get these fees automatically. Use this for students added before fees were set up.'}</span>
+              <Button icon="Users" onClick={assignAll}>Assign to all students</Button>
+            </div>
+          )}
         </Card>
       )}
 
