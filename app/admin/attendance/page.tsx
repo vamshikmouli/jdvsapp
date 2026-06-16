@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
+import { PageHeader, Button, Card, Modal, Field, Input, Select, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -67,9 +67,26 @@ export default function AttendancePage() {
   const canMark = myPerms.includes('ATTENDANCE_MARK');
   const canExport = myPerms.includes('REPORTS_EXPORT') || myPerms.includes('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
-  const doExport = async () => {
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exClass, setExClass] = useState('');
+  const [exFrom, setExFrom] = useState('');
+  const [exTo, setExTo] = useState('');
+  const runExport = async () => {
     setExporting(true);
-    try { await downloadBackup('attendance'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try {
+      const qs = new URLSearchParams();
+      if (exClass) qs.set('classId', exClass);
+      if (exFrom) qs.set('from', exFrom);
+      if (exTo) qs.set('to', exTo);
+      const res = await fetch('/api/attendance/export?' + qs.toString());
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `attendance-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      setExportOpen(false);
+    } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
   // Friendly attendance upload: a name-based Excel with a Status dropdown fills
@@ -96,13 +113,30 @@ export default function AttendancePage() {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
     if (!f) return;
-    if (locked) { setImportMsg('This session is locked — reopen it before importing.'); return; }
     setImportMsg('');
     try {
       const buf = await f.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      // Full export (multi-session) → bulk import on the server, matched by
+      // Class + Date + Session + Admission No. Otherwise it's a single-session
+      // template that just fills the current grid.
+      const headers = rows.length ? Object.keys(rows[0]) : [];
+      const isFlat = headers.some((h) => /class/i.test(h)) && headers.some((h) => /date/i.test(h));
+      if (isFlat) {
+        setImportMsg('Importing…');
+        const res = await fetch('/api/attendance/bulk-import', { method: 'POST', body: f });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || 'Import failed');
+        setImportMsg(`Imported ${d.records} record${d.records === 1 ? '' : 's'} across ${d.sessions} session${d.sessions === 1 ? '' : 's'}${d.skippedLocked ? ` · ${d.skippedLocked} skipped (locked)` : ''}${d.errors?.length ? ` · ${d.errors.length} row(s) unmatched` : ''}.`);
+        await loadAttendance();
+        await loadOverview();
+        return;
+      }
+
+      if (locked) { setImportMsg('This session is locked — reopen it before importing.'); return; }
       const norm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '');
       const statusOf = (t: string): Status | null => {
         const k = norm(t);
@@ -313,15 +347,13 @@ export default function AttendancePage() {
         actions={
           <>
             {canExport && (
-              <Button icon="Download" onClick={doExport} disabled={exporting}>
-                {exporting ? 'Exporting…' : 'Export'}
-              </Button>
+              <Button icon="Download" onClick={() => setExportOpen(true)}>Export</Button>
             )}
             {canImport && (
               <Button icon="FileSpreadsheet" onClick={downloadAttTemplate} disabled={!classId}>Template</Button>
             )}
             {canImport && (
-              <Button icon="Upload" onClick={() => importInputRef.current?.click()} disabled={locked || total === 0}>Import</Button>
+              <Button icon="Upload" onClick={() => importInputRef.current?.click()}>Import</Button>
             )}
             {canMark && (
               <Button icon="CheckCheck" onClick={markAllPresent} disabled={locked || total === 0}>
@@ -531,6 +563,35 @@ export default function AttendancePage() {
 
       {/* Hidden file picker for the friendly attendance import */}
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={pickImport} />
+
+      {/* Export scope */}
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export attendance"
+        subtitle="Readable Excel (no IDs) — edit and re-upload to update"
+        width={460}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setExportOpen(false)}>Cancel</Button>
+            <Button kind="primary" icon="Download" onClick={runExport} disabled={exporting}>{exporting ? 'Preparing…' : 'Download'}</Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">Leave the filters blank to export all attendance.</p>
+          <Field label="Class">
+            <Select value={exClass} onChange={(e) => setExClass(e.target.value)}>
+              <option value="">All classes</option>
+              {classes.map((c) => <option key={c.id} value={c.id}>{shortClassName(c.name)}</option>)}
+            </Select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="From"><Input type="date" value={exFrom} onChange={(e) => setExFrom(e.target.value)} /></Field>
+            <Field label="To"><Input type="date" value={exTo} onChange={(e) => setExTo(e.target.value)} /></Field>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
