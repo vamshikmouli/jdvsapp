@@ -12,6 +12,8 @@ import {
   deleteFeeType,
 } from '@/lib/services/fees';
 import { FeeBillingMode } from '@prisma/client';
+import { VILLAGE_VAN_FEES, UNIFORM_ITEMS } from '@/lib/feeStructure';
+import { buildDefaultMatrix } from '@/lib/uniformMatrix';
 
 export async function GET(_req: NextRequest) {
   try {
@@ -88,6 +90,60 @@ export async function POST(req: NextRequest) {
     if (body.action === 'reorderFeeTypes' && Array.isArray(body.order)) {
       await reorderFeeTypes(body.order);
       return NextResponse.json({ ok: true });
+    }
+
+    // Save the uniform price matrix (class × gender) for the active year.
+    if (body.action === 'setUniformMatrix') {
+      const year = await getActiveYear();
+      await prisma.academicYear.update({ where: { id: year.id }, data: { uniformPrices: body.matrix ?? {} } });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Seed the uniform matrix from the school's standard file values, and ensure
+    // the catalogue rows exist (uniform selections reference them by name).
+    if (body.action === 'seedUniformMatrix') {
+      const year = await getActiveYear();
+      const classes = await prisma.schoolClass.findMany({ select: { id: true } });
+      const matrix = buildDefaultMatrix(classes.map((c) => c.id));
+      await prisma.academicYear.update({ where: { id: year.id }, data: { uniformPrices: matrix } });
+
+      const existing = new Set((await prisma.uniformItem.findMany({ where: { yearId: year.id }, select: { name: true } })).map((u) => u.name));
+      let order = await prisma.uniformItem.count({ where: { yearId: year.id } });
+      for (const it of UNIFORM_ITEMS) {
+        if (existing.has(it.name)) continue;
+        await prisma.uniformItem.create({ data: { yearId: year.id, name: it.name, price: 0, order: order++ } });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // Load the school's standard village van fees from feeStructure.ts into the
+    // DB for the active year (skips villages that already exist).
+    if (body.action === 'seedVanDefaults') {
+      const year = await getActiveYear();
+      const existing = new Set((await prisma.vanFee.findMany({ where: { yearId: year.id }, select: { village: true } })).map((v) => v.village));
+      let added = 0;
+      for (const v of VILLAGE_VAN_FEES) {
+        const village = v.village.trim();
+        if (existing.has(village)) continue;
+        await prisma.vanFee.create({ data: { yearId: year.id, village, annualFee: v.fee, monthlyFee: Math.round(v.fee / 12) } });
+        added++;
+      }
+      return NextResponse.json({ ok: true, added });
+    }
+
+    // Load the school's standard uniform items (names) into the DB for the year.
+    if (body.action === 'seedUniformDefaults') {
+      const year = await getActiveYear();
+      const existing = new Set((await prisma.uniformItem.findMany({ where: { yearId: year.id }, select: { name: true } })).map((u) => u.name));
+      let order = await prisma.uniformItem.count({ where: { yearId: year.id } });
+      let added = 0;
+      for (const it of UNIFORM_ITEMS) {
+        const name = it.name.trim();
+        if (existing.has(name)) continue;
+        await prisma.uniformItem.create({ data: { yearId: year.id, name, price: 0, order: order++ } });
+        added++;
+      }
+      return NextResponse.json({ ok: true, added });
     }
 
     // Add a village van fee.

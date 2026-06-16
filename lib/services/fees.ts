@@ -14,14 +14,24 @@ import {
 import { slugify } from '@/lib/utils';
 import type { FeeBillingMode, Gender } from '@prisma/client';
 import {
-  uniformItemsFor,
-  uniformPrice,
   softwareFee,
   ID_CARD_FEE,
   NEW_ADMISSION_FEE,
   UNIFORM_ITEMS,
 } from '@/lib/feeStructure';
+import { itemsForFromMatrix, priceFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
 import type { PayMethod } from '@prisma/client';
+
+// The editable uniform price matrix for a year (falls back to the static file).
+// Tolerant of the column not existing yet (before the prod schema migration).
+async function getUniformMatrix(yearId: string): Promise<UniformMatrix | null> {
+  try {
+    const y = await prisma.academicYear.findUnique({ where: { id: yearId }, select: { uniformPrices: true } });
+    return (y?.uniformPrices as UniformMatrix | null) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function iso(d: Date | null): string | null {
   return d ? d.toISOString().slice(0, 10) : null;
@@ -407,9 +417,11 @@ export async function getFeeConfig(yearId: string) {
     prisma.vanFee.findMany({ where: { yearId }, orderBy: { village: 'asc' }, include: { installments: { orderBy: { n: 'asc' } } } }),
     prisma.uniformItem.findMany({ where: { yearId }, orderBy: { order: 'asc' } }),
   ]);
+  const uniformMatrix = await getUniformMatrix(yearId); // tolerant of pre-migration
   return {
     feeTypes,
     classes,
+    uniformMatrix,
     classFees: classFees.map((cf) => ({
       id: cf.id,
       classId: cf.classId,
@@ -536,10 +548,11 @@ export async function getAssignableOptions(studentId: string, yearId: string) {
     ? await prisma.vanFee.findFirst({ where: { yearId, village: student.village } })
     : null;
 
-  // Current uniform selection (by item key).
+  // Current uniform selection (by item key), priced from the editable matrix.
   const selByName = new Map((assignment?.uniformSelections || []).map((u) => [u.uniformItem.name, u.qty]));
-  const uniformAvail = uniformItemsFor(student.classId, student.gender as Gender).map((it) => ({
-    ...it,
+  const matrix = await getUniformMatrix(yearId);
+  const uniformAvail = itemsForFromMatrix(matrix, student.classId, student.gender as Gender).map((it) => ({
+    key: it.key, name: it.name, price: it.price,
     qty: selByName.get(UNIFORM_ITEMS.find((u) => u.key === it.key)?.name || '') || 0,
   }));
 
@@ -610,7 +623,8 @@ export async function setAssignment(studentId: string, yearId: string, input: As
 
   // Uniform — sum of selected items priced by class + gender; sync selections.
   const picks = (input.uniform || []).filter((u) => u.qty > 0);
-  const uniformTotal = picks.reduce((t, u) => t + (uniformPrice(u.key, student.classId!, student.gender as Gender) || 0) * u.qty, 0);
+  const matrix = await getUniformMatrix(yearId);
+  const uniformTotal = picks.reduce((t, u) => t + (priceFromMatrix(matrix, u.key, student.classId!, student.gender as Gender) || 0) * u.qty, 0);
   await reconcile('uniform', ids.uniform, picks.length > 0 ? { amount: uniformTotal, label: 'Uniform' } : null);
   // selections (only safe to rewrite when uniform head is unpaid — reconcile already guarded amount)
   if (paidOf(byKey('uniform')) === 0) {

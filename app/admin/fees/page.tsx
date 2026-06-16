@@ -7,7 +7,8 @@ import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptySta
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type ChargeStatus, type AccountSummary } from '@/lib/fees';
-import { CLASSES, CLASS_ID_BY_KEY, uniformItemsFor, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, type Gender as FeeGender } from '@/lib/feeStructure';
+import { CLASSES, CLASS_ID_BY_KEY, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, type Gender as FeeGender } from '@/lib/feeStructure';
+import { UNIFORM_ITEM_DEFS, itemsForFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
 import { AccountView, CollectDrawer, AssignDrawer, type Account } from './account-ui';
 
 const VILLAGE_FEE_MAP: Record<string, number> = Object.fromEntries(VILLAGE_VAN_FEES.map((v) => [v.village, v.fee]));
@@ -193,8 +194,11 @@ function CounterTab() {
   const [idCard, setIdCard] = useState(false);
   const [newAdm, setNewAdm] = useState(false);
 
+  const [matrix, setMatrix] = useState<UniformMatrix | null>(null);
+  useEffect(() => { fetch('/api/fees/config').then((r) => (r.ok ? r.json() : null)).then((d) => setMatrix(d?.uniformMatrix ?? null)).catch(() => {}); }, []);
+
   const classId = CLASS_ID_BY_KEY[classKey];
-  const items = useMemo(() => uniformItemsFor(classId, gender), [classId, gender]);
+  const items = useMemo(() => itemsForFromMatrix(matrix, classId, gender), [matrix, classId, gender]);
   // reset quantities when the applicable item set changes
   useEffect(() => { setQty({}); }, [classId, gender]);
 
@@ -893,6 +897,7 @@ interface ConfigData {
   classFees: { id: string; classId: string; feeTypeId: string; amount: number; installments: { id: string; n: number; amount: number; dueDate: string | null }[] }[];
   vanFees: { id: string; village: string; monthlyFee: number; annualFee: number }[];
   uniformItems: { id: string; name: string; price: number; defaultQty: number; active: boolean }[];
+  uniformMatrix: Record<string, Record<string, { M?: number; F?: number; ANY?: number }>> | null;
 }
 
 function SetupTab({ canManage }: { canManage: boolean }) {
@@ -939,6 +944,35 @@ function SetupTab({ canManage }: { canManage: boolean }) {
     setSetupErr('');
     try { await post({ action: 'addUniformItem', name: newUniform.name, price: newUniform.price }); setNewUniform({ name: '', price: '' }); await load(); }
     catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to add'); }
+  };
+  const seedDefaults = async (action: 'seedVanDefaults' | 'seedUniformDefaults') => {
+    setSetupErr('');
+    try { await post({ action }); await load(); }
+    catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to load defaults'); }
+  };
+
+  // Uniform price matrix (class × gender), edited locally then saved.
+  const [matrix, setMatrix] = useState<NonNullable<ConfigData['uniformMatrix']>>({});
+  const [matrixDirty, setMatrixDirty] = useState(false);
+  const [expandedItem, setExpandedItem] = useState('');
+  useEffect(() => { setMatrix(cfg?.uniformMatrix || {}); setMatrixDirty(false); }, [cfg]);
+  const setMatrixCell = (key: string, cid: string, g: 'M' | 'F' | 'ANY', val: string) => {
+    setMatrix((m) => {
+      const cell: any = { ...((m[key] || {})[cid] || {}) };
+      if (val === '') delete cell[g]; else cell[g] = Math.max(0, Math.round(Number(val) || 0));
+      return { ...m, [key]: { ...(m[key] || {}), [cid]: cell } };
+    });
+    setMatrixDirty(true);
+  };
+  const saveMatrix = async () => {
+    setSetupErr('');
+    try { await post({ action: 'setUniformMatrix', matrix }); setMatrixDirty(false); await load(); }
+    catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to save prices'); }
+  };
+  const seedMatrix = async () => {
+    setSetupErr('');
+    try { await post({ action: 'seedUniformMatrix' }); await load(); }
+    catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to load matrix'); }
   };
 
   if (loading || !cfg) return <div className="mt-6 space-y-3 max-w-3xl">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
@@ -1027,35 +1061,64 @@ function SetupTab({ canManage }: { canManage: boolean }) {
               <Input placeholder="Monthly ₹" type="number" value={newVan.monthly} onChange={(e) => setNewVan({ ...newVan, monthly: e.target.value })} className="w-28" />
               <Input placeholder="Annual ₹" type="number" value={newVan.annual} onChange={(e) => setNewVan({ ...newVan, annual: e.target.value })} className="w-28" />
               <Button kind="primary" icon="Plus" onClick={addVan} disabled={!newVan.village.trim()}>Add village</Button>
+              <Button icon="Download" onClick={() => seedDefaults('seedVanDefaults')} className="ml-auto">Load standard villages</Button>
             </div>
           )}
         </Card>
       )}
 
       {section === 'uniform' && (
-        <Card padded={false} title="Uniform items">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              <th className="text-left font-semibold px-6 py-2.5">Item</th>
-              <th className="text-right font-semibold px-6 py-2.5 w-48">Price (₹)</th>
-              {canManage && <th className="w-12" />}
-            </tr></thead>
-            <tbody>
-              {cfg.uniformItems.map((u) => (
-                <tr key={u.id} className="border-t border-slate-100">
-                  <td className="px-6 py-2.5 font-medium text-slate-900">{u.name}</td>
-                  <td className="px-6 py-2 text-right"><InlineAmount value={u.price} disabled={!canManage} onSave={(x) => patch({ kind: 'uniformItem', id: u.id, price: x }).then(load)} /></td>
-                  {canManage && <td className="px-3 text-center"><button onClick={() => removeRow('uniformItem', u.id)} className="text-slate-400 hover:text-danger-600" title="Remove"><Icon name="Trash2" size={15} /></button></td>}
-                </tr>
-              ))}
-              {cfg.uniformItems.length === 0 && <tr><td colSpan={canManage ? 3 : 2} className="px-6 py-4 text-center text-sm text-slate-400">No uniform items yet — add one below.</td></tr>}
-            </tbody>
-          </table>
+        <Card padded={false} title="Uniform prices (class × gender)">
+          <div className="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>Set each item&apos;s price per class. Gendered items (School / White) have separate Boy &amp; Girl prices.</span>
+            {canManage && <Button size="sm" icon="Download" className="ml-auto" onClick={seedMatrix}>Load standard matrix</Button>}
+          </div>
+          <div className="divide-y divide-slate-100">
+            {UNIFORM_ITEM_DEFS.map((it) => {
+              const open = expandedItem === it.key;
+              return (
+                <div key={it.key}>
+                  <button onClick={() => setExpandedItem(open ? '' : it.key)} className="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-50">
+                    <span className="font-medium text-slate-900 inline-flex items-center gap-2">{it.name}{it.gendered && <Chip tone="info">Boy / Girl</Chip>}</span>
+                    <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={16} className="text-slate-400" />
+                  </button>
+                  {open && (
+                    <div className="px-6 pb-4 overflow-x-auto">
+                      <table className="text-sm">
+                        <thead><tr className="text-[11px] uppercase tracking-wide text-slate-500">
+                          <th className="text-left py-1 pr-6">Class</th>
+                          {it.gendered ? <><th className="px-2 text-right">Boy ₹</th><th className="px-2 text-right">Girl ₹</th></> : <th className="px-2 text-right">Price ₹</th>}
+                        </tr></thead>
+                        <tbody>
+                          {cfg.classes.map((c) => {
+                            const cell = matrix[it.key]?.[c.id] || {};
+                            const inp = 'w-24 rounded border border-slate-200 px-2 py-1 text-right tabular-nums focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none disabled:bg-slate-50';
+                            return (
+                              <tr key={c.id} className="border-t border-slate-50">
+                                <td className="py-1 pr-6 text-slate-700 whitespace-nowrap">{c.name}</td>
+                                {it.gendered ? (
+                                  <>
+                                    <td className="px-2 py-1 text-right"><input type="number" disabled={!canManage} value={cell.M ?? ''} onChange={(e) => setMatrixCell(it.key, c.id, 'M', e.target.value)} className={inp} /></td>
+                                    <td className="px-2 py-1 text-right"><input type="number" disabled={!canManage} value={cell.F ?? ''} onChange={(e) => setMatrixCell(it.key, c.id, 'F', e.target.value)} className={inp} /></td>
+                                  </>
+                                ) : (
+                                  <td className="px-2 py-1 text-right"><input type="number" disabled={!canManage} value={cell.ANY ?? ''} onChange={(e) => setMatrixCell(it.key, c.id, 'ANY', e.target.value)} className={inp} /></td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
           {canManage && (
-            <div className="flex flex-wrap items-end gap-2 px-6 py-3 border-t border-slate-100">
-              <Input placeholder="Item name (e.g. Shirt)" value={newUniform.name} onChange={(e) => setNewUniform({ ...newUniform, name: e.target.value })} className="w-52" />
-              <Input placeholder="Price ₹" type="number" value={newUniform.price} onChange={(e) => setNewUniform({ ...newUniform, price: e.target.value })} className="w-28" />
-              <Button kind="primary" icon="Plus" onClick={addUniform} disabled={!newUniform.name.trim()}>Add item</Button>
+            <div className="flex items-center justify-end gap-3 px-6 py-3 border-t border-slate-100">
+              {matrixDirty && <span className="text-xs text-marigold-700">Unsaved changes</span>}
+              <Button kind="primary" icon="Check" onClick={saveMatrix} disabled={!matrixDirty}>Save prices</Button>
             </div>
           )}
         </Card>

@@ -400,6 +400,9 @@ model AcademicYear {
   id          String   @id // "2026-27"
   label       String
   isActive    Boolean  @default(false)
+  // Editable uniform price matrix: { itemKey: { classId: { M?, F?, ANY? } } }.
+  // Falls back to lib/feeStructure.ts when a cell is absent.
+  uniformPrices Json?
   classFees   ClassFee[]
   vanFees     VanFee[]
   uniformItems UniformItem[]
