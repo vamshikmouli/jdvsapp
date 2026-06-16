@@ -50,6 +50,7 @@ export async function PATCH(req: NextRequest) {
       const data: any = {};
       if (body.monthlyFee != null) data.monthlyFee = Math.max(0, Math.round(Number(body.monthlyFee)));
       if (body.annualFee != null) data.annualFee = Math.max(0, Math.round(Number(body.annualFee)));
+      if (body.village != null) data.village = String(body.village).trim();
       await prisma.vanFee.update({ where: { id }, data });
     } else if (kind === 'uniformItem') {
       const data: any = {};
@@ -89,6 +90,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Add a village van fee.
+    if (body.action === 'addVanFee') {
+      const year = await getActiveYear();
+      const village = String(body.village || '').trim();
+      if (!village) return NextResponse.json({ error: 'Village name is required' }, { status: 400 });
+      const exists = await prisma.vanFee.findUnique({ where: { yearId_village: { yearId: year.id, village } } });
+      if (exists) return NextResponse.json({ error: `"${village}" already has a van fee` }, { status: 400 });
+      const vf = await prisma.vanFee.create({
+        data: {
+          yearId: year.id, village,
+          monthlyFee: Math.max(0, Math.round(Number(body.monthlyFee) || 0)),
+          annualFee: Math.max(0, Math.round(Number(body.annualFee) || 0)),
+        },
+      });
+      return NextResponse.json(vf, { status: 201 });
+    }
+
+    // Add a uniform catalogue item.
+    if (body.action === 'addUniformItem') {
+      const year = await getActiveYear();
+      const name = String(body.name || '').trim();
+      if (!name) return NextResponse.json({ error: 'Item name is required' }, { status: 400 });
+      const exists = await prisma.uniformItem.findUnique({ where: { yearId_name: { yearId: year.id, name } } });
+      if (exists) return NextResponse.json({ error: `"${name}" already exists` }, { status: 400 });
+      const count = await prisma.uniformItem.count({ where: { yearId: year.id } });
+      const ui = await prisma.uniformItem.create({
+        data: { yearId: year.id, name, price: Math.max(0, Math.round(Number(body.price) || 0)), order: count },
+      });
+      return NextResponse.json(ui, { status: 201 });
+    }
+
     const validModes = Object.values(FeeBillingMode);
     if (!body.name || !validModes.includes(body.billingMode)) {
       return NextResponse.json({ error: 'name and a valid billingMode are required' }, { status: 400 });
@@ -115,8 +147,15 @@ export async function DELETE(req: NextRequest) {
     }
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
+    const kind = searchParams.get('kind');
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
-    await deleteFeeType(id);
+    if (kind === 'vanFee') {
+      await prisma.vanFee.delete({ where: { id } });
+    } else if (kind === 'uniformItem') {
+      await prisma.uniformItem.delete({ where: { id } });
+    } else {
+      await deleteFeeType(id);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('fees/config DELETE', err);

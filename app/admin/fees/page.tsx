@@ -916,6 +916,30 @@ function SetupTab({ canManage }: { canManage: boolean }) {
   const patch = async (body: any) => {
     await fetch('/api/fees/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   };
+  const post = async (body: any) => {
+    const r = await fetch('/api/fees/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Failed'); }
+  };
+  const removeRow = async (kind: string, id: string) => {
+    await fetch(`/api/fees/config?kind=${kind}&id=${id}`, { method: 'DELETE' });
+    await load();
+  };
+
+  const [newVan, setNewVan] = useState({ village: '', monthly: '', annual: '' });
+  const [newUniform, setNewUniform] = useState({ name: '', price: '' });
+  const [setupErr, setSetupErr] = useState('');
+  const addVan = async () => {
+    if (!newVan.village.trim()) return;
+    setSetupErr('');
+    try { await post({ action: 'addVanFee', village: newVan.village, monthlyFee: newVan.monthly, annualFee: newVan.annual }); setNewVan({ village: '', monthly: '', annual: '' }); await load(); }
+    catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to add'); }
+  };
+  const addUniform = async () => {
+    if (!newUniform.name.trim()) return;
+    setSetupErr('');
+    try { await post({ action: 'addUniformItem', name: newUniform.name, price: newUniform.price }); setNewUniform({ name: '', price: '' }); await load(); }
+    catch (e) { setSetupErr(e instanceof Error ? e.message : 'Failed to add'); }
+  };
 
   if (loading || !cfg) return <div className="mt-6 space-y-3 max-w-3xl">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
 
@@ -972,14 +996,17 @@ function SetupTab({ canManage }: { canManage: boolean }) {
         </Card>
       )}
 
+      {setupErr && <div className="mb-3 px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{setupErr}</div>}
+
       {section === 'van' && (
         <Card padded={false} title="Van fees by village">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[460px]">
+          <table className="w-full text-sm min-w-[520px]">
             <thead><tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               <th className="text-left font-semibold px-6 py-2.5">Village</th>
               <th className="text-right font-semibold px-6 py-2.5 w-40">Monthly (₹)</th>
               <th className="text-right font-semibold px-6 py-2.5 w-40">Annual (₹)</th>
+              {canManage && <th className="w-12" />}
             </tr></thead>
             <tbody>
               {cfg.vanFees.map((v) => (
@@ -987,11 +1014,21 @@ function SetupTab({ canManage }: { canManage: boolean }) {
                   <td className="px-6 py-2.5 font-medium text-slate-900">{v.village}</td>
                   <td className="px-6 py-2 text-right"><InlineAmount value={v.monthlyFee} disabled={!canManage} onSave={(x) => patch({ kind: 'vanFee', id: v.id, monthlyFee: x }).then(load)} /></td>
                   <td className="px-6 py-2 text-right"><InlineAmount value={v.annualFee} disabled={!canManage} onSave={(x) => patch({ kind: 'vanFee', id: v.id, annualFee: x }).then(load)} /></td>
+                  {canManage && <td className="px-3 text-center"><button onClick={() => removeRow('vanFee', v.id)} className="text-slate-400 hover:text-danger-600" title="Remove"><Icon name="Trash2" size={15} /></button></td>}
                 </tr>
               ))}
+              {cfg.vanFees.length === 0 && <tr><td colSpan={canManage ? 4 : 3} className="px-6 py-4 text-center text-sm text-slate-400">No van fees yet — add a village below.</td></tr>}
             </tbody>
           </table>
           </div>
+          {canManage && (
+            <div className="flex flex-wrap items-end gap-2 px-6 py-3 border-t border-slate-100">
+              <Input placeholder="Village" value={newVan.village} onChange={(e) => setNewVan({ ...newVan, village: e.target.value })} className="w-40" />
+              <Input placeholder="Monthly ₹" type="number" value={newVan.monthly} onChange={(e) => setNewVan({ ...newVan, monthly: e.target.value })} className="w-28" />
+              <Input placeholder="Annual ₹" type="number" value={newVan.annual} onChange={(e) => setNewVan({ ...newVan, annual: e.target.value })} className="w-28" />
+              <Button kind="primary" icon="Plus" onClick={addVan} disabled={!newVan.village.trim()}>Add village</Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -1001,16 +1038,26 @@ function SetupTab({ canManage }: { canManage: boolean }) {
             <thead><tr className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               <th className="text-left font-semibold px-6 py-2.5">Item</th>
               <th className="text-right font-semibold px-6 py-2.5 w-48">Price (₹)</th>
+              {canManage && <th className="w-12" />}
             </tr></thead>
             <tbody>
               {cfg.uniformItems.map((u) => (
                 <tr key={u.id} className="border-t border-slate-100">
                   <td className="px-6 py-2.5 font-medium text-slate-900">{u.name}</td>
                   <td className="px-6 py-2 text-right"><InlineAmount value={u.price} disabled={!canManage} onSave={(x) => patch({ kind: 'uniformItem', id: u.id, price: x }).then(load)} /></td>
+                  {canManage && <td className="px-3 text-center"><button onClick={() => removeRow('uniformItem', u.id)} className="text-slate-400 hover:text-danger-600" title="Remove"><Icon name="Trash2" size={15} /></button></td>}
                 </tr>
               ))}
+              {cfg.uniformItems.length === 0 && <tr><td colSpan={canManage ? 3 : 2} className="px-6 py-4 text-center text-sm text-slate-400">No uniform items yet — add one below.</td></tr>}
             </tbody>
           </table>
+          {canManage && (
+            <div className="flex flex-wrap items-end gap-2 px-6 py-3 border-t border-slate-100">
+              <Input placeholder="Item name (e.g. Shirt)" value={newUniform.name} onChange={(e) => setNewUniform({ ...newUniform, name: e.target.value })} className="w-52" />
+              <Input placeholder="Price ₹" type="number" value={newUniform.price} onChange={(e) => setNewUniform({ ...newUniform, price: e.target.value })} className="w-28" />
+              <Button kind="primary" icon="Plus" onClick={addUniform} disabled={!newUniform.name.trim()}>Add item</Button>
+            </div>
+          )}
         </Card>
       )}
 
