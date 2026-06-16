@@ -190,103 +190,163 @@ export function EntryTab() {
 
       {uploadOpen && grid && (
         <UploadMarksModal
-          assessmentId={aId}
-          classId={cId}
-          sectionId={secId || null}
           assessmentName={grid.assessment.name}
           className={shortClass(grid.class.name)}
           sectionName={grid.section?.name || null}
           subjects={grid.subjects.filter((s) => s.canEdit).map((s) => ({ id: s.id, name: s.name, max: s.max }))}
           students={grid.students}
           onClose={() => setUploadOpen(false)}
-          onApplied={() => { setUploadOpen(false); setToast('Marks imported as draft — review and submit'); loadGrid(); setTimeout(() => setToast(''), 3500); }}
+          onFill={(filled, summary) => {
+            setVals((v) => {
+              const nv = { ...v };
+              for (const subId of Object.keys(filled)) nv[subId] = { ...(nv[subId] || {}), ...filled[subId] };
+              return nv;
+            });
+            setUploadOpen(false);
+            setToast(summary);
+            setTimeout(() => setToast(''), 4500);
+          }}
         />
       )}
     </div>
   );
 }
 
-/* ---------------- Upload marks (typed PDF / Excel → draft) ---------------- */
+/* ---------------- Upload marks (all-subjects Excel/CSV → grid) ---------------- */
 interface UploadSubject { id: string; name: string; max: number }
 interface UploadStudent { id: string; name: string; roll: string | null }
-interface UploadPreview {
-  roster: number; matched: number; maxMarks: number;
-  rows: { studentId: string; name: string; roll: string | null; marks: number | null; isAbsent: boolean; matchedBy: 'admission' | 'roll' | 'name' | null }[];
-  extraneous: string[];
-}
+
+const uNorm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const uLetters = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '');
 
 function UploadMarksModal({
-  assessmentId, classId, sectionId, assessmentName, className, sectionName, subjects, students, onClose, onApplied,
+  assessmentName, className, sectionName, subjects, students, onClose, onFill,
 }: {
-  assessmentId: string; classId: string; sectionId: string | null;
   assessmentName: string; className: string; sectionName: string | null;
   subjects: UploadSubject[]; students: UploadStudent[];
-  onClose: () => void; onApplied: () => void;
+  onClose: () => void;
+  onFill: (filled: Record<string, Record<string, string>>, summary: string) => void;
 }) {
-  const [subjectId, setSubjectId] = useState(subjects[0]?.id || '');
-  const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [preview, setPreview] = useState<UploadPreview | null>(null);
+  const [preview, setPreview] = useState<{
+    filled: Record<string, Record<string, string>>;
+    perSubject: { name: string; count: number }[];
+    subjectsMissing: string[];
+    columnsUnmatched: string[];
+    studentsMatched: number;
+    rowsUnmatched: number;
+    cells: number;
+  } | null>(null);
 
-  const sub = subjects.find((s) => s.id === subjectId);
-
+  // Template: Admission No + Roll + Name, then one column per subject.
   const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet(students.map((s, i) => ({ 'Admission No': s.id, 'Roll': s.roll ?? i + 1, 'Name': s.name, 'Marks': '' })));
+    const data = students.map((s, i) => {
+      const o: Record<string, string | number> = { 'Admission No': s.id, 'Roll': s.roll ?? i + 1, 'Name': s.name };
+      subjects.forEach((su) => { o[su.name] = ''; });
+      return o;
+    });
+    const ws = XLSX.utils.json_to_sheet(data, { header: ['Admission No', 'Roll', 'Name', ...subjects.map((s) => s.name)] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Marks');
-    XLSX.writeFile(wb, `marks-${className}-${(sub?.name || 'subject').replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `marks-${className}-${assessmentName}.xlsx`.replace(/\s+/g, '_'));
   };
 
   const copyPrompt = async () => {
-    const text = `You are given a photo or scan of a handwritten marks sheet for "${sub?.name}" (${assessmentName}), Class ${className}${sectionName ? ' ' + sectionName : ''}, maximum marks ${sub?.max}.
-Transcribe it into a plain text table with ONE LINE PER STUDENT in exactly this format (no extra text, no markdown):
-Admission No | Name | Marks
-Rules:
+    const header = ['Admission No', 'Name', ...subjects.map((s) => s.name)].join(',');
+    const maxes = subjects.map((s) => `${s.name}=${s.max}`).join(', ');
+    const text = `You are given a photo/scan of a handwritten marks sheet (${assessmentName}, Class ${className}${sectionName ? ' ' + sectionName : ''}).
+Output ONLY a CSV table. The first line must be exactly this header:
+${header}
+Then one line per student. Rules:
 - Copy the Admission No exactly as printed.
-- Put the handwritten mark in the Marks column. Write AB if the student was absent.
-- Do not invent students or marks.
-Then export or print the result as a PDF and upload that PDF.`;
+- Fill each subject column with that student's mark; write AB if absent; leave blank if no mark is given.
+- Max marks per subject: ${maxes}.
+- Do not invent students or marks, and add no extra text.
+Save the result as a .csv (or Excel) file and upload it.`;
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
   };
 
-  const send = async (apply: boolean, f: File | null) => {
-    if (!f || !subjectId) return;
-    if (apply) setApplying(true); else setBusy(true);
-    setError('');
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setError(''); setPreview(null); setFileName(f.name);
     try {
-      const fd = new FormData();
-      fd.append('file', f);
-      fd.append('assessmentId', assessmentId);
-      fd.append('classId', classId);
-      if (sectionId) fd.append('sectionId', sectionId);
-      fd.append('subjectId', subjectId);
-      fd.append('apply', apply ? 'true' : 'false');
-      const r = await fetch('/api/marks/upload', { method: 'POST', body: fd });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || 'Upload failed');
-      if (apply) { onApplied(); return; }
-      setPreview(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed');
-      setPreview(null);
-    } finally {
-      setBusy(false); setApplying(false);
+      const buf = await f.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (rows.length === 0) throw new Error('The sheet has no rows.');
+      const headers = Object.keys(rows[0]);
+
+      // Match each header to id/name/roll or a subject (by name).
+      const idCols: string[] = [], nameCols: string[] = [];
+      const colToSubject: Record<string, UploadSubject> = {};
+      const columnsUnmatched: string[] = [];
+      const matchSubject = (h: string): UploadSubject | undefined => {
+        const hn = uLetters(h);
+        if (!hn) return undefined;
+        return (
+          subjects.find((s) => uLetters(s.name) === hn) ||
+          subjects.find((s) => uLetters(s.name).startsWith(hn) || hn.startsWith(uLetters(s.name))) ||
+          subjects.find((s) => uLetters(s.name).slice(0, 4) === hn.slice(0, 4) && hn.length >= 4)
+        );
+      };
+      for (const h of headers) {
+        const hn = uNorm(h);
+        if (/ADMISSION|ADMNO|ADM|^ID$/.test(hn)) { idCols.push(h); continue; }
+        if (/^NAME$|STUDENT/.test(hn)) { nameCols.push(h); continue; }
+        if (/^ROLL/.test(hn)) continue;
+        const su = matchSubject(h);
+        if (su) colToSubject[h] = su; else columnsUnmatched.push(h);
+      }
+
+      const byId = new Map(students.map((s) => [s.id, s]));
+      const byName = new Map(students.map((s) => [uLetters(s.name), s]));
+      const filled: Record<string, Record<string, string>> = {};
+      const perSubjectCount: Record<string, number> = {};
+      let studentsMatched = 0, rowsUnmatched = 0, cells = 0;
+
+      for (const r of rows) {
+        let stu: UploadStudent | undefined;
+        for (const c of idCols) { const v = String(r[c] ?? '').trim(); if (v && byId.has(v)) { stu = byId.get(v); break; } }
+        if (!stu) for (const c of nameCols) { const v = uLetters(r[c]); if (v && byName.has(v)) { stu = byName.get(v); break; } }
+        if (!stu) { rowsUnmatched++; continue; }
+        studentsMatched++;
+        for (const [col, su] of Object.entries(colToSubject)) {
+          const raw = String(r[col] ?? '').trim();
+          if (raw === '') continue;
+          let cell: string;
+          if (/^a/i.test(raw)) cell = 'AB';
+          else { const n = Number(raw.replace(/[^0-9.]/g, '')); if (isNaN(n)) continue; cell = String(Math.round(n)); }
+          (filled[su.id] ||= {})[stu.id] = cell;
+          perSubjectCount[su.name] = (perSubjectCount[su.name] || 0) + 1;
+          cells++;
+        }
+      }
+
+      const matchedSubjectIds = new Set(Object.values(colToSubject).map((s) => s.id));
+      setPreview({
+        filled,
+        perSubject: Object.entries(perSubjectCount).map(([name, count]) => ({ name, count })),
+        subjectsMissing: subjects.filter((s) => !matchedSubjectIds.has(s.id)).map((s) => s.name),
+        columnsUnmatched,
+        studentsMatched,
+        rowsUnmatched,
+        cells,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the file.');
     }
   };
 
-  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] || null;
-    e.target.value = '';
-    setPreview(null); setError('');
-    setFile(f); setFileName(f?.name || '');
-    if (f) send(false, f);
+  const apply = () => {
+    if (!preview) return;
+    const summary = `Imported ${preview.cells} mark${preview.cells === 1 ? '' : 's'} across ${preview.perSubject.length} subject${preview.perSubject.length === 1 ? '' : 's'} — review and submit.`;
+    onFill(preview.filled, summary);
   };
-
-  const blanks = preview ? preview.rows.filter((r) => !r.matchedBy).map((r) => r.name) : [];
 
   return (
     <Modal
@@ -298,8 +358,8 @@ Then export or print the result as a PDF and upload that PDF.`;
       footer={
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" icon="Check" onClick={() => send(true, file)} disabled={!preview || applying || preview.matched === 0}>
-            {applying ? 'Importing…' : `Import ${preview?.matched || 0} as draft`}
+          <Button kind="primary" icon="Check" onClick={apply} disabled={!preview || preview.cells === 0}>
+            {preview ? `Fill grid (${preview.cells})` : 'Fill grid'}
           </Button>
         </div>
       }
@@ -308,17 +368,11 @@ Then export or print the result as a PDF and upload that PDF.`;
         <EmptyState icon="Lock" title="Nothing to upload" body="All subjects here are approved and locked." />
       ) : (
         <div className="space-y-4">
-          <Field label="Subject">
-            <Select value={subjectId} onChange={(e) => { setSubjectId(e.target.value); setPreview(null); }}>
-              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name} (max {s.max})</option>)}
-            </Select>
-          </Field>
-
           <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600 space-y-1.5">
-            <div className="font-semibold text-slate-700">How it works</div>
-            <div>1. <b>Download the template</b> (or write marks on the printed sheet).</div>
-            <div>2. <b>Handwritten?</b> Give your scan + the <b>copied prompt</b> to Gemini or Claude to get a clean typed PDF.</div>
-            <div>3. <b>Upload</b> the typed PDF (or the filled Excel). Marks are matched by Admission No and saved as a draft for you to review.</div>
+            <div className="font-semibold text-slate-700">All subjects in one sheet</div>
+            <div>1. <b>Download the template</b> — one row per student, one column per subject ({subjects.map((s) => s.name).join(', ')}).</div>
+            <div>2. <b>Handwritten?</b> Give your scan + the <b>copied prompt</b> to Gemini/Claude to get a CSV, then save it.</div>
+            <div>3. <b>Upload</b> the filled Excel/CSV — marks are matched by Admission No and fill the grid for you to review &amp; submit.</div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" icon="Download" onClick={downloadTemplate}>Template</Button>
               <Button size="sm" icon={copied ? 'Check' : 'Copy'} onClick={copyPrompt}>{copied ? 'Copied' : 'Copy AI prompt'}</Button>
@@ -326,33 +380,31 @@ Then export or print the result as a PDF and upload that PDF.`;
           </div>
 
           <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-slate-300 text-sm text-slate-600 cursor-pointer hover:bg-slate-50">
-            <Icon name="Upload" size={16} /> {busy ? 'Reading…' : fileName || 'Choose PDF / Excel file'}
-            <input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onPick} disabled={busy || applying} />
+            <Icon name="Upload" size={16} /> {fileName || 'Choose Excel / CSV file'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onPick} />
           </label>
 
           {error && <div className="px-3 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{error}</div>}
 
           {preview && (
-            <div>
-              <div className={`px-3 py-2 rounded-md text-sm mb-2 ${preview.matched > 0 ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
-                Matched <b>{preview.matched}</b> of {preview.roster} students (max {preview.maxMarks}).
+            <div className="space-y-2">
+              <div className={`px-3 py-2 rounded-md text-sm ${preview.cells > 0 ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
+                <b>{preview.cells}</b> marks · {preview.studentsMatched} students matched
+                {preview.rowsUnmatched > 0 ? ` · ${preview.rowsUnmatched} row(s) unmatched` : ''}.
               </div>
-              <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-50">
-                {preview.rows.map((r) => (
-                  <div key={r.studentId} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                    <span className="text-slate-700 truncate">{r.name}</span>
-                    <span className="flex items-center gap-2 flex-shrink-0">
-                      {r.matchedBy
-                        ? <span className="tabular-nums font-medium text-slate-900">{r.isAbsent ? 'AB' : r.marks}</span>
-                        : <span className="text-[11px] text-amber-600">no mark</span>}
-                      {r.matchedBy && r.matchedBy !== 'admission' && <span className="text-[10px] text-slate-400">by {r.matchedBy}</span>}
-                    </span>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-50 max-h-40 overflow-y-auto">
+                {preview.perSubject.map((s) => (
+                  <div key={s.name} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                    <span className="text-slate-700">{s.name}</span>
+                    <span className="text-slate-500 tabular-nums">{s.count} marks</span>
                   </div>
                 ))}
               </div>
-              {blanks.length > 0 && <div className="text-[11px] text-amber-700 mt-2">{blanks.length} student{blanks.length === 1 ? '' : 's'} got no mark — fill them in the grid after importing.</div>}
-              {preview.extraneous.length > 0 && (
-                <div className="text-[11px] text-slate-500 mt-1">{preview.extraneous.length} line(s) in the file didn’t match any student.</div>
+              {preview.subjectsMissing.length > 0 && (
+                <div className="text-[11px] text-amber-700">No column matched: {preview.subjectsMissing.join(', ')}.</div>
+              )}
+              {preview.columnsUnmatched.length > 0 && (
+                <div className="text-[11px] text-slate-500">Ignored columns: {preview.columnsUnmatched.join(', ')}.</div>
               )}
             </div>
           )}
