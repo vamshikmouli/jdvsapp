@@ -26,6 +26,17 @@ export default function LoginPage() {
   const [error, setError] = React.useState('');
   const [logoSrc, setLogoSrc] = React.useState('/uploads/Logofinal.png');
   const [logoOk, setLogoOk] = React.useState(true);
+  const [checking, setChecking] = React.useState(true);
+
+  // Already signed in? Skip the login form and go straight to the home page.
+  React.useEffect(() => {
+    getSession()
+      .then((session) => {
+        if (session?.user) router.replace(homeForSurface((session.user as any)?.surface as string | undefined));
+        else setChecking(false);
+      })
+      .catch(() => setChecking(false));
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +57,14 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (checking) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-purple-100/60">
+        <Icon name="Loader2" size={28} className="animate-spin text-purple-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-purple-50 via-white to-purple-100/60 px-4 py-8">
