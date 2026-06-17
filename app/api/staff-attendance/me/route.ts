@@ -1,0 +1,59 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
+import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
+import { localDayInfo } from '@/lib/staffAttendance/rules';
+
+// GET /api/staff-attendance/me
+// Today's punch state + recent history + enrollment status for the signed-in
+// staff member. Drives the "My attendance" self-punch screen.
+export async function GET() {
+  try {
+    const session = await requirePermission('STAFF_ATTENDANCE_MARK');
+    const staffId = (session.user as any)?.staffId as string | undefined;
+    if (!staffId) {
+      return NextResponse.json({ error: 'No staff profile linked to this account' }, { status: 400 });
+    }
+
+    const cfg = await loadStaffAttConfig();
+    const todayKey = localDayInfo(new Date(), cfg.timezone).dateKey;
+    const todayDate = new Date(`${todayKey}T00:00:00Z`);
+
+    const [cred, today, punchesToday, recent] = await Promise.all([
+      prisma.staffCredential.findFirst({
+        where: { staffId, active: true },
+        select: { deviceName: true, createdAt: true, lastUsedAt: true },
+      }),
+      prisma.staffAttendanceDay.findUnique({
+        where: { staffId_date: { staffId, date: todayDate } },
+      }),
+      prisma.staffPunch.findMany({
+        where: { staffId, at: { gte: new Date(`${todayKey}T00:00:00Z`) } },
+        orderBy: { at: 'asc' },
+        select: { type: true, at: true, source: true },
+      }),
+      prisma.staffAttendanceDay.findMany({
+        where: { staffId },
+        orderBy: { date: 'desc' },
+        take: 14,
+      }),
+    ]);
+
+    const lastPunch = punchesToday[punchesToday.length - 1];
+    const open = lastPunch?.type === 'IN';
+
+    return NextResponse.json({
+      enabled: cfg.enabled,
+      configured: cfg.geofence.schoolLat != null && cfg.geofence.schoolLng != null,
+      enrolled: !!cred,
+      device: cred ?? null,
+      nextAction: open ? 'OUT' : 'IN',
+      today: today ?? null,
+      punchesToday: punchesToday.filter((p) => localDayInfo(p.at, cfg.timezone).dateKey === todayKey),
+      recent,
+    });
+  } catch (err) {
+    const { status, body } = authErrorResponse(err);
+    return NextResponse.json(body, { status });
+  }
+}

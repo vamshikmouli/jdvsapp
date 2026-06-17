@@ -51,6 +51,17 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    group: 'Staff attendance',
+    icon: 'Fingerprint',
+    permissions: [
+      { key: 'STAFF_ATTENDANCE_MARK', label: 'Punch in / out', desc: 'Record own staff attendance via phone biometric or the shared kiosk' },
+      { key: 'STAFF_ATTENDANCE_VIEW', label: 'View staff attendance', desc: 'See the daily board, per-staff history and reports' },
+      { key: 'STAFF_ATTENDANCE_MANAGE', label: 'Manage staff attendance', desc: 'Regularize entries and reset a staff member’s device / PIN' },
+      { key: 'STAFF_ATTENDANCE_CONFIG', label: 'Configure staff attendance', desc: 'Set the geofence, shift timings and weekly-offs / holidays' },
+      { key: 'LEAVE_APPROVE', label: 'Approve leave', desc: 'Approve or reject staff leave requests (anyone who can punch may apply)' },
+    ],
+  },
+  {
     group: 'Fees',
     icon: 'CreditCard',
     permissions: [
@@ -160,7 +171,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     name: 'Teacher',
     description: 'Marks attendance for assigned classes.',
     baseSurface: 'TEACHER',
-    permissions: ['STUDENTS_VIEW', 'CLASSES_VIEW', 'ATTENDANCE_VIEW', 'ATTENDANCE_MARK'],
+    permissions: ['STUDENTS_VIEW', 'CLASSES_VIEW', 'ATTENDANCE_VIEW', 'ATTENDANCE_MARK', 'STAFF_ATTENDANCE_MARK'],
   },
   {
     key: 'accountant',
@@ -170,6 +181,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     permissions: [
       'STUDENTS_VIEW',
       'ATTENDANCE_VIEW',
+      'STAFF_ATTENDANCE_MARK',
       'FEES_VIEW',
       'FEES_COLLECT',
       'FEES_RECEIPT',

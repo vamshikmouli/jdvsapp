@@ -31,6 +31,11 @@ enum Permission {
   ATTENDANCE_VIEW
   ATTENDANCE_MARK
   ATTENDANCE_LOCK
+  STAFF_ATTENDANCE_MARK   // self: punch IN/OUT (biometric/kiosk)
+  STAFF_ATTENDANCE_VIEW   // see staff attendance board, history, reports
+  STAFF_ATTENDANCE_MANAGE // regularize entries, reset a staff device/PIN
+  STAFF_ATTENDANCE_CONFIG // set geofence, shift timings, weekly-offs/holidays
+  LEAVE_APPROVE           // approve/reject staff leave requests (apply is STAFF_ATTENDANCE_MARK)
   FEES_VIEW
   FEES_COLLECT
   FEES_RECEIPT
@@ -192,6 +197,18 @@ model Staff {
   experience            String?
   classes     SchoolClass[] @relation("ClassTeachers")
   archived    Boolean  @default(false) // soft-delete: hidden until restored
+
+  // Staff attendance (self-punch). PIN is for the shared on-campus kiosk used by
+  // staff who don't carry a phone; phone staff use a WebAuthn credential instead.
+  pinHash             String?
+  pinAttempts         Int       @default(0)
+  pinLockedUntil      DateTime?
+  attCredentials      StaffCredential[]
+  attPunches          StaffPunch[]
+  attDays             StaffAttendanceDay[]
+  leaveRequests       LeaveRequest[]
+  leaveEntitlements   LeaveEntitlement[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -345,6 +362,161 @@ model AttendanceRecord {
   @@unique([sessionId, studentId])
 }
 
+// ========== Staff Attendance ==========
+// Staff punch IN/OUT on their phone (WebAuthn biometric) or a shared on-campus
+// kiosk (staff ID + PIN). Every punch is geofenced to the school. A per-day
+// roll-up (StaffAttendanceDay) is recomputed on each punch for fast reporting.
+
+enum PunchType {
+  IN
+  OUT
+}
+
+enum PunchSource {
+  BIOMETRIC // phone WebAuthn passkey
+  KIOSK     // shared on-campus device + PIN
+  MANUAL    // admin entered / regularized
+}
+
+enum StaffDayStatus {
+  PRESENT
+  LATE       // present but first IN after shiftStart+grace (kept as a flag too)
+  HALF_DAY
+  ABSENT
+  LEAVE
+  HOLIDAY
+  WEEKLY_OFF
+}
+
+// A WebAuthn passkey bound to one staff member + one phone (device binding).
+// Only one active credential per staff; switching phones needs an admin reset.
+model StaffCredential {
+  id           String   @id @default(cuid())
+  staffId      String
+  staff        Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  credentialId String   @unique // base64url of the raw credential id
+  publicKey    Bytes              // COSE public key
+  counter      BigInt   @default(0)
+  transports   String?            // JSON array of transports, if provided
+  deviceName   String?            // best-effort label from user agent
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+
+  @@index([staffId])
+}
+
+// Short-lived WebAuthn challenge store (registration + authentication ceremonies).
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  staffId   String
+  challenge String
+  kind      String   // "register" | "authenticate"
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([staffId])
+  @@index([expiresAt])
+}
+
+// One row per punch event.
+model StaffPunch {
+  id          String      @id @default(cuid())
+  staffId     String
+  staff       Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  type        PunchType
+  at          DateTime    @default(now())
+  source      PunchSource
+  // Captured geolocation + geofence verdict at punch time.
+  lat         Float?
+  lng         Float?
+  accuracy    Float?      // GPS accuracy in metres, if reported
+  distanceM   Float?      // distance from school centre, metres
+  withinFence Boolean     @default(true)
+  credentialId String?    // StaffCredential.credentialId used (BIOMETRIC)
+  deviceInfo  String?     // user agent / kiosk label
+  note        String?     // reason when source=MANUAL
+  createdById String?     // admin user id for MANUAL entries
+  createdAt   DateTime    @default(now())
+
+  @@index([staffId, at])
+}
+
+// Per-staff per-day roll-up, recomputed from punches on each write.
+model StaffAttendanceDay {
+  id           String         @id @default(cuid())
+  staffId      String
+  staff        Staff          @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date         DateTime       @db.Date
+  firstIn      DateTime?
+  lastOut      DateTime?
+  workedMinutes Int           @default(0)
+  status       StaffDayStatus @default(ABSENT)
+  late         Boolean        @default(false)
+  lateMinutes  Int            @default(0)
+  locked       Boolean        @default(false) // payroll close
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([staffId, date])
+  @@index([date])
+}
+
+// Staff leave requests: staff apply, an approver decides. On approval the
+// affected StaffAttendanceDay rows are stamped LEAVE (or HALF_DAY).
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  staffId      String
+  staff        Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  type         LeaveType
+  fromDate     DateTime    @db.Date
+  toDate       DateTime    @db.Date
+  halfDay      Boolean     @default(false) // single-day half-day leave
+  days         Float       @default(1)     // working out, 0.5 increments
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  decidedById  String?     // user id of approver/rejector
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([staffId, status])
+  @@index([status])
+}
+
+// Optional per-staff override of the annual leave quota for one leave year.
+// Absent a row, the school-wide default (Settings.leaveQuotas) applies.
+// `leaveYear` is the start calendar year of the leave year (see leaveYearStartMonth).
+model LeaveEntitlement {
+  id        String    @id @default(cuid())
+  staffId   String
+  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  leaveYear Int
+  type      LeaveType
+  days      Float
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([staffId, leaveYear, type])
+  @@index([staffId])
+}
+
 // ========== Settings ==========
 model Settings {
   id              String @id @default("singleton")
@@ -367,6 +539,22 @@ model Settings {
   afternoonClose  String  @default("14:00")
   autoLock        Boolean @default(true)
   notifyAbsence   Boolean @default(true)
+  // Staff attendance — geofence + work schedule (drives late/half-day rules)
+  staffAttEnabled   Boolean @default(false)
+  schoolLat         Float?
+  schoolLng         Float?
+  geofenceRadiusM   Int     @default(150)   // allowed distance from school centre
+  gpsAccuracyMaxM   Int     @default(100)   // reject punches with worse GPS accuracy
+  shiftStart        String  @default("09:00")
+  shiftEnd          String  @default("16:00")
+  lateGraceMins     Int     @default(15)    // IN after shiftStart+grace => late
+  halfDayMins       Int     @default(210)   // worked >= this (but < full) => half day
+  fullDayMins       Int     @default(420)   // worked >= this => full present
+  weeklyOffDays     Json?                   // array of weekday numbers, 0=Sun..6=Sat
+  // Leave quotas — school-wide annual entitlement per type (0 = no limit).
+  // { CASUAL, SICK, EARNED, UNPAID, OTHER }. Per-staff overrides via LeaveEntitlement.
+  leaveQuotas         Json?
+  leaveYearStartMonth Int   @default(6)     // 1=Jan..12=Dec; 6=June (Indian school year)
   // Fees — receipt + van billing config
   receiptPrefix    String  @default("RCPT")
   receiptNextNo    Int     @default(1)

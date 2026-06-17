@@ -9,6 +9,8 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }, // always
       { id: 'attendance', label: 'Attendance', icon: 'Calendar', perm: 'ATTENDANCE_VIEW' },
       { id: 'marks', label: 'Marks', icon: 'ClipboardList', perm: 'MARKS_VIEW' },
+      { id: 'my-attendance', label: 'My attendance', icon: 'Fingerprint', perm: 'STAFF_ATTENDANCE_MARK' },
+      { id: 'leave', label: 'Leave', icon: 'CalendarOff', perm: 'STAFF_ATTENDANCE_MARK' },
     ],
   },
   {
@@ -18,6 +20,7 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_MANAGE' }, // admin-only by default; hidden for teacher/accountant
       { id: 'classes', label: 'Classes', icon: 'BookOpen', perm: 'CLASSES_VIEW' },
       { id: 'staff', label: 'Staff', icon: 'UserCog', perm: 'STAFF_VIEW' },
+      { id: 'staff-attendance', label: 'Staff attendance', icon: 'CalendarClock', perm: 'STAFF_ATTENDANCE_VIEW' },
       { id: 'fees', label: 'Fees', icon: 'CreditCard', perm: 'FEES_VIEW' },
     ],
   },

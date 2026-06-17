@@ -1,0 +1,124 @@
+// Core staff-attendance writes: record a punch (auto-deciding IN vs OUT) and
+// recompute the per-day roll-up. Shared by the biometric, kiosk and manual
+// (admin regularize) paths so the rules live in exactly one place.
+import { prisma } from '@/lib/db';
+import type { PunchSource, PunchType, StaffDayStatus } from '@prisma/client';
+import { loadStaffAttConfig } from './config';
+import { computeDay, localDayInfo, type PunchLite } from './rules';
+
+/** UTC window that safely brackets a local calendar day (handles tz offset). */
+function dayWindow(dateKey: string): { gte: Date; lt: Date } {
+  const base = new Date(`${dateKey}T00:00:00Z`).getTime();
+  return { gte: new Date(base - 18 * 3600_000), lt: new Date(base + 42 * 3600_000) };
+}
+
+async function punchesForLocalDay(staffId: string, dateKey: string, tz: string) {
+  const win = dayWindow(dateKey);
+  const rows = await prisma.staffPunch.findMany({
+    where: { staffId, at: { gte: win.gte, lt: win.lt } },
+    orderBy: { at: 'asc' },
+  });
+  return rows.filter((p) => localDayInfo(p.at, tz).dateKey === dateKey);
+}
+
+/** Recompute and persist the StaffAttendanceDay roll-up for one local day. */
+export async function recomputeDay(
+  staffId: string,
+  dateKey: string,
+  opts: { clearOverride?: boolean } = {}
+) {
+  const cfg = await loadStaffAttConfig();
+  const rows = await punchesForLocalDay(staffId, dateKey, cfg.timezone);
+
+  const existing = await prisma.staffAttendanceDay.findUnique({
+    where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
+  });
+  // Preserve an admin-set LEAVE/HOLIDAY override when no punches contradict it,
+  // unless the caller explicitly clears it (e.g. a leave was rejected/cancelled).
+  const override =
+    !opts.clearOverride && existing && (existing.status === 'LEAVE' || existing.status === 'HOLIDAY')
+      ? (existing.status as 'LEAVE' | 'HOLIDAY')
+      : undefined;
+
+  const lite: PunchLite[] = rows.map((p) => ({ type: p.type, at: p.at }));
+  const weekday = localDayInfo(new Date(`${dateKey}T06:00:00Z`), cfg.timezone).weekday;
+  const r = computeDay(lite, cfg.schedule, { override, weekday });
+
+  return prisma.staffAttendanceDay.upsert({
+    where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
+    update: {
+      firstIn: r.firstIn,
+      lastOut: r.lastOut,
+      workedMinutes: r.workedMinutes,
+      status: r.status as StaffDayStatus,
+      late: r.late,
+      lateMinutes: r.lateMinutes,
+    },
+    create: {
+      staffId,
+      date: new Date(`${dateKey}T00:00:00Z`),
+      firstIn: r.firstIn,
+      lastOut: r.lastOut,
+      workedMinutes: r.workedMinutes,
+      status: r.status as StaffDayStatus,
+      late: r.late,
+      lateMinutes: r.lateMinutes,
+    },
+  });
+}
+
+export interface RecordPunchInput {
+  staffId: string;
+  source: PunchSource;
+  lat?: number | null;
+  lng?: number | null;
+  accuracy?: number | null;
+  distanceM?: number | null;
+  withinFence?: boolean;
+  credentialId?: string | null;
+  deviceInfo?: string | null;
+  note?: string | null;
+  createdById?: string | null;
+  /** Force a direction (admin regularize). Otherwise auto IN/OUT. */
+  forceType?: PunchType;
+  /** Custom timestamp (admin regularize). Defaults to now. */
+  at?: Date;
+}
+
+/**
+ * Record a punch. Direction is auto-decided: if the staff member is currently
+ * punched IN (open session) the punch is an OUT, otherwise an IN.
+ */
+export async function recordPunch(input: RecordPunchInput) {
+  const cfg = await loadStaffAttConfig();
+  const now = input.at ?? new Date();
+  const dateKey = localDayInfo(now, cfg.timezone).dateKey;
+
+  let type: PunchType = input.forceType ?? 'IN';
+  if (!input.forceType) {
+    const rows = await punchesForLocalDay(input.staffId, dateKey, cfg.timezone);
+    const r = computeDay(rows.map((p) => ({ type: p.type, at: p.at })), cfg.schedule);
+    type = r.open ? 'OUT' : 'IN';
+  }
+
+  const punch = await prisma.staffPunch.create({
+    data: {
+      staffId: input.staffId,
+      type,
+      at: now,
+      source: input.source,
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
+      accuracy: input.accuracy ?? null,
+      distanceM: input.distanceM ?? null,
+      withinFence: input.withinFence ?? true,
+      credentialId: input.credentialId ?? null,
+      deviceInfo: input.deviceInfo ?? null,
+      note: input.note ?? null,
+      createdById: input.createdById ?? null,
+    },
+  });
+
+  const day = await recomputeDay(input.staffId, dateKey);
+  return { punch, day, type };
+}
