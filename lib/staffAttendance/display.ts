@@ -45,27 +45,45 @@ export function fmtTime(iso: string | Date | null, tz = 'Asia/Kolkata'): string 
   });
 }
 
-/** Read the device GPS once, with high accuracy. */
-export function getPosition(): Promise<{ lat: number; lng: number; accuracy: number }> {
+/**
+ * Get a GPS fix, waiting for it to converge. The first reading a phone returns
+ * is usually a coarse Wi-Fi/network location (accuracy ~1–2 km); real GPS sharpens
+ * over a few seconds. We watch and keep the best fix, resolving early once it's
+ * good enough (<= targetAccuracy m) or returning the best one by the deadline.
+ */
+export function getPosition(
+  targetAccuracy = 80,
+  maxWaitMs = 20000
+): Promise<{ lat: number; lng: number; accuracy: number }> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject(new Error('Location is not available on this device.'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      }),
-      (err) => {
-        const msg =
-          err.code === err.PERMISSION_DENIED
-            ? 'Location permission denied. Enable it to punch.'
-            : 'Could not get your location. Try again.';
-        reject(new Error(msg));
+    let best: { lat: number; lng: number; accuracy: number } | null = null;
+    let watchId: number | null = null;
+    const cleanup = () => { if (watchId != null) navigator.geolocation.clearWatch(watchId); clearTimeout(timer); };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      if (best) resolve(best);
+      else reject(new Error('Could not get a GPS fix. Move to an open area / near a window and try again.'));
+    }, maxWaitMs);
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        if (!best || fix.accuracy < best.accuracy) best = fix;
+        if (fix.accuracy <= targetAccuracy) { cleanup(); resolve(best); }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      (err) => {
+        // Permission denial is terminal; transient errors wait for the deadline.
+        if (err.code === err.PERMISSION_DENIED) {
+          cleanup();
+          reject(new Error('Location permission denied. Enable precise location for the browser to punch.'));
+        }
+      },
+      { enableHighAccuracy: true, timeout: maxWaitMs, maximumAge: 0 }
     );
   });
 }
