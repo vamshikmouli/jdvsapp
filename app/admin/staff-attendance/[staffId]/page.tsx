@@ -80,6 +80,16 @@ export default function StaffAttendanceDetailPage() {
         </p>
       </div>
 
+      <Card title="Attendance calendar">
+        <AttendanceCalendar
+          month={month}
+          days={data.days}
+          todayKey={new Date().toISOString().slice(0, 10)}
+          loading={calLoading}
+          onMonthChange={setMonth}
+        />
+      </Card>
+
       {canManage && (
         <ScheduleEditor staffId={data.staff.id} initialPattern={data.staff.workPattern} initialWorkDays={data.staff.workDays} />
       )}
@@ -118,16 +128,6 @@ export default function StaffAttendanceDetailPage() {
           </div>
         </Card>
       )}
-
-      <Card title="Attendance calendar">
-        <AttendanceCalendar
-          month={month}
-          days={data.days}
-          todayKey={new Date().toISOString().slice(0, 10)}
-          loading={calLoading}
-          onMonthChange={setMonth}
-        />
-      </Card>
 
       <Card title="Recent punches" padded={false}>
         {data.punches.length === 0 ? (
