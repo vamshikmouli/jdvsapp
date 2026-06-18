@@ -63,18 +63,18 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
   const tally = days.reduce((a, d) => { a[d.status] = (a[d.status] || 0) + 1; return a; }, {} as Record<string, number>);
 
   return (
-    <div className="max-w-[340px] mx-auto">
-      <div className="flex items-center justify-between mb-1.5">
+    <div className="max-w-md mx-auto">
+      <div className="flex items-center justify-between mb-3">
         <button onClick={() => canPrev && onMonthChange?.(shiftMonth(month, -1))} disabled={!onMonthChange || !canPrev}
-          className="p-1 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronLeft" size={16} /></button>
+          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronLeft" size={18} /></button>
         <div className="text-sm font-medium text-slate-800">{MONTH_NAMES[m - 1]} {y}</div>
         <button onClick={() => canNext && onMonthChange?.(shiftMonth(month, 1))} disabled={!onMonthChange || !canNext}
-          className="p-1 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronRight" size={16} /></button>
+          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronRight" size={18} /></button>
       </div>
 
-      <div className={`grid grid-cols-7 gap-0.5 ${loading ? 'opacity-50' : ''}`}>
+      <div className={`grid grid-cols-7 gap-1 ${loading ? 'opacity-50' : ''}`}>
         {WEEKDAYS.map((w, i) => (
-          <div key={i} className="text-center text-[10px] font-medium text-slate-400">{w}</div>
+          <div key={i} className="text-center text-[11px] font-medium text-slate-400 pb-1">{w}</div>
         ))}
         {cells.map((day, i) => {
           if (day == null) return <div key={i} />;
@@ -84,16 +84,16 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
           const isToday = dateKey === todayKey;
           return (
             <div key={i} title={rec ? rec.status.replace('_', ' ').toLowerCase() : ''}
-              className={`relative aspect-square rounded flex flex-col items-center justify-center leading-none ${st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
-              <span className="text-[9px] opacity-70">{day}</span>
-              {st.label && <span className="text-[11px] font-semibold">{st.label}</span>}
-              {rec?.late && <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white ring-1 ring-black/10" title="late" />}
+              className={`relative aspect-square rounded-md flex flex-col items-center justify-center ${st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
+              <span className="text-[11px] leading-none opacity-70">{day}</span>
+              {st.label && <span className="text-sm font-semibold leading-tight">{st.label}</span>}
+              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white ring-1 ring-black/10" title="late" />}
             </div>
           );
         })}
       </div>
 
-      <div className="flex flex-wrap gap-x-2.5 gap-y-1 mt-2.5">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-3">
         {LEGEND.map(([label, dot]) => (
           <span key={label} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
             <span className={`w-2.5 h-2.5 rounded-sm ${dot}`} />{label}
