@@ -1,6 +1,7 @@
 // Student attendance gamification — streaks + badges. Pure & testable.
-// A day "counts" as attended if PRESENT or LATE. ABSENT breaks a streak.
-// LEAVE / EXCUSED are neutral (don't break, don't extend) and are skipped.
+// A day keeps the streak only if PRESENT or LATE (delayed arrival still counts
+// as showing up). ABSENT and LEAVE both BREAK the streak. Only ABSENT counts
+// against the attendance % (approved leave doesn't lower the percentage).
 
 export interface DayStatus {
   date: string;   // YYYY-MM-DD
@@ -8,7 +9,8 @@ export interface DayStatus {
 }
 
 const ATTENDED = (s: string) => s === 'PRESENT' || s === 'LATE';
-const BREAKS = (s: string) => s === 'ABSENT';
+// Anything that isn't "attended" breaks the streak (absent, leave, excused).
+const BREAKS = (s: string) => !ATTENDED(s);
 
 export interface StreakStats {
   currentStreak: number;
@@ -25,9 +27,13 @@ export function computeStreakStats(days: DayStatus[]): StreakStats {
   let longest = 0, run = 0, attended = 0, absent = 0, late = 0;
   for (const d of sorted) {
     if (d.status === 'LATE') late++;
-    if (ATTENDED(d.status)) { run++; attended++; if (run > longest) longest = run; }
-    else if (BREAKS(d.status)) { run = 0; absent++; }
-    // neutral → leave run unchanged
+    if (ATTENDED(d.status)) {
+      run++; attended++;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;                              // absent OR leave breaks the streak
+      if (d.status === 'ABSENT') absent++;  // but only absent counts against %
+    }
   }
 
   // Current streak: walk backwards until the first ABSENT.

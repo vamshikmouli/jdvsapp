@@ -7,7 +7,7 @@ import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
-type Status = 'PRESENT' | 'ABSENT' | 'LEAVE';
+type Status = 'PRESENT' | 'ABSENT' | 'LEAVE' | 'LATE';
 
 interface SessionDef {
   key: string;
@@ -36,9 +36,10 @@ const DEFAULT_SESSIONS: SessionDef[] = [
   { key: 'AFTERNOON', label: 'Afternoon', open: '13:00', close: '14:00' },
 ];
 
-// Compact P / A / L mark buttons
+// Compact P / DA / A / L mark buttons (DA = Delayed Arrival, stored as LATE)
 const MARKS: { value: Status; letter: string; on: string; off: string }[] = [
   { value: 'PRESENT', letter: 'P', on: 'bg-success-500 text-white border-success-500', off: 'bg-white text-slate-500 border-slate-200 hover:border-success-500 hover:text-success-700' },
+  { value: 'LATE', letter: 'DA', on: 'bg-marigold-600 text-white border-marigold-600', off: 'bg-white text-slate-500 border-slate-200 hover:border-marigold-600 hover:text-marigold-700' },
   { value: 'ABSENT', letter: 'A', on: 'bg-danger-500 text-white border-danger-500', off: 'bg-white text-slate-500 border-slate-200 hover:border-danger-500 hover:text-danger-700' },
   { value: 'LEAVE', letter: 'L', on: 'bg-info-500 text-white border-info-500', off: 'bg-white text-slate-500 border-slate-200 hover:border-info-500 hover:text-info-700' },
 ];
@@ -127,6 +128,7 @@ export default function AttendancePage() {
       const norm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '');
       const statusOf = (t: string): Status | null => {
         const k = norm(t);
+        if (k.startsWith('DA') || k.startsWith('LATE') || k.startsWith('DELAYED')) return 'LATE';
         if (k.startsWith('P')) return 'PRESENT';
         if (k.startsWith('A')) return 'ABSENT';
         if (k.startsWith('L') || k.startsWith('ONLEAVE')) return 'LEAVE';
@@ -261,12 +263,13 @@ export default function AttendancePage() {
     (acc, s) => {
       const v = marks[s.id];
       if (v === 'PRESENT') acc.present++;
+      else if (v === 'LATE') acc.late++;
       else if (v === 'ABSENT') acc.absent++;
       else if (v === 'LEAVE') acc.leave++;
       else acc.unmarked++;
       return acc;
     },
-    { present: 0, absent: 0, leave: 0, unmarked: 0 }
+    { present: 0, late: 0, absent: 0, leave: 0, unmarked: 0 }
   );
 
   const total = roster.length;
@@ -450,6 +453,7 @@ export default function AttendancePage() {
         <div className="flex items-center gap-2 text-sm">
           {[
             { label: 'Present', value: counts.present, color: 'text-success-700' },
+            { label: 'DA', value: counts.late, color: 'text-marigold-700' },
             { label: 'Absent', value: counts.absent, color: 'text-danger-700' },
             { label: 'Leave', value: counts.leave, color: 'text-info-700' },
           ].map((s) => (

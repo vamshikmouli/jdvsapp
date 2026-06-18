@@ -45,10 +45,10 @@ export async function GET(req: NextRequest) {
       ws.getCell(`C${r}`).dataValidation = {
         type: 'list',
         allowBlank: false,
-        formulae: ['"Present,Absent,Leave"'],
+        formulae: ['"Present,DA,Absent,Leave"'],
         showErrorMessage: true,
         errorTitle: 'Invalid status',
-        error: 'Pick Present, Absent or Leave from the list.',
+        error: 'Pick Present, DA (delayed arrival), Absent or Leave from the list.',
       };
     }
 

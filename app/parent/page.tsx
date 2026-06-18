@@ -68,7 +68,7 @@ function ChildSelector() {
 
 const STATUS_META: Record<string, { label: string; chip: string; cell: string; dot: string }> = {
   PRESENT: { label: 'Present', chip: 'bg-success-50 text-success-700', cell: 'bg-success-500 text-white', dot: 'bg-success-500' },
-  LATE: { label: 'Late', chip: 'bg-marigold-50 text-marigold-700', cell: 'bg-marigold-600 text-white', dot: 'bg-marigold-500' },
+  LATE: { label: 'Delayed arrival', chip: 'bg-marigold-50 text-marigold-700', cell: 'bg-marigold-600 text-white', dot: 'bg-marigold-500' },
   LEAVE: { label: 'On leave', chip: 'bg-info-50 text-info-700', cell: 'bg-info-500 text-white', dot: 'bg-info-500' },
   ABSENT: { label: 'Absent', chip: 'bg-danger-50 text-danger-700', cell: 'bg-danger-500 text-white', dot: 'bg-danger-500' },
   none: { label: 'Not marked', chip: 'bg-slate-100 text-slate-500', cell: '', dot: 'bg-slate-200' },
@@ -176,7 +176,7 @@ function ChildCalendar({ studentId }: { studentId: string }) {
         <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-success-500" /> Present</span>
         <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-danger-500" /> Absent</span>
         <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-info-500" /> Leave</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-marigold-600" /> Late</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-marigold-600" /> DA</span>
       </div>
     </div>
   );
@@ -392,8 +392,8 @@ function HomeScreen() {
   return (
     <>
       <PushOptIn />
-      <ChildCard child={child} fee={fee} />
       <StreakCard studentId={child.id} />
+      <ChildCard child={child} fee={fee} />
     </>
   );
 }
