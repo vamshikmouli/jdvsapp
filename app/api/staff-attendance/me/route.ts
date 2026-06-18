@@ -84,6 +84,16 @@ export async function GET(req: NextRequest) {
       todayKey,
       month: monthKey,
       monthDays,
+      // School location so the staff screen can show "you vs assigned location".
+      geofence:
+        cfg.geofence.schoolLat != null && cfg.geofence.schoolLng != null
+          ? {
+              schoolLat: cfg.geofence.schoolLat,
+              schoolLng: cfg.geofence.schoolLng,
+              radiusM: cfg.geofence.geofenceRadiusM,
+              accuracyMaxM: cfg.geofence.gpsAccuracyMaxM,
+            }
+          : null,
     });
   } catch (err) {
     const { status, body } = authErrorResponse(err);

@@ -6,6 +6,7 @@ import { startRegistration, startAuthentication, browserSupportsWebAuthn } from 
 import { Button, Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { STATUS_LABEL, statusTone, fmtTime, getPosition } from '@/lib/staffAttendance/display';
+import { haversineMeters } from '@/lib/staffAttendance/geofence';
 import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
 
 interface MeData {
@@ -19,6 +20,7 @@ interface MeData {
   todayKey: string;
   month: string;
   monthDays: CalDay[];
+  geofence: { schoolLat: number; schoolLng: number; radiusM: number; accuracyMaxM: number } | null;
 }
 
 function currentMonth() {
@@ -52,6 +54,23 @@ export default function MyAttendancePage() {
   const [busy, setBusy] = useState<'enroll' | 'punch' | null>(null);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
+  const [loc, setLoc] = useState<{ lat: number; lng: number; accuracy: number; distance: number | null; inRange: boolean } | null>(null);
+  const [locBusy, setLocBusy] = useState(false);
+  const [locErr, setLocErr] = useState('');
+
+  const checkLocation = async () => {
+    setLocBusy(true); setLocErr(''); setLoc(null);
+    try {
+      const pos = await getPosition();
+      const g = data?.geofence;
+      const distance = g ? haversineMeters({ lat: pos.lat, lng: pos.lng }, { lat: g.schoolLat, lng: g.schoolLng }) : null;
+      const inRange = !!g && distance != null && pos.accuracy <= g.accuracyMaxM &&
+        distance - Math.min(pos.accuracy, g.accuracyMaxM) <= g.radiusM;
+      setLoc({ ...pos, distance, inRange });
+    } catch (e: any) {
+      setLocErr(e?.message || 'Could not get your location.');
+    } finally { setLocBusy(false); }
+  };
 
   const load = useCallback(async (m: string = month) => {
     setCalLoading(true);
@@ -177,6 +196,40 @@ export default function MyAttendancePage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {data?.enabled && data.configured && (
+        <Card title="Location check">
+          <p className="text-sm text-slate-600 mb-3">See your current location against the school’s assigned location.</p>
+          <Button icon="MapPin" onClick={checkLocation} disabled={locBusy}>{locBusy ? 'Locating…' : 'Check my location'}</Button>
+          {locErr && <div className="mt-3 rounded-md bg-danger-50 text-danger-700 text-sm px-3 py-2">{locErr}</div>}
+          {loc && data.geofence && (
+            <div className="mt-3 space-y-2">
+              <div className={`rounded-md px-3 py-2 text-sm font-medium ${loc.inRange ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
+                {loc.inRange ? '✓ You are within the school area — you can punch.' : '✗ You are outside the allowed school area.'}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-lg border border-slate-100 px-3 py-2">
+                  <div className="text-xs text-slate-400">Distance from school</div>
+                  <div className="font-semibold text-slate-900">{loc.distance != null ? `${Math.round(loc.distance)} m` : '—'}</div>
+                  <div className="text-[11px] text-slate-400">allowed: {data.geofence.radiusM} m</div>
+                </div>
+                <div className="rounded-lg border border-slate-100 px-3 py-2">
+                  <div className="text-xs text-slate-400">Your GPS accuracy</div>
+                  <div className={`font-semibold ${loc.accuracy <= data.geofence.accuracyMaxM ? 'text-slate-900' : 'text-danger-700'}`}>±{Math.round(loc.accuracy)} m</div>
+                  <div className="text-[11px] text-slate-400">max: {data.geofence.accuracyMaxM} m</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                <a className="text-info-600 hover:underline" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${loc.lat},${loc.lng}`}>📍 Your location</a>
+                <a className="text-info-600 hover:underline" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${data.geofence.schoolLat},${data.geofence.schoolLng}`}>🏫 School location</a>
+              </div>
+              {!loc.inRange && loc.accuracy > data.geofence.accuracyMaxM && (
+                <p className="text-xs text-slate-500">Your GPS is weak. Turn on precise location and move near a window or outdoors, then check again.</p>
+              )}
             </div>
           )}
         </Card>
