@@ -23,6 +23,49 @@ interface Child {
   days: { date: string; status: string }[];
 }
 
+// ---------- Shared child selection (one global pick filters every screen) ----------
+interface ChildCtxValue { kids: Child[]; loading: boolean; selectedId: string; setSelectedId: (id: string) => void; }
+const ChildCtx = React.createContext<ChildCtxValue | null>(null);
+function useChildren() { return React.useContext(ChildCtx); }
+
+function ChildProvider({ children }: { children: React.ReactNode }) {
+  const [kids, setKids] = useState<Child[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState('');
+  useEffect(() => {
+    fetch('/api/parent/children')
+      .then((r) => (r.ok ? r.json() : { children: [] }))
+      .then((d) => {
+        const list: Child[] = d.children || [];
+        setKids(list);
+        setSelectedId((prev) => prev || (list[0]?.id ?? ''));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  return <ChildCtx.Provider value={{ kids, loading, selectedId, setSelectedId }}>{children}</ChildCtx.Provider>;
+}
+
+// Pills in the header to switch between children (only shown for 2+ kids).
+function ChildSelector() {
+  const ctx = useChildren();
+  if (!ctx || ctx.kids.length < 2) return null;
+  return (
+    <div className="flex gap-2 mt-3 overflow-x-auto pb-0.5 -mx-1 px-1">
+      {ctx.kids.map((k) => {
+        const on = k.id === ctx.selectedId;
+        return (
+          <button key={k.id} onClick={() => ctx.setSelectedId(k.id)}
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${on ? 'bg-white text-purple-700 shadow-sm' : 'bg-white/15 text-white hover:bg-white/25'}`}>
+            {k.name.split(' ')[0]}
+            <span className={`text-[11px] ${on ? 'text-purple-400' : 'text-purple-100/80'}`}>{k.className}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const STATUS_META: Record<string, { label: string; chip: string; cell: string; dot: string }> = {
   PRESENT: { label: 'Present', chip: 'bg-success-50 text-success-700', cell: 'bg-success-500 text-white', dot: 'bg-success-500' },
   LATE: { label: 'Late', chip: 'bg-marigold-50 text-marigold-700', cell: 'bg-marigold-600 text-white', dot: 'bg-marigold-500' },
@@ -317,40 +360,26 @@ function SummaryBanner({ n, avgPct, totalDue, withDues }: { n: number; avgPct: n
 
 // ---------- Home (children) screen ----------
 function HomeScreen() {
-  const [children, setChildren] = useState<Child[] | null>(null);
-  const [feesById, setFeesById] = useState<Record<string, FeeData>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const ctx = useChildren();
+  const selectedId = ctx?.selectedId || '';
+  const [fee, setFee] = useState<FeeData | null>(null);
 
+  // Fee for the currently-selected child.
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/parent/children');
-        if (!res.ok) throw new Error(`Failed (${res.status})`);
-        const kids: Child[] = (await res.json()).children;
-        setChildren(kids);
-        const entries = await Promise.all(
-          kids.map(async (c) => {
-            const r = await fetch(`/api/parent/fees?studentId=${c.id}`);
-            return [c.id, r.ok ? await r.json() : null] as const;
-          })
-        );
-        setFeesById(Object.fromEntries(entries.filter((e) => e[1])) as Record<string, FeeData>);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    if (!selectedId) return;
+    setFee(null);
+    fetch(`/api/parent/fees?studentId=${selectedId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setFee)
+      .catch(() => {});
+  }, [selectedId]);
 
-  if (loading) return <>{[0, 1].map((i) => (
+  if (!ctx || ctx.loading) return <>{[0].map((i) => (
     <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 animate-pulse">
       <div className="h-12 bg-slate-100 rounded-lg" /><div className="h-40 bg-slate-100 rounded-lg mt-3" />
     </div>
   ))}</>;
-  if (error) return <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center"><Icon name="AlertCircle" size={40} className="text-slate-300 mx-auto" /><p className="text-sm text-slate-600 mt-3">{error}</p></div>;
-  if (children?.length === 0) return (
+  if (ctx.kids.length === 0) return (
     <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
       <div className="text-4xl">👨‍👩‍👧</div>
       <h2 className="text-base font-semibold text-slate-900 mt-3">No children linked</h2>
@@ -358,23 +387,13 @@ function HomeScreen() {
     </div>
   );
 
-  const kids = children || [];
-  const markedKids = kids.filter((c) => c.marked > 0);
-  const avgPct = markedKids.length ? Math.round(markedKids.reduce((t, c) => t + c.pct, 0) / markedKids.length) : 0;
-  const feeList = Object.values(feesById);
-  const totalDue = feeList.reduce((t, f) => t + f.summary.totalBalance, 0);
-  const withDues = feeList.filter((f) => f.summary.totalBalance > 0).length;
+  const child = ctx.kids.find((c) => c.id === selectedId) || ctx.kids[0];
 
   return (
     <>
       <PushOptIn />
-      <SummaryBanner n={kids.length} avgPct={avgPct} totalDue={totalDue} withDues={withDues} />
-      {kids.map((c) => (
-        <React.Fragment key={c.id}>
-          <ChildCard child={c} fee={feesById[c.id] || null} />
-          <StreakCard studentId={c.id} />
-        </React.Fragment>
-      ))}
+      <ChildCard child={child} fee={fee} />
+      <StreakCard studentId={child.id} />
     </>
   );
 }
@@ -560,6 +579,7 @@ async function renderResultImage(rep: Report, a: ReportAssessment, brand: { scho
 }
 
 function MarksScreen() {
+  const ctx = useChildren();
   const [reports, setReports] = useState<Report[] | null>(null);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -616,9 +636,11 @@ function MarksScreen() {
     </div>
   );
 
+  const shown = ctx?.selectedId ? reports.filter((r) => r.student.id === ctx.selectedId) : reports;
+
   return (
     <>
-      {reports.map((rep) => (
+      {shown.map((rep) => (
         <div key={rep.student.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">{marksInitials(rep.student.name)}</div>
@@ -752,6 +774,7 @@ export default function ParentPage() {
   ];
 
   return (
+    <ChildProvider>
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="sticky top-0 z-10 bg-gradient-to-br from-purple-700 to-purple-500 text-white px-4 pt-5 pb-6">
         <div className="max-w-md mx-auto flex items-start justify-between">
@@ -777,6 +800,7 @@ export default function ParentPage() {
             </button>
           </div>
         </div>
+        <div className="max-w-md mx-auto"><ChildSelector /></div>
       </header>
 
       <main className="max-w-md mx-auto px-4 py-5 space-y-4">
@@ -803,5 +827,6 @@ export default function ParentPage() {
         </div>
       </nav>
     </div>
+    </ChildProvider>
   );
 }
