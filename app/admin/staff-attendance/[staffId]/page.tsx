@@ -90,10 +90,6 @@ export default function StaffAttendanceDetailPage() {
         />
       </Card>
 
-      {canManage && (
-        <ScheduleEditor staffId={data.staff.id} initialPattern={data.staff.workPattern} initialWorkDays={data.staff.workDays} />
-      )}
-
       {bal && (
         <Card title={`Leave balance · ${bal.year}`}>
           <div className="overflow-x-auto">
@@ -151,6 +147,10 @@ export default function StaffAttendanceDetailPage() {
           </div>
         )}
       </Card>
+
+      {canManage && (
+        <ScheduleEditor staffId={data.staff.id} initialPattern={data.staff.workPattern} initialWorkDays={data.staff.workDays} />
+      )}
     </div>
   );
 }
