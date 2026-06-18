@@ -37,6 +37,11 @@ export default function AdminLayout({
   const segment = pathname.split('/')[2] || 'dashboard';
   const title = TITLES[segment] || 'Dashboard';
 
+  // Kiosk runs full-screen with no sidebar/top bar — it's a locked single-purpose screen.
+  if (pathname.startsWith('/admin/staff-attendance/kiosk')) {
+    return <div className="min-h-screen bg-slate-50">{children}</div>;
+  }
+
   return (
     <div className="h-screen bg-slate-25">
       {/* Sidebar (off-canvas drawer on mobile, fixed on desktop) */}

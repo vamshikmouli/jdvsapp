@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { signIn, getSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 
-function homeForSurface(surface?: string) {
+function homeForSurface(surface?: string, roleKey?: string) {
   // Parents use their own app; staff share the admin shell. Teachers land on
   // their attendance screen (their main daily action); others on the dashboard.
+  if (roleKey === 'kiosk') return '/admin/staff-attendance/kiosk';
   if (surface === 'PARENT') return '/parent';
   if (surface === 'TEACHER') return '/admin/my-attendance';
   return '/admin/dashboard';
@@ -29,7 +30,7 @@ export default function LoginPage() {
   React.useEffect(() => {
     getSession()
       .then((session) => {
-        if (session?.user) router.replace(homeForSurface((session.user as any)?.surface as string | undefined));
+        if (session?.user) router.replace(homeForSurface((session.user as any)?.surface as string | undefined, (session.user as any)?.roleKey as string | undefined));
         else setChecking(false);
       })
       .catch(() => setChecking(false));
@@ -56,7 +57,8 @@ export default function LoginPage() {
       else if (result?.ok) {
         const session = await getSession();
         const surface = (session?.user as any)?.surface as string | undefined;
-        router.push(homeForSurface(surface));
+        const roleKey = (session?.user as any)?.roleKey as string | undefined;
+        router.push(homeForSurface(surface, roleKey));
         router.refresh();
       }
     } catch {
