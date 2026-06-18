@@ -49,15 +49,15 @@ export default function StaffAttendancePage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Staff attendance</h1>
           <p className="text-sm text-slate-500">Daily punch board for all staff.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Input type="date" value={date} max={todayKey()} onChange={(e) => setDate(e.target.value)} />
-          <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }}>Export month</Button>
-          {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`}><Button kind="primary" icon="ClipboardCheck">Mark attendance</Button></Link>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="date" value={date} max={todayKey()} onChange={(e) => setDate(e.target.value)} className="flex-1 min-w-[140px] sm:flex-none" />
+          {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`} className="flex-1 sm:flex-none"><Button kind="primary" icon="ClipboardCheck" className="w-full justify-center">Mark</Button></Link>}
+          <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }}>Export</Button>
           {canManage && <Link href="/admin/staff-attendance/kiosk"><Button icon="Tablet">Kiosk</Button></Link>}
           {canConfig && <Link href="/admin/staff-attendance/config"><Button icon="Settings">Settings</Button></Link>}
         </div>
@@ -86,47 +86,67 @@ export default function StaffAttendancePage() {
         ) : !board || board.rows.length === 0 ? (
           <EmptyState icon="Users" title="No staff" body="Add staff to start tracking attendance." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                  <th className="px-4 py-2 font-medium">Staff</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">In</th>
-                  <th className="px-4 py-2 font-medium">Out</th>
-                  <th className="px-4 py-2 font-medium">Worked</th>
-                  <th className="px-4 py-2 font-medium">Method</th>
-                  {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {board.rows.map((r) => (
-                  <tr key={r.staffId} className="hover:bg-slate-50">
-                    <td className="px-4 py-2">
-                      <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900 hover:text-purple-700">{r.name}</Link>
-                      {r.designation && <div className="text-xs text-slate-400">{r.designation}</div>}
-                    </td>
-                    <td className="px-4 py-2"><Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m late` : ''}</Chip></td>
-                    <td className="px-4 py-2 text-slate-600">{fmtTime(r.firstIn)}</td>
-                    <td className="px-4 py-2 text-slate-600">{fmtTime(r.lastOut)}</td>
-                    <td className="px-4 py-2 text-slate-600">{fmtMins(r.workedMinutes)}</td>
-                    <td className="px-4 py-2">
-                      <span className="inline-flex gap-1 text-slate-400">
-                        {r.hasDevice && <Icon name="Smartphone" size={15} />}
-                        {r.hasPin && <Icon name="KeyRound" size={15} />}
-                        {!r.hasDevice && !r.hasPin && <span className="text-xs">—</span>}
-                      </span>
-                    </td>
-                    {canManage && (
-                      <td className="px-4 py-2 text-right">
-                        <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)}>Manage</Button>
-                      </td>
-                    )}
+          <>
+            {/* Mobile: stacked cards */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {board.rows.map((r) => (
+                <div key={r.staffId} className="p-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900">{r.name}</Link>
+                    {r.designation && <div className="text-xs text-slate-400 truncate">{r.designation}</div>}
+                    <div className="flex items-center flex-wrap gap-2 mt-1.5">
+                      <Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m` : ''}</Chip>
+                      <span className="text-xs text-slate-400">{fmtTime(r.firstIn)}–{fmtTime(r.lastOut)} · {fmtMins(r.workedMinutes)}</span>
+                    </div>
+                  </div>
+                  {canManage && <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)} className="shrink-0">Manage</Button>}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                    <th className="px-4 py-2 font-medium">Staff</th>
+                    <th className="px-4 py-2 font-medium">Status</th>
+                    <th className="px-4 py-2 font-medium">In</th>
+                    <th className="px-4 py-2 font-medium">Out</th>
+                    <th className="px-4 py-2 font-medium">Worked</th>
+                    <th className="px-4 py-2 font-medium">Method</th>
+                    {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {board.rows.map((r) => (
+                    <tr key={r.staffId} className="hover:bg-slate-50">
+                      <td className="px-4 py-2">
+                        <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900 hover:text-purple-700">{r.name}</Link>
+                        {r.designation && <div className="text-xs text-slate-400">{r.designation}</div>}
+                      </td>
+                      <td className="px-4 py-2"><Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m late` : ''}</Chip></td>
+                      <td className="px-4 py-2 text-slate-600">{fmtTime(r.firstIn)}</td>
+                      <td className="px-4 py-2 text-slate-600">{fmtTime(r.lastOut)}</td>
+                      <td className="px-4 py-2 text-slate-600">{fmtMins(r.workedMinutes)}</td>
+                      <td className="px-4 py-2">
+                        <span className="inline-flex gap-1 text-slate-400">
+                          {r.hasDevice && <Icon name="Smartphone" size={15} />}
+                          {r.hasPin && <Icon name="KeyRound" size={15} />}
+                          {!r.hasDevice && !r.hasPin && <span className="text-xs">—</span>}
+                        </span>
+                      </td>
+                      {canManage && (
+                        <td className="px-4 py-2 text-right">
+                          <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)}>Manage</Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
@@ -158,7 +178,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
 
   return (
     <Modal open onClose={onClose} title={`Manage — ${row.name}`} subtitle={new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}>
-      <div className="flex gap-1 mb-4 text-sm">
+      <div className="flex flex-wrap gap-1 mb-4 text-sm">
         {([['punch', 'Add punch'], ['status', 'Set status'], ['pin', 'Kiosk PIN'], ['device', 'Device']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md ${tab === k ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>
         ))}
