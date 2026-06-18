@@ -6,6 +6,7 @@ import { Icon } from '@/components/Icon';
 import { feeMoney } from '@/lib/fees';
 import { PushOptIn } from '@/components/PushOptIn';
 import { useBranding } from '@/components/useBranding';
+import { StreakCard } from '@/components/StreakCard';
 
 interface Child {
   id: string;
@@ -368,7 +369,12 @@ function HomeScreen() {
     <>
       <PushOptIn />
       <SummaryBanner n={kids.length} avgPct={avgPct} totalDue={totalDue} withDues={withDues} />
-      {kids.map((c) => <ChildCard key={c.id} child={c} fee={feesById[c.id] || null} />)}
+      {kids.map((c) => (
+        <React.Fragment key={c.id}>
+          <ChildCard child={c} fee={feesById[c.id] || null} />
+          <StreakCard studentId={c.id} />
+        </React.Fragment>
+      ))}
     </>
   );
 }
