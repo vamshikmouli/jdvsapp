@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Card, Chip, Skeleton, EmptyState, Button, Input } from '@/components/Primitives';
+import { Card, Chip, Skeleton, EmptyState, Button, Input, Select } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { fmtTime } from '@/lib/staffAttendance/display';
 import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
@@ -22,7 +22,7 @@ function monthRange(m: string) {
 }
 
 interface Data {
-  staff: { id: string; name: string; designation: string | null; hasPin: boolean; device: { deviceName: string | null; lastUsedAt: string } | null };
+  staff: { id: string; name: string; designation: string | null; hasPin: boolean; device: { deviceName: string | null; lastUsedAt: string } | null; workPattern: string; workDays: number[] | null };
   days: (CalDay & { lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number })[];
   punches: { type: 'IN' | 'OUT'; at: string; source: string; withinFence: boolean; distanceM: number | null; note: string | null }[];
 }
@@ -30,7 +30,9 @@ interface Data {
 export default function StaffAttendanceDetailPage() {
   const { staffId } = useParams<{ staffId: string }>();
   const { data: session } = useSession();
-  const canApprove = (((session?.user as any)?.perms as string[]) || []).includes('LEAVE_APPROVE');
+  const perms = ((session?.user as any)?.perms as string[]) || [];
+  const canApprove = perms.includes('LEAVE_APPROVE');
+  const canManage = perms.includes('STAFF_ATTENDANCE_MANAGE');
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(currentMonth());
@@ -77,6 +79,10 @@ export default function StaffAttendanceDetailPage() {
           {data.staff.hasPin ? ' · 🔑 kiosk PIN' : ''}
         </p>
       </div>
+
+      {canManage && (
+        <ScheduleEditor staffId={data.staff.id} initialPattern={data.staff.workPattern} initialWorkDays={data.staff.workDays} />
+      )}
 
       {bal && (
         <Card title={`Leave balance · ${bal.year}`}>
@@ -146,6 +152,66 @@ export default function StaffAttendanceDetailPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+const DAY_LBL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function ScheduleEditor({ staffId, initialPattern, initialWorkDays }: { staffId: string; initialPattern: string; initialWorkDays: number[] | null }) {
+  const [pattern, setPattern] = useState(initialPattern || 'FULL');
+  const [custom, setCustom] = useState(initialWorkDays != null);
+  const [days, setDays] = useState<number[]>(initialWorkDays ?? [1, 2, 3, 4, 5]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    setSaving(true); setSaved(false);
+    await fetch('/api/staff-attendance/manage/schedule', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staffId, workPattern: pattern, workDays: custom ? [...days].sort((a, b) => a - b) : null }),
+    });
+    setSaving(false); setSaved(true);
+  };
+
+  return (
+    <Card title="Work schedule">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Pattern</label>
+          <Select value={pattern} onChange={(e) => setPattern(e.target.value)}>
+            <option value="FULL">Full day</option>
+            <option value="HALF_MORNING">Half day — morning</option>
+            <option value="HALF_AFTERNOON">Half day — afternoon</option>
+          </Select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Working days</label>
+          <Select value={custom ? 'custom' : 'all'} onChange={(e) => setCustom(e.target.value === 'custom')}>
+            <option value="all">Every working day (follow weekly-offs)</option>
+            <option value="custom">Specific days (alternate-day staff)</option>
+          </Select>
+        </div>
+      </div>
+      {custom && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {DAY_LBL.map((d, i) => {
+            const on = days.includes(i);
+            return (
+              <button key={d} type="button" onClick={() => setDays(on ? days.filter((x) => x !== i) : [...days, i])}
+                className={`px-3 py-1.5 rounded-md text-sm ${on ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{d}</button>
+            );
+          })}
+        </div>
+      )}
+      <p className="text-xs text-slate-400 mt-2">
+        {pattern !== 'FULL' ? 'Half-day staff: a half day’s hours count as a full present day. ' : ''}
+        {custom ? 'Days not selected show as “off”, not absent.' : 'Off days follow the school-wide weekly-offs.'}
+      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save schedule'}</Button>
+        {saved && <span className="text-xs text-success-600">Saved. Applies to new punches; use bulk-mark to fix past days.</span>}
+      </div>
+    </Card>
   );
 }
 

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
+import { parseWorkDays, synthesizeDays } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance/me
 // Today's punch state + recent history + enrollment status for the signed-in
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     const monthStart = new Date(Date.UTC(my, mm - 1, 1));
     const monthEnd = new Date(Date.UTC(my, mm, 1) - 24 * 3600_000);
 
-    const [cred, today, punchesToday, recent, monthDays] = await Promise.all([
+    const [cred, today, punchesToday, recent, storedMonthDays, staffRec, holidays] = await Promise.all([
       prisma.staffCredential.findFirst({
         where: { staffId, active: true },
         select: { deviceName: true, createdAt: true, lastUsedAt: true },
@@ -48,7 +49,23 @@ export async function GET(req: NextRequest) {
         where: { staffId, date: { gte: monthStart, lte: monthEnd } },
         orderBy: { date: 'asc' },
       }),
+      prisma.staff.findUnique({ where: { id: staffId }, select: { workDays: true } }),
+      prisma.holiday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
     ]);
+
+    // Fill non-punch days (holidays / off days) so the calendar isn't all blank/absent.
+    const existing = new Set(storedMonthDays.map((d) => d.date.toISOString().slice(0, 10)));
+    const holidaySet = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
+    const synthetic = synthesizeDays({
+      fromKey: monthStart.toISOString().slice(0, 10),
+      toKey: monthEnd.toISOString().slice(0, 10),
+      todayKey,
+      existing,
+      holidays: holidaySet,
+      workDays: parseWorkDays(staffRec?.workDays),
+      weeklyOffDays: cfg.schedule.weeklyOffDays,
+    });
+    const monthDays = [...storedMonthDays, ...synthetic];
 
     const lastPunch = punchesToday[punchesToday.length - 1];
     const open = lastPunch?.type === 'IN';

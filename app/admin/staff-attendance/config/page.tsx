@@ -10,7 +10,7 @@ interface Cfg {
   staffAttEnabled: boolean;
   schoolLat: number | null; schoolLng: number | null;
   geofenceRadiusM: number; gpsAccuracyMaxM: number;
-  shiftStart: string; shiftEnd: string;
+  shiftStart: string; shiftEnd: string; afternoonStart: string;
   lateGraceMins: number; halfDayMins: number; fullDayMins: number;
   weeklyOffDays: number[];
   leaveQuotas: Record<string, number>;
@@ -96,6 +96,8 @@ export default function StaffAttendanceConfigPage() {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Shift start"><Input type="time" value={cfg.shiftStart} onChange={(e) => set({ shiftStart: e.target.value })} /></Field>
           <Field label="Shift end"><Input type="time" value={cfg.shiftEnd} onChange={(e) => set({ shiftEnd: e.target.value })} /></Field>
+          <Field label="Afternoon start" hint="Late reference for afternoon half-day staff"><Input type="time" value={cfg.afternoonStart} onChange={(e) => set({ afternoonStart: e.target.value })} /></Field>
+          <div />
           <Field label="Late grace (mins)" hint="In after start + grace = late"><Input type="number" value={cfg.lateGraceMins} onChange={(e) => set({ lateGraceMins: Number(e.target.value) })} /></Field>
           <div />
           <Field label="Half-day after (mins)" hint={fmtMins(cfg.halfDayMins)}><Input type="number" value={cfg.halfDayMins} onChange={(e) => set({ halfDayMins: Number(e.target.value) })} /></Field>
@@ -164,7 +166,56 @@ export default function StaffAttendanceConfigPage() {
         </div>
       </Card>
 
+      <HolidaysCard />
+
       <div className="flex justify-end"><Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</Button></div>
     </div>
+  );
+}
+
+interface Holiday { id: string; date: string; name: string; }
+
+function HolidaysCard() {
+  const [list, setList] = useState<Holiday[]>([]);
+  const [date, setDate] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const r = await fetch('/api/staff-attendance/holidays');
+    if (r.ok) setList(await r.json());
+  };
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!date || !name.trim()) return;
+    setBusy(true);
+    await fetch('/api/staff-attendance/holidays', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date, name }) });
+    setDate(''); setName(''); setBusy(false); load();
+  };
+  const remove = async (d: string) => {
+    await fetch(`/api/staff-attendance/holidays?date=${d.slice(0, 10)}`, { method: 'DELETE' });
+    load();
+  };
+
+  return (
+    <Card title="Holidays">
+      <p className="text-sm text-slate-600 mb-3">Declare any date a holiday for all staff. Staff with no punch that day show “Holiday”, not absent.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <div className="flex-1 min-w-[160px]"><Field label="Name"><Input value={name} placeholder="e.g. Founder’s Day" onChange={(e) => setName(e.target.value)} /></Field></div>
+        <Button icon="Plus" onClick={add} disabled={busy || !date || !name.trim()}>Add</Button>
+      </div>
+      {list.length > 0 && (
+        <div className="mt-3 divide-y divide-slate-100">
+          {list.map((h) => (
+            <div key={h.id} className="flex items-center justify-between py-2 text-sm">
+              <span><span className="font-medium text-slate-700">{new Date(h.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span> <span className="text-slate-500">— {h.name}</span></span>
+              <button onClick={() => remove(h.date)} className="text-xs text-danger-600 hover:text-danger-700">Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

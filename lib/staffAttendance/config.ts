@@ -37,6 +37,7 @@ export async function loadStaffAttConfig(): Promise<StaffAttConfig> {
       timezone,
       shiftStart: s.shiftStart,
       shiftEnd: s.shiftEnd,
+      afternoonStart: s.afternoonStart,
       lateGraceMins: s.lateGraceMins,
       halfDayMins: s.halfDayMins,
       fullDayMins: s.fullDayMins,

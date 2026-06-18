@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
+import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
+import { parseWorkDays, parseWorkPattern, synthesizeDays } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance/[staffId]?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Per-staff attendance history (day roll-ups) + raw punches in the range.
@@ -8,6 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
   try {
     await requirePermission('STAFF_ATTENDANCE_VIEW');
     const { staffId } = params;
+    const cfg = await loadStaffAttConfig();
 
     const sp = new URL(req.url).searchParams;
     const to = sp.get('to') ? new Date(`${sp.get('to')}T00:00:00Z`) : new Date();
@@ -15,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
       ? new Date(`${sp.get('from')}T00:00:00Z`)
       : new Date(to.getTime() - 30 * 24 * 3600_000);
 
-    const [staff, days, punches] = await Promise.all([
+    const [staff, storedDays, punches, holidays] = await Promise.all([
       prisma.staff.findUnique({
         where: { id: staffId },
         select: {
@@ -23,6 +26,8 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
           name: true,
           designation: true,
           pinHash: true,
+          workPattern: true,
+          workDays: true,
           attCredentials: { where: { active: true }, select: { deviceName: true, lastUsedAt: true } },
         },
       }),
@@ -35,9 +40,23 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
         orderBy: { at: 'desc' },
         take: 200,
       }),
+      prisma.holiday.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true } }),
     ]);
 
     if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
+
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const existing = new Set(storedDays.map((d) => d.date.toISOString().slice(0, 10)));
+    const holidaySet = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
+    const synthetic = synthesizeDays({
+      fromKey: from.toISOString().slice(0, 10),
+      toKey: to.toISOString().slice(0, 10),
+      todayKey,
+      existing,
+      holidays: holidaySet,
+      workDays: parseWorkDays(staff.workDays),
+      weeklyOffDays: cfg.schedule.weeklyOffDays,
+    });
 
     return NextResponse.json({
       staff: {
@@ -46,8 +65,10 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
         designation: staff.designation,
         hasPin: !!staff.pinHash,
         device: staff.attCredentials[0] ?? null,
+        workPattern: parseWorkPattern(staff.workPattern),
+        workDays: parseWorkDays(staff.workDays),
       },
-      days,
+      days: [...storedDays, ...synthetic],
       punches,
     });
   } catch (err) {

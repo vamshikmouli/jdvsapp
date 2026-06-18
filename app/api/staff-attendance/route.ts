@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
+import { parseWorkDays, emptyDayStatus, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance?date=YYYY-MM-DD
 // Daily board: every active staff member with their roll-up for the date.
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     const dateKey = qDate || localDayInfo(new Date(), cfg.timezone).dateKey;
     const date = new Date(`${dateKey}T00:00:00Z`);
 
-    const [staff, days] = await Promise.all([
+    const [staff, days, holiday] = await Promise.all([
       prisma.staff.findMany({
         where: { archived: false },
         orderBy: { name: 'asc' },
@@ -24,23 +25,30 @@ export async function GET(req: NextRequest) {
           name: true,
           designation: true,
           pinHash: true,
+          workPattern: true,
+          workDays: true,
           attCredentials: { where: { active: true }, select: { id: true } },
         },
       }),
       prisma.staffAttendanceDay.findMany({ where: { date } }),
+      prisma.holiday.findUnique({ where: { date }, select: { name: true } }),
     ]);
 
     const byStaff = new Map(days.map((d) => [d.staffId, d]));
+    const weekday = weekdayOfKey(dateKey);
+    const weeklyOff = cfg.schedule.weeklyOffDays;
 
     const rows = staff.map((s) => {
       const day = byStaff.get(s.id);
+      // No stored row → derive the expected status (holiday / off / absent).
+      const fallback = emptyDayStatus(weekday, !!holiday, parseWorkDays(s.workDays), weeklyOff);
       return {
         staffId: s.id,
         name: s.name,
         designation: s.designation,
         hasDevice: s.attCredentials.length > 0,
         hasPin: !!s.pinHash,
-        status: day?.status ?? 'ABSENT',
+        status: day?.status ?? fallback,
         late: day?.late ?? false,
         lateMinutes: day?.lateMinutes ?? 0,
         firstIn: day?.firstIn ?? null,
@@ -64,7 +72,7 @@ export async function GET(req: NextRequest) {
       { total: 0, present: 0, halfDay: 0, absent: 0, leave: 0, off: 0, late: 0 }
     );
 
-    return NextResponse.json({ date: dateKey, rows, summary });
+    return NextResponse.json({ date: dateKey, rows, summary, holiday: holiday?.name ?? null });
   } catch (err) {
     const { status, body } = authErrorResponse(err);
     return NextResponse.json(body, { status });

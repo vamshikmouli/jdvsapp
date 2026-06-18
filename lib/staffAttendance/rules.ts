@@ -14,6 +14,7 @@ export interface ScheduleConfig {
   timezone: string;
   shiftStart: string;   // "HH:mm"
   shiftEnd: string;     // "HH:mm"
+  afternoonStart: string; // "HH:mm" — late reference for afternoon half-day staff
   lateGraceMins: number;
   halfDayMins: number;
   fullDayMins: number;
@@ -80,9 +81,27 @@ export function localDayInfo(at: Date, tz: string): {
 export function computeDay(
   punches: PunchLite[],
   cfg: ScheduleConfig,
-  opts: { override?: 'LEAVE' | 'HOLIDAY'; weekday?: number } = {}
+  opts: {
+    override?: 'LEAVE' | 'HOLIDAY';
+    weekday?: number;
+    /** Is this a working day for this staff member? Defaults to weekly-off check. */
+    scheduled?: boolean;
+    /** Work pattern — half-day staff need only half the hours to count present. */
+    pattern?: 'FULL' | 'HALF_MORNING' | 'HALF_AFTERNOON';
+    /** Late reference for afternoon half-day staff (HH:mm). */
+    afternoonStart?: string;
+    /** Date is a declared school holiday. */
+    isHoliday?: boolean;
+  } = {}
 ): DayResult {
   const sorted = [...punches].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const pattern = opts.pattern ?? 'FULL';
+  // Half-day staff: a half day's work IS a full day for them.
+  const fullThreshold = pattern === 'FULL' ? cfg.fullDayMins : cfg.halfDayMins;
+  const halfThreshold = pattern === 'FULL' ? cfg.halfDayMins : Math.round(cfg.halfDayMins / 2);
+  // Late reference: afternoon staff are judged against the afternoon start time.
+  const refStart = pattern === 'HALF_AFTERNOON' ? (opts.afternoonStart || cfg.shiftStart) : cfg.shiftStart;
+  const scheduled = opts.scheduled ?? (opts.weekday == null || !cfg.weeklyOffDays.includes(opts.weekday));
 
   // Pair IN→OUT chronologically; sum completed pairs.
   let workedMs = 0;
@@ -104,15 +123,15 @@ export function computeDay(
   const open = openInAt != null;
   const workedMinutes = Math.round(workedMs / 60000);
 
-  // Late: first IN after shiftStart + grace.
+  // Late: first IN after the (pattern-aware) shift start + grace.
   let late = false;
   let lateMinutes = 0;
   if (firstIn) {
     const { minutesOfDay } = localDayInfo(firstIn, cfg.timezone);
-    const threshold = parseHm(cfg.shiftStart) + cfg.lateGraceMins;
+    const threshold = parseHm(refStart) + cfg.lateGraceMins;
     if (minutesOfDay > threshold) {
       late = true;
-      lateMinutes = minutesOfDay - parseHm(cfg.shiftStart);
+      lateMinutes = minutesOfDay - parseHm(refStart);
     }
   }
 
@@ -120,15 +139,15 @@ export function computeDay(
   let status: DayStatus;
   if (sorted.length === 0) {
     if (opts.override === 'LEAVE') status = 'LEAVE';
-    else if (opts.override === 'HOLIDAY') status = 'HOLIDAY';
-    else if (opts.weekday != null && cfg.weeklyOffDays.includes(opts.weekday)) status = 'WEEKLY_OFF';
+    else if (opts.isHoliday || opts.override === 'HOLIDAY') status = 'HOLIDAY';
+    else if (!scheduled) status = 'WEEKLY_OFF';
     else status = 'ABSENT';
   } else if (open) {
     // Still at work — optimistic until they punch out.
     status = 'PRESENT';
-  } else if (workedMinutes >= cfg.fullDayMins) {
+  } else if (workedMinutes >= fullThreshold) {
     status = 'PRESENT';
-  } else if (workedMinutes >= cfg.halfDayMins) {
+  } else if (workedMinutes >= halfThreshold) {
     status = 'HALF_DAY';
   } else {
     status = 'ABSENT';

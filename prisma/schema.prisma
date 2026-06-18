@@ -203,6 +203,11 @@ model Staff {
   pinHash             String?
   pinAttempts         Int       @default(0)
   pinLockedUntil      DateTime?
+  // Attendance schedule. workPattern: FULL | HALF_MORNING | HALF_AFTERNOON.
+  // workDays: JSON array of weekday numbers (0=Sun..6=Sat) the staff is expected;
+  // null = every day except the school-wide weekly-offs (i.e. a normal full-week teacher).
+  workPattern         String    @default("FULL")
+  workDays            Json?
   attCredentials      StaffCredential[]
   attPunches          StaffPunch[]
   attDays             StaffAttendanceDay[]
@@ -517,6 +522,17 @@ model LeaveEntitlement {
   @@index([staffId])
 }
 
+// School-wide holidays — any date can be declared a holiday for all staff.
+// On a holiday, staff with no punches show HOLIDAY instead of ABSENT.
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
 // ========== Settings ==========
 model Settings {
   id              String @id @default("singleton")
@@ -547,6 +563,7 @@ model Settings {
   gpsAccuracyMaxM   Int     @default(100)   // reject punches with worse GPS accuracy
   shiftStart        String  @default("09:00")
   shiftEnd          String  @default("16:00")
+  afternoonStart    String  @default("13:00")   // late reference for afternoon half-day staff
   lateGraceMins     Int     @default(15)    // IN after shiftStart+grace => late
   halfDayMins       Int     @default(210)   // worked >= this (but < full) => half day
   fullDayMins       Int     @default(420)   // worked >= this => full present

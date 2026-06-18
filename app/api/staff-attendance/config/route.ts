@@ -7,7 +7,7 @@ const SINGLETON = 'singleton';
 
 const NUMERIC = ['geofenceRadiusM', 'gpsAccuracyMaxM', 'lateGraceMins', 'halfDayMins', 'fullDayMins'] as const;
 const FLOAT = ['schoolLat', 'schoolLng'] as const;
-const STRING = ['shiftStart', 'shiftEnd'] as const;
+const STRING = ['shiftStart', 'shiftEnd', 'afternoonStart'] as const;
 
 async function getOrCreate() {
   return prisma.settings.upsert({ where: { id: SINGLETON }, update: {}, create: { id: SINGLETON } });
@@ -26,6 +26,7 @@ export async function GET() {
       gpsAccuracyMaxM: s.gpsAccuracyMaxM,
       shiftStart: s.shiftStart,
       shiftEnd: s.shiftEnd,
+      afternoonStart: s.afternoonStart,
       lateGraceMins: s.lateGraceMins,
       halfDayMins: s.halfDayMins,
       fullDayMins: s.fullDayMins,
