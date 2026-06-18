@@ -22,19 +22,20 @@ const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // status -> [cell classes, short label]. Static strings so Tailwind keeps them.
+// Dark, filled cells with white text for strong at-a-glance contrast.
 const STYLE: Record<string, { cls: string; label: string }> = {
-  PRESENT: { cls: 'bg-success-50 text-success-700', label: 'P' },
-  HALF_DAY: { cls: 'bg-warn-50 text-warn-700', label: '½' },
-  ABSENT: { cls: 'bg-danger-50 text-danger-700', label: 'A' },
-  LEAVE: { cls: 'bg-info-50 text-info-700', label: 'L' },
-  HOLIDAY: { cls: 'bg-purple-50 text-purple-700', label: 'H' },
-  WEEKLY_OFF: { cls: 'bg-slate-100 text-slate-400', label: 'O' },
+  PRESENT: { cls: 'bg-success-600 text-white', label: 'P' },
+  HALF_DAY: { cls: 'bg-warn-600 text-white', label: '½' },
+  ABSENT: { cls: 'bg-danger-600 text-white', label: 'A' },
+  LEAVE: { cls: 'bg-info-600 text-white', label: 'L' },
+  HOLIDAY: { cls: 'bg-purple-600 text-white', label: 'H' },
+  WEEKLY_OFF: { cls: 'bg-slate-500 text-white', label: 'O' },
 };
-const EMPTY = { cls: 'text-slate-300', label: '' };
+const EMPTY = { cls: 'bg-slate-50 text-slate-300', label: '' };
 
 const LEGEND: [string, string][] = [
-  ['Present', 'bg-success-100'], ['Half day', 'bg-warn-100'], ['Absent', 'bg-danger-100'],
-  ['Leave', 'bg-info-100'], ['Holiday', 'bg-purple-100'], ['Off', 'bg-slate-200'],
+  ['Present', 'bg-success-600'], ['Half day', 'bg-warn-600'], ['Absent', 'bg-danger-600'],
+  ['Leave', 'bg-info-600'], ['Holiday', 'bg-purple-600'], ['Off', 'bg-slate-500'],
 ];
 
 function shiftMonth(month: string, delta: number): string {
@@ -84,7 +85,7 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
               className={`relative aspect-square rounded-md flex flex-col items-center justify-center ${st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
               <span className="text-[11px] leading-none opacity-70">{day}</span>
               {st.label && <span className="text-sm font-semibold leading-tight">{st.label}</span>}
-              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-warn-500" title="late" />}
+              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white ring-1 ring-black/10" title="late" />}
             </div>
           );
         })}
