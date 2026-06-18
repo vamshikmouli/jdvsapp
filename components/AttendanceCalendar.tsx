@@ -63,7 +63,7 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
   const tally = days.reduce((a, d) => { a[d.status] = (a[d.status] || 0) + 1; return a; }, {} as Record<string, number>);
 
   return (
-    <div className="max-w-md mx-auto">
+    <div className="max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-3">
         <button onClick={() => canPrev && onMonthChange?.(shiftMonth(month, -1))} disabled={!onMonthChange || !canPrev}
           className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronLeft" size={18} /></button>
