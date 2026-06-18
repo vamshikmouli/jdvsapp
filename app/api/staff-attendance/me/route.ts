@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
@@ -7,7 +7,7 @@ import { localDayInfo } from '@/lib/staffAttendance/rules';
 // GET /api/staff-attendance/me
 // Today's punch state + recent history + enrollment status for the signed-in
 // staff member. Drives the "My attendance" self-punch screen.
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await requirePermission('STAFF_ATTENDANCE_MARK');
     const staffId = (session.user as any)?.staffId as string | undefined;
@@ -19,7 +19,14 @@ export async function GET() {
     const todayKey = localDayInfo(new Date(), cfg.timezone).dateKey;
     const todayDate = new Date(`${todayKey}T00:00:00Z`);
 
-    const [cred, today, punchesToday, recent] = await Promise.all([
+    // Calendar month (YYYY-MM), defaults to the current month.
+    const monthParam = new URL(req.url).searchParams.get('month');
+    const monthKey = /^\d{4}-\d{2}$/.test(monthParam || '') ? (monthParam as string) : todayKey.slice(0, 7);
+    const [my, mm] = monthKey.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(my, mm - 1, 1));
+    const monthEnd = new Date(Date.UTC(my, mm, 1) - 24 * 3600_000);
+
+    const [cred, today, punchesToday, recent, monthDays] = await Promise.all([
       prisma.staffCredential.findFirst({
         where: { staffId, active: true },
         select: { deviceName: true, createdAt: true, lastUsedAt: true },
@@ -37,6 +44,10 @@ export async function GET() {
         orderBy: { date: 'desc' },
         take: 14,
       }),
+      prisma.staffAttendanceDay.findMany({
+        where: { staffId, date: { gte: monthStart, lte: monthEnd } },
+        orderBy: { date: 'asc' },
+      }),
     ]);
 
     const lastPunch = punchesToday[punchesToday.length - 1];
@@ -51,6 +62,9 @@ export async function GET() {
       today: today ?? null,
       punchesToday: punchesToday.filter((p) => localDayInfo(p.at, cfg.timezone).dateKey === todayKey),
       recent,
+      todayKey,
+      month: monthKey,
+      monthDays,
     });
   } catch (err) {
     const { status, body } = authErrorResponse(err);

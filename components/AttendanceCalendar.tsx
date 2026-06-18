@@ -1,0 +1,110 @@
+'use client';
+
+import React from 'react';
+import { Icon } from '@/components/Icon';
+
+export interface CalDay {
+  date: string;        // ISO date (…T00:00:00Z)
+  status: string;      // PRESENT | HALF_DAY | ABSENT | LEAVE | HOLIDAY | WEEKLY_OFF
+  late?: boolean;
+}
+
+interface Props {
+  month: string;       // "YYYY-MM"
+  days: CalDay[];
+  todayKey?: string;   // "YYYY-MM-DD" to highlight
+  onMonthChange?: (month: string) => void;
+  maxMonth?: string;   // cap forward navigation (default: current month)
+  loading?: boolean;
+}
+
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// status -> [cell classes, short label]. Static strings so Tailwind keeps them.
+const STYLE: Record<string, { cls: string; label: string }> = {
+  PRESENT: { cls: 'bg-success-50 text-success-700', label: 'P' },
+  HALF_DAY: { cls: 'bg-warn-50 text-warn-700', label: '½' },
+  ABSENT: { cls: 'bg-danger-50 text-danger-700', label: 'A' },
+  LEAVE: { cls: 'bg-info-50 text-info-700', label: 'L' },
+  HOLIDAY: { cls: 'bg-purple-50 text-purple-700', label: 'H' },
+  WEEKLY_OFF: { cls: 'bg-slate-100 text-slate-400', label: 'O' },
+};
+const EMPTY = { cls: 'text-slate-300', label: '' };
+
+const LEGEND: [string, string][] = [
+  ['Present', 'bg-success-100'], ['Half day', 'bg-warn-100'], ['Absent', 'bg-danger-100'],
+  ['Leave', 'bg-info-100'], ['Holiday', 'bg-purple-100'], ['Off', 'bg-slate-200'],
+];
+
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMonth, loading }: Props) {
+  const [y, m] = month.split('-').map(Number);
+  const byDate = new Map(days.map((d) => [d.date.slice(0, 10), d]));
+  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cap = maxMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const canNext = month < cap;
+
+  const cells: (number | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  // Month tally.
+  const tally = days.reduce((a, d) => { a[d.status] = (a[d.status] || 0) + 1; return a; }, {} as Record<string, number>);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => onMonthChange?.(shiftMonth(month, -1))} disabled={!onMonthChange}
+          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronLeft" size={18} /></button>
+        <div className="text-sm font-medium text-slate-800">{MONTH_NAMES[m - 1]} {y}</div>
+        <button onClick={() => canNext && onMonthChange?.(shiftMonth(month, 1))} disabled={!onMonthChange || !canNext}
+          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronRight" size={18} /></button>
+      </div>
+
+      <div className={`grid grid-cols-7 gap-1 ${loading ? 'opacity-50' : ''}`}>
+        {WEEKDAYS.map((w, i) => (
+          <div key={i} className="text-center text-[11px] font-medium text-slate-400 pb-1">{w}</div>
+        ))}
+        {cells.map((day, i) => {
+          if (day == null) return <div key={i} />;
+          const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const rec = byDate.get(dateKey);
+          const st = rec ? (STYLE[rec.status] || EMPTY) : EMPTY;
+          const isToday = dateKey === todayKey;
+          return (
+            <div key={i} title={rec ? rec.status.replace('_', ' ').toLowerCase() : ''}
+              className={`relative aspect-square rounded-md flex flex-col items-center justify-center ${st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
+              <span className="text-[11px] leading-none opacity-70">{day}</span>
+              {st.label && <span className="text-sm font-semibold leading-tight">{st.label}</span>}
+              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-warn-500" title="late" />}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-3">
+        {LEGEND.map(([label, dot]) => (
+          <span key={label} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+            <span className={`w-2.5 h-2.5 rounded-sm ${dot}`} />{label}
+          </span>
+        ))}
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500"><span className="w-1.5 h-1.5 rounded-full bg-warn-500" />late</span>
+      </div>
+
+      <div className="flex flex-wrap gap-3 mt-3 text-xs">
+        <span className="text-success-700 font-medium">{tally.PRESENT || 0} present</span>
+        <span className="text-warn-700 font-medium">{tally.HALF_DAY || 0} half</span>
+        <span className="text-danger-700 font-medium">{tally.ABSENT || 0} absent</span>
+        <span className="text-info-700 font-medium">{tally.LEAVE || 0} leave</span>
+      </div>
+    </div>
+  );
+}

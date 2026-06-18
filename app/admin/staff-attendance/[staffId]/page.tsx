@@ -6,13 +6,24 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Card, Chip, Skeleton, EmptyState, Button, Input } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
-import { STATUS_LABEL, statusTone, fmtMins, fmtTime } from '@/lib/staffAttendance/display';
+import { fmtTime } from '@/lib/staffAttendance/display';
+import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
 
 const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', UNPAID: 'Unpaid', OTHER: 'Other' };
 
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function monthRange(m: string) {
+  const [y, mm] = m.split('-').map(Number);
+  const to = new Date(Date.UTC(y, mm, 0)).toISOString().slice(0, 10);
+  return { from: `${m}-01`, to };
+}
+
 interface Data {
   staff: { id: string; name: string; designation: string | null; hasPin: boolean; device: { deviceName: string | null; lastUsedAt: string } | null };
-  days: { date: string; status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number }[];
+  days: (CalDay & { lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number })[];
   punches: { type: 'IN' | 'OUT'; at: string; source: string; withinFence: boolean; distanceM: number | null; note: string | null }[];
 }
 
@@ -22,6 +33,8 @@ export default function StaffAttendanceDetailPage() {
   const canApprove = (((session?.user as any)?.perms as string[]) || []).includes('LEAVE_APPROVE');
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
+  const [month, setMonth] = useState(currentMonth());
+  const [calLoading, setCalLoading] = useState(false);
   const [bal, setBal] = useState<{ year: string; startYear: number; balances: any[] } | null>(null);
 
   const loadBal = useCallback(async () => {
@@ -30,12 +43,16 @@ export default function StaffAttendanceDetailPage() {
   }, [staffId]);
 
   useEffect(() => {
-    fetch(`/api/staff-attendance/${staffId}`).then(async (r) => {
+    setCalLoading(true);
+    const { from, to } = monthRange(month);
+    fetch(`/api/staff-attendance/${staffId}?from=${from}&to=${to}`).then(async (r) => {
       if (r.ok) setData(await r.json());
       setLoading(false);
+      setCalLoading(false);
     });
-    loadBal();
-  }, [staffId, loadBal]);
+  }, [staffId, month]);
+
+  useEffect(() => { loadBal(); }, [loadBal]);
 
   const setOverride = async (type: string, days: number | null) => {
     if (!bal) return;
@@ -96,20 +113,14 @@ export default function StaffAttendanceDetailPage() {
         </Card>
       )}
 
-      <Card title="Last 30 days" padded={false}>
-        {data.days.length === 0 ? (
-          <EmptyState icon="Calendar" title="No records" body="No attendance recorded in this period." />
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {data.days.map((d) => (
-              <div key={d.date} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <span className="text-slate-700 w-32">{new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-                <span className="text-slate-400 text-xs flex-1">{fmtTime(d.firstIn)} – {fmtTime(d.lastOut)} · {fmtMins(d.workedMinutes)}</span>
-                <Chip tone={statusTone(d.status)}>{STATUS_LABEL[d.status] ?? d.status}{d.late ? ` · ${d.lateMinutes}m late` : ''}</Chip>
-              </div>
-            ))}
-          </div>
-        )}
+      <Card title="Attendance calendar">
+        <AttendanceCalendar
+          month={month}
+          days={data.days}
+          todayKey={new Date().toISOString().slice(0, 10)}
+          loading={calLoading}
+          onMonthChange={setMonth}
+        />
       </Card>
 
       <Card title="Recent punches" padded={false}>

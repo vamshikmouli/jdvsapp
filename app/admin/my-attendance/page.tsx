@@ -5,7 +5,8 @@ import { useSession } from 'next-auth/react';
 import { startRegistration, startAuthentication, browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { Button, Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
-import { STATUS_LABEL, statusTone, fmtMins, fmtTime, getPosition } from '@/lib/staffAttendance/display';
+import { STATUS_LABEL, statusTone, fmtTime, getPosition } from '@/lib/staffAttendance/display';
+import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
 
 interface MeData {
   enabled: boolean;
@@ -15,7 +16,14 @@ interface MeData {
   nextAction: 'IN' | 'OUT';
   today: { status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number } | null;
   punchesToday: { type: 'IN' | 'OUT'; at: string; source: string }[];
-  recent: { date: string; status: string; late: boolean; firstIn: string | null; lastOut: string | null; workedMinutes: number }[];
+  todayKey: string;
+  month: string;
+  monthDays: CalDay[];
+}
+
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export default function MyAttendancePage() {
@@ -25,17 +33,21 @@ export default function MyAttendancePage() {
 
   const [data, setData] = useState<MeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [month, setMonth] = useState(currentMonth());
+  const [calLoading, setCalLoading] = useState(false);
   const [busy, setBusy] = useState<'enroll' | 'punch' | null>(null);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
 
-  const load = useCallback(async () => {
-    const res = await fetch('/api/staff-attendance/me');
+  const load = useCallback(async (m: string = month) => {
+    setCalLoading(true);
+    const res = await fetch(`/api/staff-attendance/me?month=${m}`);
     if (res.ok) setData(await res.json());
     setLoading(false);
-  }, []);
+    setCalLoading(false);
+  }, [month]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(month); }, [month, load]);
 
   const enroll = async () => {
     setError(''); setFlash(''); setBusy('enroll');
@@ -158,19 +170,15 @@ export default function MyAttendancePage() {
         </div>
       )}
 
-      {data && data.recent.length > 0 && (
-        <Card title="Last 2 weeks">
-          <div className="divide-y divide-slate-100">
-            {data.recent.map((d) => (
-              <div key={d.date} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-slate-700">{new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-                <span className="flex items-center gap-3">
-                  <span className="text-slate-400 text-xs">{fmtTime(d.firstIn)}–{fmtTime(d.lastOut)} · {fmtMins(d.workedMinutes)}</span>
-                  <Chip tone={statusTone(d.status)}>{STATUS_LABEL[d.status] ?? d.status}</Chip>
-                </span>
-              </div>
-            ))}
-          </div>
+      {data && (
+        <Card title="My attendance calendar">
+          <AttendanceCalendar
+            month={data.month}
+            days={data.monthDays}
+            todayKey={data.todayKey}
+            loading={calLoading}
+            onMonthChange={setMonth}
+          />
         </Card>
       )}
     </div>
