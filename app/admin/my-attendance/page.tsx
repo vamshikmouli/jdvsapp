@@ -26,6 +26,20 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Turn a raw WebAuthn ceremony error into something a teacher can act on.
+function webauthnMessage(e: any, ctx: 'enroll' | 'punch'): string {
+  const name = e?.name || e?.cause?.name || '';
+  const msg = String(e?.message || '');
+  if (name === 'InvalidStateError') return 'This phone is already registered for attendance.';
+  if (name === 'SecurityError') return 'Biometrics need a secure (https) connection. Open the site over https and try again.';
+  if (name === 'NotAllowedError' || /not allowed|timed out|timeout/i.test(msg)) {
+    return ctx === 'punch'
+      ? 'Couldn’t verify on this phone. If this isn’t the phone you registered, use your registered phone — or ask the office to reset your device so you can set up this one. If it is your phone, tap Punch IN again and approve the fingerprint / Face ID prompt (don’t cancel).'
+      : 'Setup was cancelled or timed out. Tap “Set up biometric” again and approve the fingerprint / Face ID prompt.';
+  }
+  return msg || 'Something went wrong. Please try again.';
+}
+
 export default function MyAttendancePage() {
   const { data: session } = useSession();
   const perms = ((session?.user as any)?.perms as string[]) || [];
@@ -56,7 +70,9 @@ export default function MyAttendancePage() {
       const optRes = await fetch('/api/staff-attendance/enroll/options', { method: 'POST' });
       const optionsJSON = await optRes.json();
       if (!optRes.ok) throw new Error(optionsJSON.error || 'Could not start setup.');
-      const att = await startRegistration({ optionsJSON });
+      let att;
+      try { att = await startRegistration({ optionsJSON }); }
+      catch (we) { throw new Error(webauthnMessage(we, 'enroll')); }
       const vRes = await fetch('/api/staff-attendance/enroll/verify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(att),
       });
@@ -75,9 +91,11 @@ export default function MyAttendancePage() {
       const pos = await getPosition();
       const optRes = await fetch('/api/staff-attendance/punch/options', { method: 'POST' });
       const optionsJSON = await optRes.json();
-      if (optRes.status === 409) throw new Error('This phone is not set up yet.');
+      if (optRes.status === 409) throw new Error('This phone is not set up yet. Tap “Set up biometric” first.');
       if (!optRes.ok) throw new Error(optionsJSON.error || 'Could not start punch.');
-      const assertion = await startAuthentication({ optionsJSON });
+      let assertion;
+      try { assertion = await startAuthentication({ optionsJSON }); }
+      catch (we) { throw new Error(webauthnMessage(we, 'punch')); }
       const vRes = await fetch('/api/staff-attendance/punch/verify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assertion, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }),
