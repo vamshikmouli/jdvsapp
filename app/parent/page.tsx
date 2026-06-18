@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { feeMoney } from '@/lib/fees';
 import { PushOptIn } from '@/components/PushOptIn';
+import { useBranding } from '@/components/useBranding';
 
 interface Child {
   id: string;
@@ -674,6 +675,7 @@ type ParentTab = 'home' | 'marks' | 'circulars' | 'photos';
 
 export default function ParentPage() {
   const { data: session } = useSession();
+  const brand = useBranding();
   const [tab, setTab] = useState<ParentTab>('home');
 
   // Unread-circular badge (per-device, via localStorage).
@@ -726,7 +728,10 @@ export default function ParentPage() {
       <header className="sticky top-0 z-10 bg-gradient-to-br from-purple-700 to-purple-500 text-white px-4 pt-5 pb-6">
         <div className="max-w-md mx-auto flex items-start justify-between">
           <div>
-            <div className="text-xs text-purple-100/90">Jnana Deepika · Parent</div>
+            <div className="text-xs text-purple-100/90 flex items-center gap-1.5">
+              {brand.logoUrl && <img src={brand.logoUrl} alt="" className="w-4 h-4 rounded-sm object-contain bg-white/90 p-px" />}
+              {brand.schoolName} · Parent
+            </div>
             <h1 className="text-xl font-bold mt-0.5">{heading}</h1>
             {tab === 'home' && (
               <div className="text-xs text-purple-100/80 mt-0.5">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</div>

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { STAFF_NAV, ROLE_META } from '@/lib/navigation';
+import { useBranding } from '@/components/useBranding';
 import { Surface } from '@prisma/client';
 
 function initialsOf(name: string) {
@@ -26,6 +27,7 @@ interface SidebarProps {
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const brand = useBranding();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   const userName = session?.user?.name || 'User';
@@ -70,11 +72,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       {/* Brand */}
       <div className="p-4 border-b border-slate-100">
         <Link href="/admin/dashboard" className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-purple-600 flex items-center justify-center text-white font-bold text-sm">
-            JD
+          <div className="w-8 h-8 rounded-md bg-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden shrink-0">
+            {brand.logoUrl
+              ? <img src={brand.logoUrl} alt="" className="w-full h-full object-contain bg-white" />
+              : 'JD'}
           </div>
           <div>
-            <div className="font-semibold text-slate-900 text-sm">Jnana Deepika</div>
+            <div className="font-semibold text-slate-900 text-sm">{brand.schoolName}</div>
             <div className="text-xs text-slate-500">School ERP</div>
           </div>
         </Link>
