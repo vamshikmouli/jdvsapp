@@ -53,6 +53,7 @@ interface Student {
   photoUrl?: string | null;
   guardianName: string;
   guardianPhone: string;
+  guardianUserId?: string | null;
   village: string | null;
   status: 'ACTIVE' | 'INACTIVE';
 }
@@ -114,6 +115,23 @@ export default function StudentsPage() {
 
   // View-details drawer
   const [viewing, setViewing] = useState<Student | null>(null);
+
+  // Parent login PIN reset
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<{ name: string; tempPin: string } | null>(null);
+  const resetParentPin = async (student: Student) => {
+    if (!student.guardianUserId) { alert('No parent login linked to this student.'); return; }
+    if (!confirm(`Reset the parent login PIN for ${student.name}'s family? They get a temporary PIN and must set a new one on next login. This signs them out of all devices.`)) return;
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/users/${student.guardianUserId}/reset-pin`, { method: 'POST' });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'Reset failed');
+      setResetResult({ name: j.name, tempPin: j.tempPin });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Reset failed');
+    } finally { setResetting(false); }
+  };
 
   // Excel import drawer
   const [importOpen, setImportOpen] = useState(false);
@@ -737,9 +755,30 @@ export default function StudentsPage() {
             <DetailRow label="SMS / login to" value={viewing.smsFor ? viewing.smsFor[0] + viewing.smsFor.slice(1).toLowerCase() : null} />
             <DetailRow label="Village" value={viewing.village} />
             <DetailRow label="Address" value={viewing.address} />
+            {canManage && viewing.guardianUserId && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <Button kind="secondary" icon="KeyRound" disabled={resetting} onClick={() => resetParentPin(viewing!)}>
+                  {resetting ? 'Resetting…' : 'Reset parent login PIN'}
+                </Button>
+                <p className="text-xs text-slate-400 mt-1.5">Use if the parent forgot their app password.</p>
+              </div>
+            )}
           </div>
         )}
       </Drawer>
+
+      <Modal open={!!resetResult} onClose={() => setResetResult(null)} title="Temporary PIN created" width={420}>
+        {resetResult && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Share this temporary PIN with <b>{resetResult.name}</b> privately. They sign in with it, then must set their own PIN.</p>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 py-4 text-center">
+              <div className="text-3xl font-bold tracking-[0.3em] text-slate-900">{resetResult.tempPin}</div>
+            </div>
+            <p className="text-xs text-slate-400">They’ve been signed out of all devices. This PIN is shown once.</p>
+            <div className="flex justify-end"><Button kind="primary" onClick={() => setResetResult(null)}>Done</Button></div>
+          </div>
+        )}
+      </Modal>
 
       {/* Archive confirm */}
       <Modal

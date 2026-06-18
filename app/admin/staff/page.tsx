@@ -15,6 +15,7 @@ interface StaffMember {
   designation: string | null;
   classes: { id: string; name: string }[];
   hasLogin?: boolean;
+  userId?: string | null;
   roleId?: string | null;
   roleName?: string | null;
 }
@@ -66,6 +67,22 @@ export default function StaffPage() {
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{ name: string; tempPin: string } | null>(null);
+
+  const resetPin = async (member: StaffMember) => {
+    if (!member.userId) { alert('This staff member has no login to reset.'); return; }
+    if (!confirm(`Reset login PIN for ${member.name}? They’ll get a temporary PIN and must set a new one on next login. This signs them out of all devices.`)) return;
+    setResetting(member.id);
+    try {
+      const res = await fetch(`/api/users/${member.userId}/reset-pin`, { method: 'POST' });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'Reset failed');
+      setResetResult({ name: j.name, tempPin: j.tempPin });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Reset failed');
+    } finally { setResetting(null); }
+  };
 
   const [viewing, setViewing] = useState<StaffMember | null>(null);
 
@@ -332,6 +349,11 @@ export default function StaffPage() {
                           >
                             <Icon name="Pencil" size={16} />
                           </button>
+                          {member.hasLogin && !(member as any).archived && (
+                            <button onClick={() => resetPin(member)} disabled={resetting === member.id} className="text-slate-400 hover:text-info-600 p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-50" title="Reset login PIN">
+                              <Icon name="KeyRound" size={16} />
+                            </button>
+                          )}
                           {(member as any).archived ? (
                             <button onClick={() => restore(member)} className="text-slate-400 hover:text-success-600 p-1.5 rounded-md hover:bg-slate-100" title="Restore">
                               <Icon name="ArchiveRestore" size={16} />
@@ -381,6 +403,11 @@ export default function StaffPage() {
                   <button onClick={() => openEdit(member)} className="text-slate-400 hover:text-purple-600 p-1.5 rounded-md hover:bg-slate-100" title="Edit">
                     <Icon name="Pencil" size={15} />
                   </button>
+                  {member.hasLogin && !(member as any).archived && (
+                    <button onClick={() => resetPin(member)} disabled={resetting === member.id} className="text-slate-400 hover:text-info-600 p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-50" title="Reset login PIN">
+                      <Icon name="KeyRound" size={15} />
+                    </button>
+                  )}
                   {(member as any).archived ? (
                     <button onClick={() => restore(member)} className="text-slate-400 hover:text-success-600 p-1.5 rounded-md hover:bg-slate-100" title="Restore">
                       <Icon name="ArchiveRestore" size={15} />
@@ -576,6 +603,19 @@ export default function StaffPage() {
       </Modal>
 
       <StaffImportDrawer open={staffImportOpen} onClose={() => setStaffImportOpen(false)} onImported={fetchStaff} />
+
+      <Modal open={!!resetResult} onClose={() => setResetResult(null)} title="Temporary PIN created">
+        {resetResult && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Share this temporary PIN with <b>{resetResult.name}</b> privately. They sign in with it, then must set their own PIN.</p>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 py-4 text-center">
+              <div className="text-3xl font-bold tracking-[0.3em] text-slate-900">{resetResult.tempPin}</div>
+            </div>
+            <p className="text-xs text-slate-400">They’ve been signed out of all devices. This PIN is shown once.</p>
+            <div className="flex justify-end"><Button kind="primary" onClick={() => setResetResult(null)}>Done</Button></div>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
