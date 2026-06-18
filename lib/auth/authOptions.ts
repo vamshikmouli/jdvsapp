@@ -115,6 +115,9 @@ export const authOptions: NextAuthOptions = {
           perms: user.role.permissions.map((p) => p.permission),
           staffId: user.staff?.id ?? null,
           isParent: childrenCount > 0,
+          // Provisioned accounts use the phone number as password (passwordChangedAt
+          // null). Force them to set their own PIN before using the app.
+          mustSetPin: user.passwordChangedAt == null,
           sessionId: sessionToken,
         } as any;
       },
@@ -122,7 +125,7 @@ export const authOptions: NextAuthOptions = {
   ],
   pages: { signIn: '/', error: '/' },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // Initial sign-in: persist identity + RBAC + session id
       if (user) {
         const u = user as any;
@@ -133,8 +136,18 @@ export const authOptions: NextAuthOptions = {
         token.perms = u.perms;
         token.staffId = u.staffId;
         token.isParent = u.isParent;
+        token.mustSetPin = u.mustSetPin;
         token.sessionId = u.sessionId;
         return token;
+      }
+
+      // Client called update() (e.g. just after setting their PIN) — re-read the flag.
+      if (trigger === 'update' && token.id) {
+        const u = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { passwordChangedAt: true },
+        });
+        token.mustSetPin = u ? u.passwordChangedAt == null : token.mustSetPin;
       }
 
       // Subsequent calls: verify the session hasn't been revoked.
@@ -164,6 +177,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).perms = token.perms || [];
         (session.user as any).staffId = token.staffId ?? null;
         (session.user as any).isParent = !!token.isParent;
+        (session.user as any).mustSetPin = !!token.mustSetPin;
         // Keep on both user and top-level — custom user fields survive getServerSession reliably.
         (session.user as any).sessionId = token.sessionId;
         (session as any).sessionId = token.sessionId;
