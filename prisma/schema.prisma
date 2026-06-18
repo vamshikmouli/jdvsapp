@@ -541,6 +541,7 @@ model Settings {
   id              String @id @default("singleton")
   // School profile
   schoolName      String  @default("Jnana Deepika")
+  logoUrl         String?
   principalName   String?
   address         String?
   phone           String?

@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [error, setError] = React.useState('');
   const [logoSrc, setLogoSrc] = React.useState('/uploads/Logofinal.png');
   const [logoOk, setLogoOk] = React.useState(true);
+  const [schoolName, setSchoolName] = React.useState('Jnana Deepika');
   const [checking, setChecking] = React.useState(true);
 
   // Already signed in? Skip the login form and go straight to the home page.
@@ -33,6 +34,17 @@ export default function LoginPage() {
       })
       .catch(() => setChecking(false));
   }, [router]);
+
+  // Public branding (school name + uploaded logo) for the login screen.
+  React.useEffect(() => {
+    fetch('/api/branding')
+      .then((r) => r.json())
+      .then((b) => {
+        if (b?.schoolName) setSchoolName(b.schoolName);
+        if (b?.logoUrl) { setLogoSrc(b.logoUrl); setLogoOk(true); }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,14 +86,14 @@ export default function LoginPage() {
           <div className="w-24 h-24 rounded-full bg-white shadow-lg ring-4 ring-white flex items-center justify-center overflow-hidden">
             {logoOk ? (
               // Drop your logo at /public/logo.png to show it here.
-              <img src={logoSrc} alt="Jnana Deepika" className="w-full h-full object-contain" onError={() => { if (logoSrc !== '/logo.svg') setLogoSrc('/logo.svg'); else setLogoOk(false); }} />
+              <img src={logoSrc} alt={schoolName} className="w-full h-full object-contain" onError={() => { if (logoSrc !== '/logo.svg') setLogoSrc('/logo.svg'); else setLogoOk(false); }} />
             ) : (
               <div className="w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
                 <Icon name="Flame" size={42} className="text-amber-300" />
               </div>
             )}
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mt-4">Jnana Deepika</h1>
+          <h1 className="text-2xl font-bold text-slate-900 mt-4">{schoolName}</h1>
           <p className="text-sm text-slate-500 mt-1">School ERP · staff &amp; parents</p>
         </div>
 

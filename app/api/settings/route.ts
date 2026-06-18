@@ -8,6 +8,7 @@ const SINGLETON = 'singleton';
 // Fields admins may update (school-wide)
 const EDITABLE = [
   'schoolName',
+  'logoUrl',
   'principalName',
   'address',
   'phone',

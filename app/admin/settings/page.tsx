@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Field, Input, Select, Chip, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
@@ -14,6 +14,7 @@ interface SessionDef {
 
 interface Settings {
   schoolName: string;
+  logoUrl: string | null;
   principalName: string | null;
   address: string | null;
   phone: string | null;
@@ -89,6 +90,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -108,6 +111,25 @@ export default function SettingsPage() {
   }, [fetchSettings]);
 
   const set = (patch: Partial<Settings>) => setSettings((s) => (s ? { ...s, ...patch } : s));
+
+  const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLogoUploading(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'logos');
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'Upload failed');
+      set({ logoUrl: j.url });
+      setNotice('Logo uploaded. Click Save to apply.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally { setLogoUploading(false); }
+  };
 
   // --- session list editing ---
   const updateSessions = (fn: (list: SessionDef[]) => SessionDef[]) =>
@@ -199,6 +221,28 @@ export default function SettingsPage() {
                   <Icon name="Lock" size={14} /> You can view these settings but only an admin can change them.
                 </div>
               )}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">School logo</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                    {settings.logoUrl
+                      ? <img src={settings.logoUrl} alt="School logo" className="w-full h-full object-contain" />
+                      : <Icon name="Image" size={22} className="text-slate-300" />}
+                  </div>
+                  {canManage && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex gap-2">
+                        <Button kind="secondary" icon="Upload" disabled={logoUploading} onClick={() => logoInputRef.current?.click()}>
+                          {logoUploading ? 'Uploading…' : settings.logoUrl ? 'Replace logo' : 'Upload logo'}
+                        </Button>
+                        {settings.logoUrl && <Button kind="tertiary" onClick={() => set({ logoUrl: null })}>Remove</Button>}
+                      </div>
+                      <span className="text-xs text-slate-400">PNG/JPG, square works best. Remember to Save.</span>
+                      <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={uploadLogo} />
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="School name">
                   <Input value={settings.schoolName} disabled={!canManage} onChange={(e) => set({ schoolName: e.target.value })} />
