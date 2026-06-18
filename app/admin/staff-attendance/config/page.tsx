@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button, Card, Field, Input, EmptyState, Skeleton } from '@/components/Primitives';
+import { Icon } from '@/components/Icon';
 import { getPosition, fmtMins } from '@/lib/staffAttendance/display';
 
 interface Cfg {
@@ -16,6 +17,7 @@ interface Cfg {
   leaveYearStartMonth: number;
 }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const LEAVE_TYPES: [string, string][] = [['CASUAL', 'Casual'], ['SICK', 'Sick'], ['EARNED', 'Earned'], ['UNPAID', 'Unpaid'], ['OTHER', 'Other']];
 
@@ -99,17 +101,47 @@ export default function StaffAttendanceConfigPage() {
           <Field label="Half-day after (mins)" hint={fmtMins(cfg.halfDayMins)}><Input type="number" value={cfg.halfDayMins} onChange={(e) => set({ halfDayMins: Number(e.target.value) })} /></Field>
           <Field label="Full-day after (mins)" hint={fmtMins(cfg.fullDayMins)}><Input type="number" value={cfg.fullDayMins} onChange={(e) => set({ fullDayMins: Number(e.target.value) })} /></Field>
         </div>
-        <div className="mt-3">
-          <div className="text-xs font-medium text-slate-500 mb-2">Weekly off days</div>
-          <div className="flex flex-wrap gap-2">
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-sm font-medium text-slate-700">Weekly off days</div>
+            <button
+              type="button"
+              onClick={() => set({ weeklyOffDays: cfg.weeklyOffDays.length ? [] : [0] })}
+              className="text-xs text-purple-600 hover:text-purple-700"
+            >
+              {cfg.weeklyOffDays.length ? 'Clear all' : 'Reset to Sunday'}
+            </button>
+          </div>
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 max-w-md">
             {DAYS.map((d, i) => {
               const on = cfg.weeklyOffDays.includes(i);
+              const weekend = i === 0 || i === 6;
               return (
-                <button key={d} onClick={() => set({ weeklyOffDays: on ? cfg.weeklyOffDays.filter((x) => x !== i) : [...cfg.weeklyOffDays, i] })}
-                  className={`px-3 py-1.5 rounded-md text-sm ${on ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{d}</button>
+                <button
+                  key={d}
+                  type="button"
+                  title={DAY_FULL[i]}
+                  aria-pressed={on}
+                  onClick={() => set({ weeklyOffDays: (on ? cfg.weeklyOffDays.filter((x) => x !== i) : [...cfg.weeklyOffDays, i]).sort((a, b) => a - b) })}
+                  className={`group relative flex flex-col items-center gap-1 rounded-xl py-2.5 transition-all ${
+                    on
+                      ? 'bg-purple-500 text-white shadow-sm ring-2 ring-purple-200'
+                      : `bg-slate-50 text-slate-600 hover:bg-slate-100 ${weekend ? 'text-slate-400' : ''}`
+                  }`}
+                >
+                  <span className="text-[11px] font-medium uppercase tracking-wide">{d}</span>
+                  <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold ${on ? 'bg-white/25' : 'bg-white'}`}>
+                    {on ? <Icon name="Check" size={14} /> : d[0]}
+                  </span>
+                </button>
               );
             })}
           </div>
+          <p className="mt-2.5 text-xs text-slate-500">
+            {cfg.weeklyOffDays.length === 0
+              ? 'No weekly off — staff are expected every day.'
+              : `${cfg.weeklyOffDays.length} day${cfg.weeklyOffDays.length > 1 ? 's' : ''} off each week: ${cfg.weeklyOffDays.map((i) => DAY_FULL[i]).join(', ')}. These show as “Weekly off”, not absent.`}
+          </p>
         </div>
       </Card>
 
