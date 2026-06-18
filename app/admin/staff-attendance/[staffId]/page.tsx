@@ -22,7 +22,7 @@ function monthRange(m: string) {
 }
 
 interface Data {
-  staff: { id: string; name: string; designation: string | null; hasPin: boolean; device: { deviceName: string | null; lastUsedAt: string } | null; workPattern: string; workDays: number[] | null };
+  staff: { id: string; name: string; designation: string | null; hasPin: boolean; device: { deviceName: string | null; lastUsedAt: string } | null; weekSchedule: Record<string, string> | null };
   days: (CalDay & { lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number })[];
   punches: { type: 'IN' | 'OUT'; at: string; source: string; withinFence: boolean; distanceM: number | null; note: string | null }[];
 }
@@ -149,64 +149,61 @@ export default function StaffAttendanceDetailPage() {
       </Card>
 
       {canManage && (
-        <ScheduleEditor staffId={data.staff.id} initialPattern={data.staff.workPattern} initialWorkDays={data.staff.workDays} />
+        <ScheduleEditor staffId={data.staff.id} initial={data.staff.weekSchedule} />
       )}
     </div>
   );
 }
 
-const DAY_LBL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const SESSIONS: [string, string][] = [['OFF', 'Off'], ['MORNING', 'Morning'], ['AFTERNOON', 'Afternoon'], ['FULL', 'Full day']];
+const DEFAULT_WEEK: Record<number, string> = { 0: 'OFF', 1: 'FULL', 2: 'FULL', 3: 'FULL', 4: 'FULL', 5: 'FULL', 6: 'OFF' };
 
-function ScheduleEditor({ staffId, initialPattern, initialWorkDays }: { staffId: string; initialPattern: string; initialWorkDays: number[] | null }) {
-  const [pattern, setPattern] = useState(initialPattern || 'FULL');
-  const [custom, setCustom] = useState(initialWorkDays != null);
-  const [days, setDays] = useState<number[]>(initialWorkDays ?? [1, 2, 3, 4, 5]);
+function ScheduleEditor({ staffId, initial }: { staffId: string; initial: Record<string, string> | null }) {
+  const [custom, setCustom] = useState(!!initial);
+  const [week, setWeek] = useState<Record<number, string>>(() => {
+    const base = { ...DEFAULT_WEEK };
+    if (initial) for (let d = 0; d <= 6; d++) if (initial[String(d)]) base[d] = initial[String(d)];
+    return base;
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const save = async () => {
     setSaving(true); setSaved(false);
+    const weekSchedule = custom
+      ? Object.fromEntries(Object.entries(week).map(([k, v]) => [k, v]))
+      : null;
     await fetch('/api/staff-attendance/manage/schedule', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staffId, workPattern: pattern, workDays: custom ? [...days].sort((a, b) => a - b) : null }),
+      body: JSON.stringify({ staffId, weekSchedule }),
     });
     setSaving(false); setSaved(true);
   };
 
   return (
     <Card title="Work schedule">
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Pattern</label>
-          <Select value={pattern} onChange={(e) => setPattern(e.target.value)}>
-            <option value="FULL">Full day</option>
-            <option value="HALF_MORNING">Half day — morning</option>
-            <option value="HALF_AFTERNOON">Half day — afternoon</option>
-          </Select>
+      <label className="flex items-center gap-2 text-sm mb-3">
+        <input type="checkbox" checked={custom} onChange={(e) => { setCustom(e.target.checked); setSaved(false); }} className="w-4 h-4" />
+        <span>Custom weekly schedule (per-day morning / afternoon / off)</span>
+      </label>
+      {custom ? (
+        <div className="space-y-1.5">
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+            <div key={d} className="flex items-center justify-between gap-3">
+              <span className="text-sm text-slate-700 w-28">{DAY_FULL[d]}</span>
+              <Select value={week[d]} onChange={(e) => { setWeek({ ...week, [d]: e.target.value }); setSaved(false); }} className="w-44">
+                {SESSIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </Select>
+            </div>
+          ))}
+          <p className="text-xs text-slate-400 pt-1">
+            Morning/Afternoon = half-day (those hours count as a full present day, lateness judged against that session’s start). Off days show as “off”, not absent.
+          </p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Working days</label>
-          <Select value={custom ? 'custom' : 'all'} onChange={(e) => setCustom(e.target.value === 'custom')}>
-            <option value="all">Every working day (follow weekly-offs)</option>
-            <option value="custom">Specific days (alternate-day staff)</option>
-          </Select>
-        </div>
-      </div>
-      {custom && (
-        <div className="flex flex-wrap gap-2 mt-3">
-          {DAY_LBL.map((d, i) => {
-            const on = days.includes(i);
-            return (
-              <button key={d} type="button" onClick={() => setDays(on ? days.filter((x) => x !== i) : [...days, i])}
-                className={`px-3 py-1.5 rounded-md text-sm ${on ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{d}</button>
-            );
-          })}
-        </div>
+      ) : (
+        <p className="text-sm text-slate-500">This staff member follows the school-wide schedule (full days, except the weekly-offs in Settings).</p>
       )}
-      <p className="text-xs text-slate-400 mt-2">
-        {pattern !== 'FULL' ? 'Half-day staff: a half day’s hours count as a full present day. ' : ''}
-        {custom ? 'Days not selected show as “off”, not absent.' : 'Off days follow the school-wide weekly-offs.'}
-      </p>
       <div className="mt-3 flex items-center gap-3">
         <Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save schedule'}</Button>
         {saved && <span className="text-xs text-success-600">Saved. Applies to new punches; use bulk-mark to fix past days.</span>}

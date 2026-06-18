@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import type { PunchSource, PunchType, StaffDayStatus } from '@prisma/client';
 import { loadStaffAttConfig } from './config';
 import { computeDay, localDayInfo, type PunchLite } from './rules';
-import { parseWorkPattern, parseWorkDays, isScheduledDay } from './schedule';
+import { parseWorkPattern, parseWorkDays, parseWeekSchedule, daySession, sessionPattern } from './schedule';
 
 /** UTC window that safely brackets a local calendar day (handles tz offset). */
 function dayWindow(dateKey: string): { gte: Date; lt: Date } {
@@ -43,21 +43,26 @@ export async function recomputeDay(
 
   // Per-staff schedule + school holiday for this date.
   const [staff, holiday] = await Promise.all([
-    prisma.staff.findUnique({ where: { id: staffId }, select: { workPattern: true, workDays: true } }),
+    prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true } }),
     prisma.holiday.findUnique({ where: { date: new Date(`${dateKey}T00:00:00Z`) }, select: { id: true } }),
   ]);
-  const pattern = parseWorkPattern(staff?.workPattern);
-  const workDays = parseWorkDays(staff?.workDays);
 
   const lite: PunchLite[] = rows.map((p) => ({ type: p.type, at: p.at }));
   const weekday = localDayInfo(new Date(`${dateKey}T06:00:00Z`), cfg.timezone).weekday;
+  // Resolve the session this staff member works on this weekday.
+  const session = daySession(
+    weekday,
+    parseWeekSchedule(staff?.weekSchedule),
+    { workPattern: parseWorkPattern(staff?.workPattern), workDays: parseWorkDays(staff?.workDays) },
+    cfg.schedule.weeklyOffDays
+  );
   const r = computeDay(lite, cfg.schedule, {
     override,
     weekday,
-    pattern,
+    pattern: sessionPattern(session),
     afternoonStart: cfg.schedule.afternoonStart,
     isHoliday: !!holiday,
-    scheduled: isScheduledDay(weekday, workDays, cfg.schedule.weeklyOffDays),
+    scheduled: session !== 'OFF',
   });
 
   return prisma.staffAttendanceDay.upsert({

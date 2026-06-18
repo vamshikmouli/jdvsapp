@@ -2,24 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
-import { parseWorkPattern, parseWorkDays } from '@/lib/staffAttendance/schedule';
+import { parseWeekSchedule } from '@/lib/staffAttendance/schedule';
 
 // POST /api/staff-attendance/manage/schedule
-// Set a staff member's work pattern + working days.
-// { staffId, workPattern: 'FULL'|'HALF_MORNING'|'HALF_AFTERNOON', workDays: number[] | null }
+// Set a staff member's per-weekday session schedule.
+// { staffId, weekSchedule: { "0".."6": 'OFF'|'MORNING'|'AFTERNOON'|'FULL' } | null }
 export async function POST(req: NextRequest) {
   try {
     await requirePermission('STAFF_ATTENDANCE_MANAGE');
-    const { staffId, workPattern, workDays } = await req.json();
+    const { staffId, weekSchedule } = await req.json();
     if (!staffId) return NextResponse.json({ error: 'staffId required' }, { status: 400 });
 
-    const wd = parseWorkDays(workDays); // number[] | null (null = follow weekly-offs)
+    const ws = parseWeekSchedule(weekSchedule);
     await prisma.staff.update({
       where: { id: staffId },
-      data: {
-        workPattern: parseWorkPattern(workPattern),
-        workDays: wd == null ? Prisma.JsonNull : wd,
-      },
+      // weekSchedule is now the source of truth; null = school default (full week).
+      data: { weekSchedule: ws == null ? Prisma.JsonNull : (ws as any) },
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

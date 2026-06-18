@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
-import { parseWorkDays, synthesizeDays } from '@/lib/staffAttendance/schedule';
+import { parseWorkDays, parseWorkPattern, parseWeekSchedule, synthesizeDays } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance/me
 // Today's punch state + recent history + enrollment status for the signed-in
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         where: { staffId, date: { gte: monthStart, lte: monthEnd } },
         orderBy: { date: 'asc' },
       }),
-      prisma.staff.findUnique({ where: { id: staffId }, select: { workDays: true } }),
+      prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true } }),
       prisma.holiday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
     ]);
 
@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
       todayKey,
       existing,
       holidays: holidaySet,
+      weekSchedule: parseWeekSchedule(staffRec?.weekSchedule),
+      workPattern: parseWorkPattern(staffRec?.workPattern),
       workDays: parseWorkDays(staffRec?.workDays),
       weeklyOffDays: cfg.schedule.weeklyOffDays,
     });

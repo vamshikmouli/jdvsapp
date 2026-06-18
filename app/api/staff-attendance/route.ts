@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
-import { parseWorkDays, emptyDayStatus, weekdayOfKey } from '@/lib/staffAttendance/schedule';
+import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance?date=YYYY-MM-DD
 // Daily board: every active staff member with their roll-up for the date.
@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
           name: true,
           designation: true,
           pinHash: true,
+          weekSchedule: true,
           workPattern: true,
           workDays: true,
           attCredentials: { where: { active: true }, select: { id: true } },
@@ -40,8 +41,10 @@ export async function GET(req: NextRequest) {
 
     const rows = staff.map((s) => {
       const day = byStaff.get(s.id);
-      // No stored row → derive the expected status (holiday / off / absent).
-      const fallback = emptyDayStatus(weekday, !!holiday, parseWorkDays(s.workDays), weeklyOff);
+      // No stored row → derive the expected status (holiday / off / absent) from
+      // the staff member's session for this weekday.
+      const session = daySession(weekday, parseWeekSchedule(s.weekSchedule), { workPattern: parseWorkPattern(s.workPattern), workDays: parseWorkDays(s.workDays) }, weeklyOff);
+      const fallback = emptyStatusForSession(session, !!holiday);
       return {
         staffId: s.id,
         name: s.name,

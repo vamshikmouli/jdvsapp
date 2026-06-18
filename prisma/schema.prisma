@@ -203,9 +203,12 @@ model Staff {
   pinHash             String?
   pinAttempts         Int       @default(0)
   pinLockedUntil      DateTime?
-  // Attendance schedule. workPattern: FULL | HALF_MORNING | HALF_AFTERNOON.
-  // workDays: JSON array of weekday numbers (0=Sun..6=Sat) the staff is expected;
-  // null = every day except the school-wide weekly-offs (i.e. a normal full-week teacher).
+  // Attendance schedule.
+  // weekSchedule (preferred): per-weekday session map { "0".."6": OFF|MORNING|AFTERNOON|FULL }.
+  //   Lets a teacher come e.g. Mon afternoon, Tue morning, Wed afternoon… Absent keys = FULL
+  //   on non-weekly-off days. null = use the legacy fields / school default.
+  // Legacy (still honored when weekSchedule is null): workPattern + workDays.
+  weekSchedule        Json?
   workPattern         String    @default("FULL")
   workDays            Json?
   attCredentials      StaffCredential[]

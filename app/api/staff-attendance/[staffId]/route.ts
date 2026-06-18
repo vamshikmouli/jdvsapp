@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
-import { parseWorkDays, parseWorkPattern, synthesizeDays } from '@/lib/staffAttendance/schedule';
+import { parseWorkDays, parseWorkPattern, parseWeekSchedule, synthesizeDays } from '@/lib/staffAttendance/schedule';
 
 // GET /api/staff-attendance/[staffId]?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Per-staff attendance history (day roll-ups) + raw punches in the range.
@@ -26,6 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
           name: true,
           designation: true,
           pinHash: true,
+          weekSchedule: true,
           workPattern: true,
           workDays: true,
           attCredentials: { where: { active: true }, select: { deviceName: true, lastUsedAt: true } },
@@ -54,6 +55,8 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
       todayKey,
       existing,
       holidays: holidaySet,
+      weekSchedule: parseWeekSchedule(staff.weekSchedule),
+      workPattern: parseWorkPattern(staff.workPattern),
       workDays: parseWorkDays(staff.workDays),
       weeklyOffDays: cfg.schedule.weeklyOffDays,
     });
@@ -65,8 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
         designation: staff.designation,
         hasPin: !!staff.pinHash,
         device: staff.attCredentials[0] ?? null,
-        workPattern: parseWorkPattern(staff.workPattern),
-        workDays: parseWorkDays(staff.workDays),
+        weekSchedule: parseWeekSchedule(staff.weekSchedule),
       },
       days: [...storedDays, ...synthetic],
       punches,

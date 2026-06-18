@@ -3,9 +3,50 @@
 // day should show (holiday / weekly-off / absent). Pure — no DB.
 
 export type WorkPattern = 'FULL' | 'HALF_MORNING' | 'HALF_AFTERNOON';
+export type Session = 'OFF' | 'MORNING' | 'AFTERNOON' | 'FULL';
 
 export function parseWorkPattern(v: unknown): WorkPattern {
   return v === 'HALF_MORNING' || v === 'HALF_AFTERNOON' ? v : 'FULL';
+}
+
+/** Parse a per-weekday session map { 0..6: Session }. null if unset/invalid. */
+export function parseWeekSchedule(raw: unknown): Record<number, Session> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<number, Session> = {};
+  let any = false;
+  for (let d = 0; d <= 6; d++) {
+    const v = src[String(d)];
+    if (v === 'OFF' || v === 'MORNING' || v === 'AFTERNOON' || v === 'FULL') {
+      out[d] = v;
+      any = true;
+    }
+  }
+  return any ? out : null;
+}
+
+/** The session a staff member works on a given weekday (week schedule preferred,
+ *  then legacy workPattern/workDays, else FULL on non-weekly-off days). */
+export function daySession(
+  weekday: number,
+  weekSchedule: Record<number, Session> | null,
+  legacy: { workPattern?: WorkPattern; workDays?: number[] | null },
+  weeklyOffDays: number[]
+): Session {
+  if (weekSchedule && weekSchedule[weekday] != null) return weekSchedule[weekday];
+  if (!isScheduledDay(weekday, legacy.workDays ?? null, weeklyOffDays)) return 'OFF';
+  const wp = legacy.workPattern ?? 'FULL';
+  return wp === 'HALF_MORNING' ? 'MORNING' : wp === 'HALF_AFTERNOON' ? 'AFTERNOON' : 'FULL';
+}
+
+export function sessionPattern(s: Session): WorkPattern {
+  return s === 'MORNING' ? 'HALF_MORNING' : s === 'AFTERNOON' ? 'HALF_AFTERNOON' : 'FULL';
+}
+
+/** Empty-day status given the resolved session (holiday wins). */
+export function emptyStatusForSession(session: Session, isHoliday: boolean): 'HOLIDAY' | 'WEEKLY_OFF' | 'ABSENT' {
+  if (isHoliday) return 'HOLIDAY';
+  return session === 'OFF' ? 'WEEKLY_OFF' : 'ABSENT';
 }
 
 /** A staff member's expected working weekdays, or null = all non-weekly-off days. */
@@ -40,6 +81,8 @@ export function synthesizeDays(opts: {
   todayKey: string;
   existing: Set<string>;
   holidays: Set<string>;
+  weekSchedule: Record<number, Session> | null;
+  workPattern?: WorkPattern;
   workDays: number[] | null;
   weeklyOffDays: number[];
 }): { date: string; status: string; late: boolean; synthetic: true }[] {
@@ -51,9 +94,10 @@ export function synthesizeDays(opts: {
     const dk = d.toISOString().slice(0, 10);
     d = new Date(d.getTime() + 24 * 3600_000);
     if (dk > opts.todayKey || opts.existing.has(dk)) continue;
+    const session = daySession(weekdayOfKey(dk), opts.weekSchedule, { workPattern: opts.workPattern, workDays: opts.workDays }, opts.weeklyOffDays);
     out.push({
       date: `${dk}T00:00:00.000Z`,
-      status: emptyDayStatus(weekdayOfKey(dk), opts.holidays.has(dk), opts.workDays, opts.weeklyOffDays),
+      status: emptyStatusForSession(session, opts.holidays.has(dk)),
       late: false,
       synthetic: true,
     });
