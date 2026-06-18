@@ -57,6 +57,7 @@ export default function StaffAttendancePage() {
         <div className="flex items-center gap-2">
           <Input type="date" value={date} max={todayKey()} onChange={(e) => setDate(e.target.value)} />
           <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }}>Export month</Button>
+          {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`}><Button kind="primary" icon="ClipboardCheck">Mark attendance</Button></Link>}
           {canManage && <Link href="/admin/staff-attendance/kiosk"><Button icon="Tablet">Kiosk</Button></Link>}
           {canConfig && <Link href="/admin/staff-attendance/config"><Button icon="Settings">Settings</Button></Link>}
         </div>
