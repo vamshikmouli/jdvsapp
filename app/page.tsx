@@ -10,13 +10,6 @@ function homeForSurface(surface?: string) {
   return surface === 'PARENT' ? '/parent' : '/admin/dashboard';
 }
 
-const DEMO = [
-  { label: 'Admin', email: 'admin@jnanadeepika.edu', password: 'Admin@123' },
-  { label: 'Teacher', email: 'teacher@jnanadeepika.edu', password: 'Teacher@123' },
-  { label: 'Accountant', email: 'accountant@jnanadeepika.edu', password: 'Account@123' },
-  { label: 'Parent', email: 'parent@jnanadeepika.edu', password: 'Parent@123' },
-];
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = React.useState('');
@@ -149,22 +142,6 @@ export default function LoginPage() {
               {loading ? <><Icon name="Loader2" size={18} className="animate-spin" /> Signing in…</> : <>Sign in <Icon name="ArrowRight" size={18} /></>}
             </button>
           </form>
-
-          {/* Demo logins — collapsible, for testing */}
-          <details className="mt-5 group">
-            <summary className="cursor-pointer list-none text-xs font-medium text-slate-400 hover:text-slate-600 flex items-center justify-center gap-1 select-none">
-              <Icon name="ChevronDown" size={13} className="transition-transform group-open:rotate-180" /> Demo logins
-            </summary>
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              {DEMO.map((d) => (
-                <button key={d.label} type="button" onClick={() => { setEmail(d.email); setPassword(d.password); }}
-                  className="text-left p-2.5 rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50/50 transition">
-                  <div className="text-[13px] font-medium text-slate-700">{d.label}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{d.email}</div>
-                </button>
-              ))}
-            </div>
-          </details>
         </div>
 
         <p className="text-center text-[11px] text-slate-400 mt-6">© {new Date().getFullYear()} Jnana Deepika School</p>
