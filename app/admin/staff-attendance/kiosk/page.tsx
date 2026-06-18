@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { Button, Card, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { fmtTime } from '@/lib/staffAttendance/display';
@@ -13,6 +13,8 @@ export default function KioskPage() {
   const { data: session } = useSession();
   const perms = ((session?.user as any)?.perms as string[]) || [];
   const canManage = perms.includes('STAFF_ATTENDANCE_MARK') || perms.includes('STAFF_ATTENDANCE_MANAGE');
+  // A dedicated kiosk-device login stays locked to this screen (no way back to admin).
+  const isKioskAccount = (session?.user as any)?.roleKey === 'kiosk';
 
   const [staff, setStaff] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,9 @@ export default function KioskPage() {
       <div className="max-w-md mx-auto p-4 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-slate-900">Attendance kiosk</h1>
-          <Link href="/admin/staff-attendance" className="text-sm text-slate-500 hover:text-slate-700">Exit</Link>
+          {isKioskAccount
+            ? <button onClick={() => signOut({ callbackUrl: '/' })} className="text-sm text-slate-500 hover:text-slate-700">Sign out</button>
+            : <Link href="/admin/staff-attendance" className="text-sm text-slate-500 hover:text-slate-700">Exit</Link>}
         </div>
 
         {result && (
