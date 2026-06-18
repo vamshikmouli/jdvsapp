@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Icon } from '@/components/Icon';
+import { ATTENDANCE_START_MONTH } from '@/lib/staffAttendance/schedule';
 
 export interface CalDay {
   date: string;        // ISO date (…T00:00:00Z)
@@ -51,6 +52,7 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const cap = maxMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const canNext = month < cap;
+  const canPrev = month > ATTENDANCE_START_MONTH; // don't go before the system start
 
   const cells: (number | null)[] = [
     ...Array(firstWeekday).fill(null),
@@ -63,7 +65,7 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => onMonthChange?.(shiftMonth(month, -1))} disabled={!onMonthChange}
+        <button onClick={() => canPrev && onMonthChange?.(shiftMonth(month, -1))} disabled={!onMonthChange || !canPrev}
           className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"><Icon name="ChevronLeft" size={18} /></button>
         <div className="text-sm font-medium text-slate-800">{MONTH_NAMES[m - 1]} {y}</div>
         <button onClick={() => canNext && onMonthChange?.(shiftMonth(month, 1))} disabled={!onMonthChange || !canNext}

@@ -5,6 +5,10 @@
 export type WorkPattern = 'FULL' | 'HALF_MORNING' | 'HALF_AFTERNOON';
 export type Session = 'OFF' | 'MORNING' | 'AFTERNOON' | 'FULL';
 
+// The attendance system went live on this date — never show/derive anything before it.
+export const ATTENDANCE_START_KEY = '2026-06-01';
+export const ATTENDANCE_START_MONTH = '2026-06';
+
 export function parseWorkPattern(v: unknown): WorkPattern {
   return v === 'HALF_MORNING' || v === 'HALF_AFTERNOON' ? v : 'FULL';
 }
@@ -93,7 +97,8 @@ export function synthesizeDays(opts: {
   while (d <= end && guard++ < 400) {
     const dk = d.toISOString().slice(0, 10);
     d = new Date(d.getTime() + 24 * 3600_000);
-    if (dk > opts.todayKey || opts.existing.has(dk)) continue;
+    // Nothing before the system start date, nothing in the future, nothing already stored.
+    if (dk < ATTENDANCE_START_KEY || dk > opts.todayKey || opts.existing.has(dk)) continue;
     const session = daySession(weekdayOfKey(dk), opts.weekSchedule, { workPattern: opts.workPattern, workDays: opts.workDays }, opts.weeklyOffDays);
     out.push({
       date: `${dk}T00:00:00.000Z`,
