@@ -7,6 +7,9 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string }[] = [
   { prefix: '/admin/students', perm: 'STUDENTS_VIEW' },
   { prefix: '/admin/hall-tickets', perm: 'STUDENTS_MANAGE' },
   { prefix: '/admin/classes', perm: 'CLASSES_VIEW' },
+  // More-specific prefixes MUST come before '/admin/staff' (first match wins).
+  { prefix: '/admin/staff-attendance', perm: 'STAFF_ATTENDANCE_VIEW' },
+  { prefix: '/admin/my-attendance', perm: 'STAFF_ATTENDANCE_MARK' },
   { prefix: '/admin/staff', perm: 'STAFF_VIEW' },
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
   { prefix: '/admin/communications', perm: 'NOTICES_MANAGE' },
