@@ -1,23 +1,32 @@
 import type { Metadata, Viewport } from 'next';
 import { Providers } from '@/components/Providers';
 import { PWARegister } from '@/components/PWARegister';
+import { prisma } from '@/lib/db';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'Jnana Deepika — School ERP',
-  description: 'School management system for attendance and fee management',
-  manifest: '/manifest.webmanifest',
-  applicationName: 'Jnana Deepika',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'Jnana Deepika',
-  },
-  icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
-  },
-};
+// Title + favicon follow the school configured in Settings (admin-uploaded logo).
+export async function generateMetadata(): Promise<Metadata> {
+  let schoolName = 'Jnana Deepika';
+  let icon = '/icon.svg';
+  try {
+    const s = await prisma.settings.findUnique({
+      where: { id: 'singleton' },
+      select: { schoolName: true, logoUrl: true },
+    });
+    if (s?.schoolName) schoolName = s.schoolName;
+    if (s?.logoUrl) icon = s.logoUrl;
+  } catch {
+    // DB unavailable (e.g. at build) — fall back to defaults.
+  }
+  return {
+    title: `${schoolName} — School ERP`,
+    description: 'School management system for attendance and fee management',
+    manifest: '/manifest.webmanifest',
+    applicationName: schoolName,
+    appleWebApp: { capable: true, statusBarStyle: 'default', title: schoolName },
+    icons: { icon, apple: icon },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: '#7C3AED',

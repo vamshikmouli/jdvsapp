@@ -453,8 +453,20 @@ function truncateText(ctx: CanvasRenderingContext2D, text: string, maxW: number)
   return t + '…';
 }
 
+// Load an image for canvas use, CORS-enabled so it doesn't taint the canvas.
+// Resolves null on any failure (then we just skip the logo).
+function loadCanvasImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 // Draw one assessment result as a shareable PNG (no external libraries).
-async function renderResultImage(rep: Report, a: ReportAssessment): Promise<Blob> {
+async function renderResultImage(rep: Report, a: ReportAssessment, brand: { schoolName: string; logoUrl: string | null }): Promise<Blob> {
   const isSA = a.type === 'SUMMATIVE';
   const W = 720, PAD = 28, rowH = 46, headerH = 208, totalH = 58, footerH = 46;
   const H = headerH + a.subjects.length * rowH + totalH + footerH;
@@ -476,9 +488,18 @@ async function renderResultImage(rep: Report, a: ReportAssessment): Promise<Blob
   else { grad.addColorStop(0, '#f59e0b'); grad.addColorStop(1, '#b45309'); }
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, headerH);
 
+  // School logo (best-effort) at top-left; the brand line shifts right when present.
+  const logo = brand.logoUrl ? await loadCanvasImage(brand.logoUrl) : null;
+  let brandX = PAD;
+  if (logo) {
+    const ls = 30;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; rr(PAD, 18, ls, ls, 6); ctx.fill();
+    try { ctx.drawImage(logo, PAD + 3, 21, ls - 6, ls - 6); } catch {}
+    brandX = PAD + ls + 8;
+  }
   const cls = (rep.student.className || '').replace(/\s?STD$/i, '');
   ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '600 15px Arial'; ctx.textAlign = 'left';
-  ctx.fillText(`Jnana Deepika  ·  ${cls}${rep.student.section ? ' ' + rep.student.section : ''}  ·  ${rep.year}`, PAD, 42);
+  ctx.fillText(`${brand.schoolName}  ·  ${cls}${rep.student.section ? ' ' + rep.student.section : ''}  ·  ${rep.year}`, brandX, 38);
   ctx.fillStyle = '#ffffff'; ctx.font = '700 30px Arial';
   ctx.fillText(truncateText(ctx, rep.student.name, W - PAD * 2 - 150), PAD, 80);
 
@@ -525,7 +546,7 @@ async function renderResultImage(rep: Report, a: ReportAssessment): Promise<Blob
   y += totalH;
 
   ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.font = '400 13px Arial';
-  ctx.fillText('Shared from Jnana Deepika · Parent app', W / 2, y + 28);
+  ctx.fillText(`Shared from ${brand.schoolName} · Parent app`, W / 2, y + 28);
 
   return new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('render failed'))), 'image/png'),
@@ -536,12 +557,13 @@ function MarksScreen() {
   const [reports, setReports] = useState<Report[] | null>(null);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const brand = useBranding();
 
   // Share the result as an IMAGE via the native share sheet (WhatsApp, etc.);
   // on desktop / where file-share isn't supported, the image is downloaded.
   const shareResult = async (rep: Report, a: ReportAssessment) => {
     try {
-      const blob = await renderResultImage(rep, a);
+      const blob = await renderResultImage(rep, a, brand);
       const file = new File([blob], `${rep.student.name.replace(/\s+/g, '_')}-${a.name}.png`, { type: 'image/png' });
       const nav = navigator as any;
       if (nav.canShare?.({ files: [file] }) && nav.share) {
