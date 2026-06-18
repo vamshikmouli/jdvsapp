@@ -7,11 +7,17 @@ import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { evaluateGeofence } from '@/lib/staffAttendance/geofence';
 import { recordPunch } from '@/lib/staffAttendance/service';
 
-const FENCE_MESSAGES: Record<string, string> = {
-  NO_SCHOOL_LOCATION: 'Attendance location is not configured yet. Ask the office.',
-  POOR_ACCURACY: 'Your GPS signal is too weak. Move to an open area and try again.',
-  OUTSIDE_FENCE: 'You must be at school to punch in or out.',
-};
+function fenceMessage(reason: string | undefined, distanceM: number | null, radiusM: number, accuracy: number | null | undefined): string {
+  if (reason === 'NO_SCHOOL_LOCATION') return 'Attendance location is not configured yet. Ask the office.';
+  if (reason === 'POOR_ACCURACY') {
+    const a = accuracy != null ? ` (your GPS is accurate to ~${Math.round(accuracy)} m)` : '';
+    return `Your GPS signal is too weak${a}. Move to an open area, make sure precise location is on, and try again.`;
+  }
+  // OUTSIDE_FENCE — show how far off we measured so the office can tell whether
+  // the radius is just too tight or the saved school location is wrong.
+  const d = distanceM != null ? `${Math.round(distanceM)} m` : 'an unknown distance';
+  return `You must be at school to punch. You're about ${d} from the saved school location (allowed: ${radiusM} m). If you really are at school, ask the office to re-set the school location.`;
+}
 
 // POST /api/staff-attendance/punch/verify
 // Verify the biometric assertion + geofence, then record the punch.
@@ -38,7 +44,11 @@ export async function POST(req: NextRequest) {
     const fence = evaluateGeofence({ lat, lng }, accuracy, cfg.geofence);
     if (!fence.ok) {
       return NextResponse.json(
-        { error: FENCE_MESSAGES[fence.reason || 'OUTSIDE_FENCE'], reason: fence.reason, distanceM: fence.distanceM },
+        {
+          error: fenceMessage(fence.reason, fence.distanceM, cfg.geofence.geofenceRadiusM, accuracy),
+          reason: fence.reason,
+          distanceM: fence.distanceM,
+        },
         { status: 403 }
       );
     }
