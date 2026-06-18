@@ -57,7 +57,10 @@ export function surfaceOf(session: SessionLike): Surface {
 
 /** Default landing path. All staff share the admin shell; parents have their own app. */
 export function homePathForSurface(surface: Surface): string {
-  return surface === 'PARENT' ? '/parent' : '/admin/dashboard';
+  if (surface === 'PARENT') return '/parent';
+  // Teachers' main daily action is punching attendance — land them there.
+  if (surface === 'TEACHER') return '/admin/my-attendance';
+  return '/admin/dashboard';
 }
 
 // ---------- Server-side guards (for API route handlers) ----------

@@ -6,8 +6,11 @@ import { signIn, getSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 
 function homeForSurface(surface?: string) {
-  // Parents use their own app; all staff (admin/teacher/accountant/custom) share the admin shell.
-  return surface === 'PARENT' ? '/parent' : '/admin/dashboard';
+  // Parents use their own app; staff share the admin shell. Teachers land on
+  // their attendance screen (their main daily action); others on the dashboard.
+  if (surface === 'PARENT') return '/parent';
+  if (surface === 'TEACHER') return '/admin/my-attendance';
+  return '/admin/dashboard';
 }
 
 export default function LoginPage() {
