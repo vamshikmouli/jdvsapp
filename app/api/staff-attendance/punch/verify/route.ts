@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     if (!staffId) {
       return NextResponse.json({ error: 'No staff profile linked to this account' }, { status: 400 });
     }
+    if ((session.user as any)?.roleKey === 'admin') {
+      return NextResponse.json({ error: 'Attendance is not tracked for administrators.' }, { status: 403 });
+    }
 
     const cfg = await loadStaffAttConfig();
     if (!cfg.enabled) {

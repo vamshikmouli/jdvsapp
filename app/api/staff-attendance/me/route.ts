@@ -15,6 +15,10 @@ export async function GET(req: NextRequest) {
     if (!staffId) {
       return NextResponse.json({ error: 'No staff profile linked to this account' }, { status: 400 });
     }
+    // Admins aren't tracked for attendance — tell the client to hide the punch UI.
+    if ((session.user as any)?.roleKey === 'admin') {
+      return NextResponse.json({ tracked: false });
+    }
 
     const cfg = await loadStaffAttConfig();
     const todayKey = localDayInfo(new Date(), cfg.timezone).dateKey;

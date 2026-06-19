@@ -10,6 +10,7 @@ import { haversineMeters } from '@/lib/staffAttendance/geofence';
 import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
 
 interface MeData {
+  tracked?: boolean;
   enabled: boolean;
   configured: boolean;
   enrolled: boolean;
@@ -269,6 +270,10 @@ export default function MyAttendancePage() {
     return <EmptyState icon="Lock" title="Not available" body="Your role can't record staff attendance." />;
   }
   if (loading) return <div className="max-w-md mx-auto p-4 space-y-3"><Skeleton height={160} /><Skeleton height={80} /></div>;
+
+  if (data?.tracked === false) {
+    return <EmptyState icon="ShieldCheck" title="Not tracked" body="Attendance isn't recorded for administrators." />;
+  }
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-4">

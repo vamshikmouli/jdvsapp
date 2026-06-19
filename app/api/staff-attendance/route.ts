@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
 
     const [staff, days, holiday] = await Promise.all([
       prisma.staff.findMany({
-        where: { archived: false },
+        // Admins aren't tracked for attendance — exclude admin-role staff.
+        // Staff with no linked user account are kept (regular non-login staff).
+        where: { archived: false, NOT: { user: { role: { key: 'admin' } } } },
         orderBy: { name: 'asc' },
         select: {
           id: true,

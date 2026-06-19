@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const dates = eachDate(from, to);
 
     const [staff, days] = await Promise.all([
-      prisma.staff.findMany({ where: { archived: false }, orderBy: { name: 'asc' }, select: { id: true, name: true, designation: true } }),
+      prisma.staff.findMany({ where: { archived: false, NOT: { user: { role: { key: 'admin' } } } }, orderBy: { name: 'asc' }, select: { id: true, name: true, designation: true } }),
       prisma.staffAttendanceDay.findMany({
         where: { date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } },
       }),
