@@ -13,6 +13,7 @@ interface MeData {
   enabled: boolean;
   configured: boolean;
   enrolled: boolean;
+  hasPin: boolean;
   device: { deviceName: string | null; createdAt: string } | null;
   nextAction: 'IN' | 'OUT';
   today: { status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number; currentStreak: number } | null;
@@ -26,6 +27,74 @@ interface MeData {
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// PIN punch for staff whose phone can't enroll a biometric (e.g. older Android).
+// Uses the same GPS geofence as the biometric path; the PIN is the one the office
+// sets (same PIN used at the shared kiosk).
+function PinPunch({ nextAction, hasPin, onDone }: { nextAction: 'IN' | 'OUT'; hasPin: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [flash, setFlash] = useState('');
+
+  const submit = async () => {
+    setError(''); setFlash(''); setBusy(true);
+    try {
+      const pos = await getPosition();
+      const res = await fetch('/api/staff-attendance/punch/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }),
+      });
+      const v = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(v.error || 'Punch failed.');
+      setFlash(`Punched ${v.type === 'IN' ? 'in' : 'out'} at ${fmtTime(v.at)}.`);
+      setPin('');
+      setOpen(false);
+      onDone();
+    } catch (e: any) {
+      setError(e?.message || 'Punch failed.');
+    } finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-sm text-info-600 hover:underline">
+        Can’t use fingerprint? Punch with your PIN
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-xs space-y-3">
+      {!hasPin && (
+        <div className="rounded-md bg-warn-50 text-warn-700 text-sm px-3 py-2">
+          No PIN is set for you yet. Ask the office to set your attendance PIN.
+        </div>
+      )}
+      {error && <div className="rounded-md bg-danger-50 text-danger-700 text-sm px-3 py-2">{error}</div>}
+      {flash && <div className="rounded-md bg-success-50 text-success-700 text-sm px-3 py-2">{flash}</div>}
+      <Field label="Your PIN">
+        <Input
+          inputMode="numeric"
+          type="password"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          placeholder="••••"
+          autoFocus
+        />
+      </Field>
+      <div className="flex gap-2">
+        <Button kind="primary" disabled={busy || pin.length < 4} onClick={submit}>
+          {busy ? 'Please wait…' : `Punch ${nextAction === 'IN' ? 'IN' : 'OUT'}`}
+        </Button>
+        <Button kind="tertiary" onClick={() => { setOpen(false); setError(''); setPin(''); }}>Cancel</Button>
+      </div>
+      <p className="text-xs text-slate-500">Uses GPS — you must be at school.</p>
+    </div>
+  );
 }
 
 function RegularizationWidget() {
@@ -227,6 +296,12 @@ export default function MyAttendancePage() {
           <Button kind="primary" icon="Fingerprint" onClick={enroll} disabled={busy === 'enroll'}>
             {busy === 'enroll' ? 'Setting up…' : 'Set up biometric'}
           </Button>
+          <div className="border-t border-slate-100 mt-4 pt-4">
+            <p className="text-sm text-slate-600 mb-2">
+              Phone has no fingerprint / Face ID and can’t set up? Punch with your PIN instead.
+            </p>
+            <PinPunch nextAction={data.nextAction} hasPin={data.hasPin} onDone={load} />
+          </div>
         </Card>
       )}
 
@@ -259,6 +334,9 @@ export default function MyAttendancePage() {
               <span className="mt-2 text-lg">{busy === 'punch' ? 'Please wait…' : data.nextAction === 'IN' ? 'Punch IN' : 'Punch OUT'}</span>
             </button>
             <p className="mt-4 text-xs text-slate-500">You must be at school. This uses your phone’s biometric + GPS.</p>
+            <div className="mt-3">
+              <PinPunch nextAction={data.nextAction} hasPin={data.hasPin} onDone={load} />
+            </div>
           </div>
 
           {data.punchesToday.length > 0 && (

@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         where: { staffId, date: { gte: monthStart, lte: monthEnd } },
         orderBy: { date: 'asc' },
       }),
-      prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true } }),
+      prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true, pinHash: true } }),
       prisma.holiday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
     ]);
 
@@ -76,6 +76,7 @@ export async function GET(req: NextRequest) {
       enabled: cfg.enabled,
       configured: cfg.geofence.schoolLat != null && cfg.geofence.schoolLng != null,
       enrolled: !!cred,
+      hasPin: !!staffRec?.pinHash,
       device: cred ?? null,
       nextAction: open ? 'OUT' : 'IN',
       today: today ?? null,

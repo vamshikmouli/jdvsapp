@@ -384,6 +384,7 @@ enum PunchType {
 enum PunchSource {
   BIOMETRIC // phone WebAuthn passkey
   KIOSK     // shared on-campus device + PIN
+  PIN       // staff's own phone + PIN (geofenced) — fallback when biometric can't enroll
   MANUAL    // admin entered / regularized
 }
 
