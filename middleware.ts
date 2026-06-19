@@ -2,7 +2,8 @@ import { withAuth } from 'next-auth/middleware';
 import { NextResponse } from 'next/server';
 
 // Each /admin route requires a permission (or none = any signed-in staff).
-const ADMIN_ROUTE_PERMS: { prefix: string; perm: string }[] = [
+// `perm` may be a list — holding ANY one of them grants access.
+const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/attendance', perm: 'ATTENDANCE_VIEW' },
   { prefix: '/admin/students', perm: 'STUDENTS_VIEW' },
   { prefix: '/admin/hall-tickets', perm: 'STUDENTS_MANAGE' },
@@ -10,6 +11,7 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string }[] = [
   // More-specific prefixes MUST come before '/admin/staff' (first match wins).
   { prefix: '/admin/staff-attendance', perm: 'STAFF_ATTENDANCE_VIEW' },
   { prefix: '/admin/my-attendance', perm: 'STAFF_ATTENDANCE_MARK' },
+  { prefix: '/admin/kiosk', perm: ['STAFF_ATTENDANCE_KIOSK', 'STAFF_ATTENDANCE_MANAGE'] },
   { prefix: '/admin/staff', perm: 'STAFF_VIEW' },
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
   { prefix: '/admin/communications', perm: 'NOTICES_MANAGE' },
@@ -41,8 +43,11 @@ export const middleware = withAuth(
         return NextResponse.redirect(new URL('/parent', req.url));
       }
       const rule = ADMIN_ROUTE_PERMS.find((r) => pathname.startsWith(r.prefix));
-      if (rule && !perms.includes(rule.perm)) {
-        return NextResponse.redirect(new URL('/unauthorized', req.url));
+      if (rule) {
+        const need = Array.isArray(rule.perm) ? rule.perm : [rule.perm];
+        if (!need.some((p) => perms.includes(p))) {
+          return NextResponse.redirect(new URL('/unauthorized', req.url));
+        }
       }
     }
 

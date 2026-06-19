@@ -11,7 +11,7 @@ interface Row { staffId: string; name: string; designation: string | null; hasPi
 export default function KioskPage() {
   const { data: session } = useSession();
   const perms = ((session?.user as any)?.perms as string[]) || [];
-  const canManage = perms.includes('STAFF_ATTENDANCE_MARK') || perms.includes('STAFF_ATTENDANCE_MANAGE');
+  const canRun = perms.includes('STAFF_ATTENDANCE_KIOSK') || perms.includes('STAFF_ATTENDANCE_MANAGE');
 
   const [staff, setStaff] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +21,8 @@ export default function KioskPage() {
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/staff-attendance?date=${new Date().toISOString().slice(0, 10)}`);
-    if (res.ok) { const b = await res.json(); setStaff((b.rows as Row[]).filter((r) => r.hasPin)); }
+    const res = await fetch('/api/staff-attendance/kiosk/staff');
+    if (res.ok) { const b = await res.json(); setStaff(b as Row[]); }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -47,7 +47,7 @@ export default function KioskPage() {
     } finally { setBusy(false); }
   };
 
-  if (!canManage) return <EmptyState icon="Lock" title="Not available" body="You can’t run the attendance kiosk." />;
+  if (!canRun) return <EmptyState icon="Lock" title="Not available" body="You can’t run the attendance kiosk." />;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -66,7 +66,7 @@ export default function KioskPage() {
           loading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={56} />)}</div>
           ) : staff.length === 0 ? (
-            <EmptyState icon="KeyRound" title="No kiosk staff" body="Set a PIN for staff (in Manage) to let them punch here." />
+            <EmptyState icon="KeyRound" title="No kiosk staff" body="Set an Attendance PIN for staff (in Manage) to let them punch here." />
           ) : (
             <Card title="Select your name" padded={false}>
               <div className="divide-y divide-slate-100">

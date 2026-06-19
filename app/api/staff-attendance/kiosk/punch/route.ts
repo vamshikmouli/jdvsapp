@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
+import { requireSession, canAny, AuthError, authErrorResponse } from '@/lib/rbac/roles';
 import { verifyPassword } from '@/lib/auth/password';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { recordPunch } from '@/lib/staffAttendance/service';
@@ -13,7 +13,10 @@ import { recordPunch } from '@/lib/staffAttendance/service';
 // Body: { staffId, pin }
 export async function POST(req: NextRequest) {
   try {
-    await requirePermission('STAFF_ATTENDANCE_MANAGE');
+    const session = await requireSession();
+    if (!canAny(session, ['STAFF_ATTENDANCE_KIOSK', 'STAFF_ATTENDANCE_MANAGE'])) {
+      throw new AuthError('Forbidden', 403);
+    }
 
     const cfg = await loadStaffAttConfig();
     if (!cfg.enabled) {

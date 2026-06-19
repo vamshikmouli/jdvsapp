@@ -8,7 +8,7 @@ import { Icon } from '@/components/Icon';
 function homeForSurface(surface?: string, roleKey?: string) {
   // Parents use their own app; staff share the admin shell. Teachers land on
   // their attendance screen (their main daily action); others on the dashboard.
-  if (roleKey === 'kiosk') return '/admin/staff-attendance/kiosk';
+  if (roleKey === 'kiosk') return '/admin/kiosk';
   if (surface === 'PARENT') return '/parent';
   if (surface === 'TEACHER') return '/admin/my-attendance';
   return '/admin/dashboard';

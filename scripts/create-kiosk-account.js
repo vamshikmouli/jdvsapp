@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 const EMAIL = 'kiosk@jnanadeepika.edu';
-const PERMS = ['STAFF_ATTENDANCE_VIEW', 'STAFF_ATTENDANCE_MANAGE'];
+const PERMS = ['STAFF_ATTENDANCE_KIOSK'];
 
 async function main() {
   // 1) Limited role
@@ -39,7 +39,7 @@ async function main() {
   console.log('  ───────────────────────────────');
   console.log('  Login : ' + EMAIL);
   console.log('  Password : ' + password + (existing ? '   (reset)' : '   (new)'));
-  console.log('  Open on the tablet: /admin/staff-attendance/kiosk');
+  console.log('  Open on the tablet: /admin/kiosk');
   console.log('  ───────────────────────────────\n');
 }
 

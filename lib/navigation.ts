@@ -21,7 +21,7 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'classes', label: 'Classes', icon: 'BookOpen', perm: 'CLASSES_VIEW' },
       { id: 'staff', label: 'Staff', icon: 'UserCog', perm: 'STAFF_VIEW' },
       { id: 'staff-attendance', label: 'Staff attendance', icon: 'CalendarClock', perm: 'STAFF_ATTENDANCE_VIEW' },
-      { id: 'staff-attendance/kiosk', label: 'Kiosk', icon: 'Tablet', perm: 'STAFF_ATTENDANCE_MANAGE' },
+      { id: 'kiosk', label: 'Kiosk', icon: 'Tablet', perm: 'STAFF_ATTENDANCE_KIOSK' },
       { id: 'fees', label: 'Fees', icon: 'CreditCard', perm: 'FEES_VIEW' },
     ],
   },
