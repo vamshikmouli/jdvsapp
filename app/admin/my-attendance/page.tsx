@@ -334,9 +334,6 @@ export default function MyAttendancePage() {
               <span className="mt-2 text-lg">{busy === 'punch' ? 'Please wait…' : data.nextAction === 'IN' ? 'Punch IN' : 'Punch OUT'}</span>
             </button>
             <p className="mt-4 text-xs text-slate-500">You must be at school. This uses your phone’s biometric + GPS.</p>
-            <div className="mt-3">
-              <PinPunch nextAction={data.nextAction} hasPin={data.hasPin} onDone={load} />
-            </div>
           </div>
 
           {data.punchesToday.length > 0 && (
