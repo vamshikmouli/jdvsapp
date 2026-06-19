@@ -214,6 +214,7 @@ model Staff {
   attCredentials      StaffCredential[]
   attPunches          StaffPunch[]
   attDays             StaffAttendanceDay[]
+  regularizationRequests AttendanceRegularizationRequest[] @relation("RegularizationRequests")
   leaveRequests       LeaveRequest[]
   leaveEntitlements   LeaveEntitlement[]
 
@@ -468,6 +469,44 @@ model StaffAttendanceDay {
 
   @@unique([staffId, date])
   @@index([date])
+}
+
+// Attendance regularization requests: staff request corrections when they forget
+// or incorrectly punch. Admin approves/rejects and applies the correction.
+enum RegularizationType {
+  PUNCH      // missing or incorrect punch (IN/OUT)
+  STATUS     // mark as leave/absent for the day
+}
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model AttendanceRegularizationRequest {
+  id             String                  @id @default(cuid())
+  staffId        String
+  staff          Staff                   @relation("RegularizationRequests", fields: [staffId], references: [id], onDelete: Cascade)
+  date           DateTime                @db.Date
+  type           RegularizationType
+  // For PUNCH: which direction (IN/OUT) and what time they should have punched
+  punchType      PunchType?              // IN | OUT
+  punchTime      DateTime?               // when they should have punched
+  // For STATUS: what status to mark
+  statusValue    StaffDayStatus?         // LEAVE | ABSENT | HOLIDAY | etc
+  reason         String?                 // staff's explanation
+  status         RegularizationStatus    @default(PENDING)
+  decidedById    String?                 // user id of approver/rejector
+  decidedAt      DateTime?
+  decisionNote   String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@unique([staffId, date, type])
+  @@index([staffId, status])
+  @@index([status])
 }
 
 // Staff leave requests: staff apply, an approver decides. On approval the

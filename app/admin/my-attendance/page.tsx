@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { startRegistration, startAuthentication, browserSupportsWebAuthn } from '@simplewebauthn/browser';
-import { Button, Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
+import { Button, Card, Chip, EmptyState, Skeleton, Field, Input, Select } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { STATUS_LABEL, statusTone, fmtTime, getPosition } from '@/lib/staffAttendance/display';
 import { haversineMeters } from '@/lib/staffAttendance/geofence';
@@ -26,6 +26,92 @@ interface MeData {
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function RegularizationWidget() {
+  const [mode, setMode] = useState<'punch' | 'status' | null>(null);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [punchType, setPunchType] = useState<'IN' | 'OUT'>('IN');
+  const [punchTime, setPunchTime] = useState('09:00');
+  const [statusValue, setStatusValue] = useState('LEAVE');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const submit = async () => {
+    setError('');
+    setSuccess('');
+    setBusy(true);
+    try {
+      const body = mode === 'punch'
+        ? { type: 'PUNCH', date, punchType, punchTime, reason }
+        : { type: 'STATUS', date, statusValue, reason };
+
+      const res = await fetch('/api/staff-attendance/regularization', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to submit request');
+
+      setSuccess(`Request submitted. Admin will review ${mode === 'punch' ? 'and add the punch' : 'and update the status'}.`);
+      setMode(null);
+      setReason('');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to submit');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mode === null) {
+    return (
+      <Card title="Request corrections">
+        <p className="text-sm text-slate-600 mb-4">If you forgot to punch or need to mark a day off, submit a request for admin approval.</p>
+        <div className="flex gap-2">
+          <Button icon="Clock" onClick={() => setMode('punch')} kind="secondary">Missed punch</Button>
+          <Button icon="Calendar" onClick={() => setMode('status')} kind="secondary">Mark day off</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={() => setMode(null)} className="text-slate-500 hover:text-slate-700"><Icon name="ChevronLeft" size={18} /></button>
+        <h3 className="font-medium">{mode === 'punch' ? 'Request missed punch' : 'Request day status'}</h3>
+      </div>
+
+      {error && <div className="rounded-md bg-danger-50 text-danger-700 text-sm px-3 py-2 mb-3">{error}</div>}
+      {success && <div className="rounded-md bg-success-50 text-success-700 text-sm px-3 py-2 mb-3">{success}</div>}
+
+      <div className="space-y-3">
+        <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} /></Field>
+
+        {mode === 'punch' && (
+          <>
+            <Field label="Direction"><Select value={punchType} onChange={(e) => setPunchType(e.target.value as any)}><option value="IN">Punch in</option><option value="OUT">Punch out</option></Select></Field>
+            <Field label="Time"><Input type="time" value={punchTime} onChange={(e) => setPunchTime(e.target.value)} /></Field>
+          </>
+        )}
+
+        {mode === 'status' && (
+          <Field label="Mark as"><Select value={statusValue} onChange={(e) => setStatusValue(e.target.value)}><option value="LEAVE">Leave</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
+        )}
+
+        <Field label="Reason (optional)"><Input placeholder="Why you're requesting this correction" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+
+        <div className="flex gap-2 pt-2">
+          <Button kind="primary" disabled={busy} onClick={submit}>{busy ? 'Submitting…' : 'Submit request'}</Button>
+          <Button kind="tertiary" onClick={() => setMode(null)}>Cancel</Button>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 // Turn a raw WebAuthn ceremony error into something a teacher can act on.
@@ -251,6 +337,10 @@ export default function MyAttendancePage() {
             onMonthChange={setMonth}
           />
         </Card>
+      )}
+
+      {data?.enrolled && data.configured && (
+        <RegularizationWidget />
       )}
     </div>
   );
