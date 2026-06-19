@@ -65,7 +65,7 @@ export async function importFees(rawRows: any[], opts: { dryRun: boolean; yearId
     const g = (...keys: string[]) => { for (const k of keys) { const v = r[k]; if (v !== undefined && v !== '') return v; } return ''; };
     const feeHead = String(g('feeHead', 'Fee Head')).trim();
     const name = String(g('name', 'Student Name', 'Name')).trim();
-    const admissionNo = String(g('admissionNo', 'Admission No')).trim();
+    const admissionNo = String(g('admissionNo', 'Student ID', 'StudentID', 'Admission No')).trim();
     if (!feeHead && !name && !admissionNo) return;
     if (!feeHead) { errors.push({ rowNo, reason: 'Missing Fee Head' }); return; }
     if (!headByName.has(norm(feeHead))) { errors.push({ rowNo, reason: `Unknown Fee Head "${feeHead}". Valid: ${validHeads.join(', ')}` }); return; }
@@ -86,8 +86,8 @@ export async function importFees(rawRows: any[], opts: { dryRun: boolean; yearId
       return c;
     };
     if (nk && d) { let m = byNamePhone.get(nk + '|' + d); if (m) { m = pick(m); if (m.length === 1) return { student: { id: m[0].id, name: m[0].name, className: m[0].class?.name || null } }; if (m.length > 1) return { reason: 'Name + phone matches multiple students' }; } }
-    if (nk) { let m = byName.get(nk); if (m) { m = pick(m); if (m.length === 1) return { student: { id: m[0].id, name: m[0].name, className: m[0].class?.name || null } }; if (m.length > 1) return { reason: 'Name matches multiple — add phone or admission no' }; } }
-    return { reason: row.admissionNo ? `Admission no "${row.admissionNo}" not found` : 'No student matched (check name/phone/admission no)' };
+    if (nk) { let m = byName.get(nk); if (m) { m = pick(m); if (m.length === 1) return { student: { id: m[0].id, name: m[0].name, className: m[0].class?.name || null } }; if (m.length > 1) return { reason: 'Name matches multiple — add phone or Student ID' }; } }
+    return { reason: row.admissionNo ? `Student ID "${row.admissionNo}" not found` : 'No student matched (check name/phone/Student ID)' };
   };
 
   // Group by (student, year). Each fee head is consolidated once (assigned/concession),

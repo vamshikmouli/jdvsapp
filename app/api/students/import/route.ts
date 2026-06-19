@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
 
       let id = String(r.id || '').trim();
       if (id) {
-        if (existingIds.has(id)) { errors.push({ row: rowNo, name, reason: `Admission no "${id}" already exists in the system` }); continue; }
-        if (seenIds.has(id)) { errors.push({ row: rowNo, name, reason: `Duplicate admission no "${id}" within this file` }); continue; }
+        if (existingIds.has(id)) { errors.push({ row: rowNo, name, reason: `Student ID "${id}" already exists in the system` }); continue; }
+        if (seenIds.has(id)) { errors.push({ row: rowNo, name, reason: `Duplicate Student ID "${id}" within this file` }); continue; }
       } else {
         // JDVS+YY+CC+RR from the row's class + roll; fall back to a unique id if roll is blank.
         id = (await generateAdmissionNo({ classId, roll: r.roll, yearId: activeYear.id, taken: seenIds }))

@@ -240,27 +240,27 @@ function UploadMarksModal({
     cells: number;
   } | null>(null);
 
-  // Template: Admission No + Roll + Name, then one column per subject.
+  // Template: Student ID + Roll + Name, then one column per subject.
   const downloadTemplate = () => {
     const data = students.map((s, i) => {
-      const o: Record<string, string | number> = { 'Admission No': s.id, 'Roll': s.roll ?? i + 1, 'Name': s.name };
+      const o: Record<string, string | number> = { 'Student ID': s.id, 'Roll': s.roll ?? i + 1, 'Name': s.name };
       subjects.forEach((su) => { o[su.name] = ''; });
       return o;
     });
-    const ws = XLSX.utils.json_to_sheet(data, { header: ['Admission No', 'Roll', 'Name', ...subjects.map((s) => s.name)] });
+    const ws = XLSX.utils.json_to_sheet(data, { header: ['Student ID', 'Roll', 'Name', ...subjects.map((s) => s.name)] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Marks');
     XLSX.writeFile(wb, `marks-${className}-${assessmentName}.xlsx`.replace(/\s+/g, '_'));
   };
 
   const copyPrompt = async () => {
-    const header = ['Admission No', 'Name', ...subjects.map((s) => s.name)].join(',');
+    const header = ['Student ID', 'Name', ...subjects.map((s) => s.name)].join(',');
     const maxes = subjects.map((s) => `${s.name}=${s.max}`).join(', ');
     const text = `You are given a photo/scan of a handwritten marks sheet (${assessmentName}, Class ${className}${sectionName ? ' ' + sectionName : ''}).
 Output ONLY a CSV table. The first line must be exactly this header:
 ${header}
 Then one line per student. Rules:
-- Copy the Admission No exactly as printed.
+- Copy the Student ID exactly as printed.
 - Fill each subject column with that student's mark; write AB if absent; leave blank if no mark is given.
 - Max marks per subject: ${maxes}.
 - Do not invent students or marks, and add no extra text.
@@ -372,7 +372,7 @@ Save the result as a .csv (or Excel) file and upload it.`;
             <div className="font-semibold text-slate-700">All subjects in one sheet</div>
             <div>1. <b>Download the template</b> — one row per student, one column per subject ({subjects.map((s) => s.name).join(', ')}).</div>
             <div>2. <b>Handwritten?</b> Give your scan + the <b>copied prompt</b> to Gemini/Claude to get a CSV, then save it.</div>
-            <div>3. <b>Upload</b> the filled Excel/CSV — marks are matched by Admission No and fill the grid for you to review &amp; submit.</div>
+            <div>3. <b>Upload</b> the filled Excel/CSV — marks are matched by Student ID and fill the grid for you to review &amp; submit.</div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" icon="Download" onClick={downloadTemplate}>Template</Button>
               <Button size="sm" icon={copied ? 'Check' : 'Copy'} onClick={copyPrompt}>{copied ? 'Copied' : 'Copy AI prompt'}</Button>

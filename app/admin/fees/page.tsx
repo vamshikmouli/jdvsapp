@@ -447,7 +447,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
             <Icon name="Search" size={18} className="text-slate-400" />
             <input
               type="text"
-              placeholder="Search name, admission no, father/mother name or phone…"
+              placeholder="Search name, student ID, father/mother name or phone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent border-0 outline-none text-sm"
@@ -585,8 +585,8 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
-      { 'Admission No': 'JD1781200142909001', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Tuition Fee', 'Assigned': 16500, 'Concession': 0, 'Paid': 5000, 'Date': '01/06/2026', 'Payment Mode': 'Cash' },
-      { 'Admission No': '', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Van / Transport', 'Assigned': 6000, 'Concession': 0, 'Paid': 0, 'Date': '', 'Payment Mode': '' },
+      { 'Student ID': 'JD1781200142909001', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Tuition Fee', 'Assigned': 16500, 'Concession': 0, 'Paid': 5000, 'Date': '01/06/2026', 'Payment Mode': 'Cash' },
+      { 'Student ID': '', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Van / Transport', 'Assigned': 6000, 'Concession': 0, 'Paid': 0, 'Date': '', 'Payment Mode': '' },
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Fees');
@@ -601,7 +601,7 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
       const mapped = raw.map((r) => ({
-        admissionNo: r['Admission No'] ?? r['admissionNo'] ?? '',
+        admissionNo: r['Student ID'] ?? r['StudentID'] ?? r['Admission No'] ?? r['admissionNo'] ?? '',
         name: r['Student Name'] ?? r['Name'] ?? r['name'] ?? '',
         phone: r['Phone'] ?? r['phone'] ?? '',
         className: r['Class'] ?? r['className'] ?? '',
@@ -649,10 +649,10 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
       {step === 'upload' && (
         <div className="space-y-4">
           <div className="rounded-lg bg-purple-50 border border-purple-100 p-3 text-sm text-purple-800">
-            One row per student per fee head. Columns: <b>Admission No</b>, <b>Student Name</b>, <b>Phone</b>, <b>Class</b>, <b>Academic Year</b>, <b>Fee Head</b>, <b>Assigned</b>, <b>Concession</b>, <b>Paid</b>, <b>Date</b>, <b>Payment Mode</b>. Due is calculated for you.
+            One row per student per fee head. Columns: <b>Student ID</b>, <b>Student Name</b>, <b>Phone</b>, <b>Class</b>, <b>Academic Year</b>, <b>Fee Head</b>, <b>Assigned</b>, <b>Concession</b>, <b>Paid</b>, <b>Date</b>, <b>Payment Mode</b>. Due is calculated for you.
           </div>
           <ul className="text-xs text-slate-500 list-disc pl-5 space-y-1">
-            <li>Match is by <b>Admission No</b> if given, otherwise <b>Name + Phone</b> (<b>Class</b> helps when names repeat).</li>
+            <li>Match is by <b>Student ID</b> if given, otherwise <b>Name + Phone</b> (<b>Class</b> helps when names repeat).</li>
             <li><b>Fee Head</b> must match a fee type from the Setup tab (e.g. Tuition Fee, Van / Transport).</li>
             <li><b>Academic Year</b> (e.g. 2026-27) lets you import past years — blank uses the current year.</li>
             <li><b>Date</b> (dd/mm/yyyy) and <b>Payment Mode</b> (Cash/UPI/Card/Bank/Cheque) apply to the Paid amount — blank = today / Cash.</li>

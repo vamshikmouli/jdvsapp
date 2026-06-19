@@ -125,7 +125,7 @@ export default function HallTicketsPage() {
           <Card title="Student fields">
             <div className="grid grid-cols-2 gap-2">
               {([
-                ['photo', 'Photo box'], ['admissionNo', 'Admission no'], ['class', 'Class'], ['section', 'Section'],
+                ['photo', 'Photo box'], ['admissionNo', 'Student ID'], ['class', 'Class'], ['section', 'Section'],
                 ['roll', 'Roll no'], ['dob', 'Date of birth'], ['father', "Father's name"], ['mother', "Mother's name"], ['address', 'Address'],
               ] as [keyof Config['fields'], string][]).map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -192,7 +192,7 @@ export default function HallTicketsPage() {
 function HallTicket({ student, cfg, school, examTitle, preview }: { student: any; cfg: Config; school: any; examTitle: string; year?: string; preview?: boolean }) {
   const F = cfg.fields;
   const rows: [string, string][] = [];
-  if (F.admissionNo) rows.push(['Admission No', student.id]);
+  if (F.admissionNo) rows.push(['Student ID', student.id]);
   if (F.class) rows.push(['Class', shortClass(student.class?.name || null) + (F.section && student.class ? '' : '')]);
   if (F.section && student.section?.name) rows.push(['Section', student.section.name]);
   if (F.roll && student.roll) rows.push(['Roll No', String(student.roll)]);

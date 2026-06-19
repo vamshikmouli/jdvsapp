@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 const STATUS_LABEL: Record<string, string> = {
   PRESENT: 'Present', ABSENT: 'Absent', LATE: 'Late', LEAVE: 'Leave', EXCUSED: 'Excused',
 };
-const HEADER = ['Admission No', 'Student Name', 'Class', 'Date', 'Session', 'Status', 'Marked By'];
+const HEADER = ['Student ID', 'Student Name', 'Class', 'Date', 'Session', 'Status', 'Marked By'];
 
 // GET /api/attendance/export?classId=&from=YYYY-MM-DD&to=YYYY-MM-DD
 // Human-readable attendance (no ids) — re-importable via /api/attendance/bulk-import.
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       const marker = s.takenById ? (userName.get(s.takenById) || '') : '';
       for (const r of s.records) {
         rows.push({
-          'Admission No': r.student.id,
+          'Student ID': r.student.id,
           'Student Name': r.student.name,
           'Class': s.class?.name || s.classId,
           'Date': dateStr,

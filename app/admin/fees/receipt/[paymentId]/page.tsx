@@ -80,7 +80,7 @@ export default function ReceiptPage() {
         {/* student */}
         <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 py-4 text-sm border-b border-slate-200">
           <Detail label="Student" value={r.student.name} />
-          <Detail label="Admission no" value={r.student.id} />
+          <Detail label="Student ID" value={r.student.id} />
           <Detail label="Class" value={`${r.student.className || '—'}${r.student.section ? ' ' + r.student.section : ''}`} />
           <Detail label="Guardian" value={r.student.guardianName} />
           <Detail label="Academic year" value={r.year} />

@@ -137,7 +137,7 @@ export default function AttendancePage() {
       const next: Record<string, Status> = { ...marks };
       let applied = 0, skipped = 0;
       for (const r of rows) {
-        const adm = String(r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? r['Id'] ?? '').trim();
+        const adm = String(r['Student ID'] ?? r['StudentID'] ?? r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? r['Id'] ?? '').trim();
         const nm = String(r['Name'] ?? r['Student'] ?? '').trim();
         const st = statusOf(String(r['Status'] ?? ''));
         if (!st) continue;

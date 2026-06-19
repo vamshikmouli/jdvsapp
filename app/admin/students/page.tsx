@@ -384,7 +384,7 @@ export default function StudentsPage() {
             <Icon name="Search" size={18} className="text-slate-400" />
             <input
               type="text"
-              placeholder="Search name, admission no, guardian..."
+              placeholder="Search name, student ID, guardian..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent border-0 outline-none text-sm"
@@ -408,7 +408,7 @@ export default function StudentsPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <Th label="Student" sortKey="name" sort={sort} onSort={onSort} />
-                <Th label="Admission no" sortKey="id" sort={sort} onSort={onSort} className="hidden lg:table-cell w-36" />
+                <Th label="Student ID" sortKey="id" sort={sort} onSort={onSort} className="hidden lg:table-cell w-36" />
                 <Th label="Class" sortKey="class" sort={sort} onSort={onSort} />
                 <th className="hidden md:table-cell text-left py-2.5 px-6 font-semibold text-xs uppercase tracking-wide text-slate-600">Guardian</th>
                 <Th label="Status" sortKey="status" sort={sort} onSort={onSort} />
@@ -580,7 +580,7 @@ export default function StudentsPage() {
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? 'Edit student' : 'Add student'}
-        subtitle={editing ? `Admission no ${editing.id}` : 'Create a new student record'}
+        subtitle={editing ? `Student ID ${editing.id}` : 'Create a new student record'}
         width={640}
         footer={
           <div className="flex justify-end gap-2">
@@ -624,7 +624,7 @@ export default function StudentsPage() {
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Student name" />
           </Field>
           {!editing && (
-            <Field label="Admission no" hint="Leave blank to auto-generate">
+            <Field label="Student ID" hint="Leave blank to auto-generate">
               <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="JD2026-0001" />
             </Field>
           )}
@@ -714,7 +714,7 @@ export default function StudentsPage() {
         open={!!viewing}
         onClose={() => setViewing(null)}
         title={viewing?.name || 'Student'}
-        subtitle={`Admission no ${viewing?.id ?? ''}`}
+        subtitle={`Student ID ${viewing?.id ?? ''}`}
         width={460}
         footer={
           <div className="flex justify-end gap-2">
@@ -742,7 +742,7 @@ export default function StudentsPage() {
                 </Chip>
               </div>
             </div>
-            <DetailRow label="Admission no" value={viewing.id} />
+            <DetailRow label="Student ID" value={viewing.id} />
             <DetailRow label="Class" value={viewing.class?.name || 'Unassigned'} />
             <DetailRow label="Roll no" value={viewing.roll} />
             <DetailRow label="Gender" value={viewing.gender === 'F' ? 'Girl' : 'Boy'} />
@@ -823,7 +823,7 @@ function mapHeaders(headers: string[]): Record<string, keyof ParsedRow> {
   const map: Record<string, keyof ParsedRow> = {};
   for (const h of headers) {
     const k = h.toLowerCase().trim();
-    if (/admission|adm\.?\s*no|^id$/.test(k)) map[h] = 'id';
+    if (/student\s*id|admission|adm\.?\s*no|^id$/.test(k)) map[h] = 'id';
     else if (/father/.test(k) && /name/.test(k)) map[h] = 'fatherName';
     else if (/father/.test(k) && /(phone|mobile|contact|number|no)/.test(k)) map[h] = 'fatherPhone';
     else if (/mother/.test(k) && /name/.test(k)) map[h] = 'motherName';
@@ -860,7 +860,7 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
       {
-        'Admission No': '', Name: 'Asha Rao', Class: '1st STD', Roll: '01', Gender: 'F',
+        'Student ID': '', Name: 'Asha Rao', Class: '1st STD', Roll: '01', Gender: 'F',
         DOB: '2018-06-10', Religion: 'Hindu', Category: 'General', Caste: '',
         Address: '12 Main Road, Channasandra',
         'Father Name': 'Ramesh Rao', 'Father Phone': '9876543210',
@@ -1014,7 +1014,7 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
               </div>
               <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded-md p-3">
                 <Icon name="Info" size={14} className="mt-0.5 flex-shrink-0 text-slate-400" />
-                <span>Class is matched flexibly (e.g. "10", "10th", "10th STD"). A parent login is auto-created from the guardian phone. Blank admission numbers are auto-generated.</span>
+                <span>Class is matched flexibly (e.g. "10", "10th", "10th STD"). A parent login is auto-created from the guardian phone. Blank student IDs are auto-generated.</span>
               </div>
             </>
           )}

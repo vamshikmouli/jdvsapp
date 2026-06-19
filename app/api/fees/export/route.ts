@@ -8,7 +8,7 @@ import { getActiveYear } from '@/lib/services/fees';
 
 export const dynamic = 'force-dynamic';
 
-const HEADER = ['Admission No', 'Student Name', 'Phone', 'Class', 'Academic Year', 'Fee Head', 'Assigned', 'Concession', 'Paid', 'Date', 'Payment Mode'];
+const HEADER = ['Student ID', 'Student Name', 'Phone', 'Class', 'Academic Year', 'Fee Head', 'Assigned', 'Concession', 'Paid', 'Date', 'Payment Mode'];
 const MODE_LABEL: Record<string, string> = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card', BANK: 'Bank', CHEQUE: 'Cheque' };
 
 // GET /api/fees/export?yearId=&classId= — fee data in the bulk-IMPORT format,

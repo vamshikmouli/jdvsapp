@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Attendance');
     ws.columns = [
-      { header: 'Admission No', key: 'adm', width: 18 },
+      { header: 'Student ID', key: 'adm', width: 18 },
       { header: 'Name', key: 'name', width: 28 },
       { header: 'Status', key: 'status', width: 14 },
     ];

@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       const r = rows[i];
       const rawClass = String(r['Class'] ?? r['class'] ?? '').trim();
       const rawSession = String(r['Session'] ?? r['session'] ?? r['Slot'] ?? '').trim();
-      const rawAdm = String(r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? '').trim();
+      const rawAdm = String(r['Student ID'] ?? r['StudentID'] ?? r['Admission No'] ?? r['AdmissionNo'] ?? r['Admission'] ?? r['ID'] ?? '').trim();
       const rawName = String(r['Student Name'] ?? r['Name'] ?? '').trim();
 
       const classId = classByNorm.get(norm(rawClass));
