@@ -11,10 +11,9 @@ interface RegularizationRequest {
   staffId: string;
   staff: { name: string };
   date: string;
-  type: 'PUNCH' | 'STATUS';
-  punchType?: 'IN' | 'OUT';
-  punchTime?: string;
-  statusValue?: string;
+  type: 'PUNCH';
+  punchType: 'IN' | 'OUT';
+  punchTime: string;
   reason?: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdAt: string;
@@ -83,14 +82,9 @@ export default function RegularizationPage() {
                     {new Date(req.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {req.type === 'PUNCH' && (
-                      <Chip tone="info">
-                        {req.punchType} at {req.punchTime}
-                      </Chip>
-                    )}
-                    {req.type === 'STATUS' && (
-                      <Chip tone="info">{req.statusValue}</Chip>
-                    )}
+                    <Chip tone="info">
+                      {req.punchType} at {req.punchTime}
+                    </Chip>
                     <Chip tone={
                       req.status === 'PENDING' ? 'warn' :
                       req.status === 'APPROVED' ? 'success' :
@@ -171,9 +165,9 @@ function ReviewModal({
           </div>
         </div>
         <div>
-          <div className="text-xs text-slate-500">Request type</div>
+          <div className="text-xs text-slate-500">Punch request</div>
           <div className="font-medium">
-            {request.type === 'PUNCH' ? `${request.punchType} punch at ${request.punchTime}` : request.statusValue}
+            {request.punchType} at {request.punchTime}
           </div>
         </div>
         {request.reason && (
