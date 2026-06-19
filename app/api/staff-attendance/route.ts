@@ -38,6 +38,18 @@ export async function GET(req: NextRequest) {
     ]);
 
     const byStaff = new Map(days.map((d) => [d.staffId, d]));
+
+    // Current running streak per staff: the streak on their most recent stored day
+    // on/before the viewed date. This keeps a streak visible on off-days and on
+    // days not yet marked (it only drops to 0 once an absent/leave row exists).
+    const latestStreakRows = await prisma.staffAttendanceDay.findMany({
+      where: { staffId: { in: staff.map((s) => s.id) }, date: { lte: date } },
+      orderBy: [{ staffId: 'asc' }, { date: 'desc' }],
+      distinct: ['staffId'],
+      select: { staffId: true, currentStreak: true },
+    });
+    const streakByStaff = new Map(latestStreakRows.map((r) => [r.staffId, r.currentStreak]));
+
     const weekday = weekdayOfKey(dateKey);
     const weeklyOff = cfg.schedule.weeklyOffDays;
 
@@ -60,7 +72,7 @@ export async function GET(req: NextRequest) {
         lastOut: day?.lastOut ?? null,
         workedMinutes: day?.workedMinutes ?? 0,
         locked: day?.locked ?? false,
-        currentStreak: day?.currentStreak ?? 0,
+        currentStreak: streakByStaff.get(s.id) ?? 0,
       };
     });
 
