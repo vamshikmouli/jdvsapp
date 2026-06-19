@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       const r = rows[i];
       const rowNo = i + 2; // +1 header, +1 for 1-based
 
-      const name = String(r.name || '').trim();
+      const name = String(r.name || '').trim().toUpperCase();
       if (!name) { errors.push({ row: rowNo, name: '(no name)', reason: 'Missing name' }); continue; }
 
       const gender = normGender(r.gender || '');
@@ -121,12 +121,12 @@ export async function POST(req: NextRequest) {
       }
       seenIds.add(id);
 
-      const fatherName = String(r.fatherName || '').trim();
+      const fatherName = String(r.fatherName || '').trim().toUpperCase();
       const fatherPhone = String(r.fatherPhone || '').trim();
-      const motherName = String(r.motherName || '').trim();
+      const motherName = String(r.motherName || '').trim().toUpperCase();
       const motherPhone = String(r.motherPhone || '').trim();
       const smsFor = normSmsFor(r.smsFor || '');
-      const primaryName = (smsFor === 'MOTHER' ? motherName || fatherName : fatherName || motherName) || String(r.guardianName || '').trim();
+      const primaryName = (smsFor === 'MOTHER' ? motherName || fatherName : fatherName || motherName) || String(r.guardianName || '').trim().toUpperCase();
       const primaryPhone = (smsFor === 'MOTHER' ? motherPhone || fatherPhone : fatherPhone || motherPhone) || String(r.guardianPhone || '').trim();
 
       prepared.push({

@@ -87,6 +87,12 @@ export async function POST(req: NextRequest) {
       admissionNo = (await generateAdmissionNo({ classId: body.classId, roll: body.roll, yearId: year.id })) || `JD${Date.now()}`;
     }
 
+    // Names are stored in uppercase (student + parents).
+    body.name = String(body.name || '').trim().toUpperCase();
+    if (body.fatherName) body.fatherName = String(body.fatherName).trim().toUpperCase();
+    if (body.motherName) body.motherName = String(body.motherName).trim().toUpperCase();
+    if (body.guardianName) body.guardianName = String(body.guardianName).trim().toUpperCase();
+
     // Primary contact (from SMS-for) drives the Parent login (keyed by phone → siblings share it)
     const primary = pickPrimaryContact(body);
     const guardianUserId = primary.phone ? await ensureParentUser(primary.name, primary.phone) : null;

@@ -39,6 +39,11 @@ export async function PATCH(
     }
 
     const body = await req.json();
+    // Names are stored in uppercase (student + parents).
+    body.name = String(body.name || '').trim().toUpperCase();
+    if (body.fatherName) body.fatherName = String(body.fatherName).trim().toUpperCase();
+    if (body.motherName) body.motherName = String(body.motherName).trim().toUpperCase();
+    if (body.guardianName) body.guardianName = String(body.guardianName).trim().toUpperCase();
     const primary = pickPrimaryContact(body);
     const updated = await prisma.student.update({
       where: { id: params.id },
