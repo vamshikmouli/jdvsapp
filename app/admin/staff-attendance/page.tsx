@@ -35,6 +35,8 @@ export default function StaffAttendancePage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<Row | null>(null);
+  const [sortKey, setSortKey] = useState<keyof Row>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,7 +47,38 @@ export default function StaffAttendancePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleSort = (key: keyof Row) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const getSortedRows = () => {
+    if (!board?.rows) return [];
+    const rows = [...board.rows];
+    rows.sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+      let cmp = 0;
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        cmp = aVal.localeCompare(bVal);
+      } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+        cmp = aVal - bVal;
+      } else if (typeof aVal === 'boolean' && typeof bVal === 'boolean') {
+        cmp = (aVal ? 1 : 0) - (bVal ? 1 : 0);
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal));
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return rows;
+  };
+
   const summary = board?.summary;
+  const sortedRows = getSortedRows();
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4">
@@ -109,17 +142,27 @@ export default function StaffAttendancePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                    <th className="px-4 py-2 font-medium">Staff</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">In</th>
-                    <th className="px-4 py-2 font-medium">Out</th>
-                    <th className="px-4 py-2 font-medium">Worked</th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('name')}>
+                      <div className="flex items-center gap-1.5">Staff {sortKey === 'name' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('status')}>
+                      <div className="flex items-center gap-1.5">Status {sortKey === 'status' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('firstIn')}>
+                      <div className="flex items-center gap-1.5">In {sortKey === 'firstIn' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('lastOut')}>
+                      <div className="flex items-center gap-1.5">Out {sortKey === 'lastOut' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('workedMinutes')}>
+                      <div className="flex items-center gap-1.5">Worked {sortKey === 'workedMinutes' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
                     <th className="px-4 py-2 font-medium">Method</th>
                     {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {board.rows.map((r) => (
+                  {sortedRows.map((r) => (
                     <tr key={r.staffId} className="hover:bg-slate-50">
                       <td className="px-4 py-2">
                         <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900 hover:text-purple-700">{r.name}</Link>
