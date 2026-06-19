@@ -27,6 +27,7 @@ export default function UsersPage() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState<'parent' | 'staff' | 'all'>('parent');
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState('');
 
@@ -56,12 +57,21 @@ export default function UsersPage() {
     return <EmptyState icon="Lock" title="Not available" body="You don't have permission to view login accounts." />;
   }
 
-  const filtered = q.trim()
-    ? rows.filter((r) => {
-        const s = q.trim().toLowerCase();
-        return r.name.toLowerCase().includes(s) || r.phone.includes(s) || (r.initialPin || '').includes(s) || r.children.some((c) => c.toLowerCase().includes(s));
-      })
-    : rows;
+  // Parents (student logins) vs staff (everyone else: teacher/accountant/admin/kiosk).
+  const isParent = (r: UserRow) => r.roleKey === 'parent';
+  const inTab = (r: UserRow) => tab === 'all' ? true : tab === 'parent' ? isParent(r) : !isParent(r);
+  const counts = {
+    parent: rows.filter(isParent).length,
+    staff: rows.filter((r) => !isParent(r)).length,
+    all: rows.length,
+  };
+
+  const filtered = rows.filter((r) => {
+    if (!inTab(r)) return false;
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    return r.name.toLowerCase().includes(s) || r.phone.includes(s) || (r.initialPin || '').includes(s) || r.children.some((c) => c.toLowerCase().includes(s));
+  });
 
   const pinCell = (u: UserRow) => {
     if (u.initialPin) return <span className="font-mono font-semibold text-purple-700 tracking-wider">{u.initialPin}</span>;
@@ -77,6 +87,20 @@ export default function UsersPage() {
       </div>
 
       {flash && <div className="rounded-md bg-success-50 text-success-700 text-sm px-3 py-2">{flash}</div>}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {([['parent', 'Students'], ['staff', 'Staff'], ['all', 'All']] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === k ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {label} <span className="text-xs opacity-70">({counts[k]})</span>
+          </button>
+        ))}
+      </div>
 
       <Input placeholder="Search name, phone, PIN, or child…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-sm" />
 
