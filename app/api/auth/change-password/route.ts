@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: userId },
-        data: { passwordHash, passwordChangedAt: new Date() },
+        // Clear the admin-visible initial PIN — the user has set their own password.
+        data: { passwordHash, passwordChangedAt: new Date(), initialPin: null },
       }),
       // Revoke all other devices (keep current session active)
       prisma.userSession.deleteMany({

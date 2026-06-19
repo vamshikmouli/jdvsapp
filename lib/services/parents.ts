@@ -18,10 +18,18 @@ export function pickPrimaryContact(b: {
   return { name, phone };
 }
 
+/** A random 6-digit login PIN (admin distributes it; parent can change later). */
+export function generateLoginPin(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 /**
  * Find or create the Parent login account for a guardian.
  * Keyed by phone so siblings share one parent account. Returns the userId
- * (or null if no phone / parent role not seeded). Initial password = phone.
+ * (or null if no phone / parent role not seeded). A new account gets an
+ * auto-generated 6-digit PIN as its initial password, stored (plaintext) in
+ * `initialPin` so an admin can hand it out; it's cleared when the parent
+ * changes their password. Existing accounts are reused untouched.
  */
 export async function ensureParentUser(
   guardianName: string,
@@ -38,7 +46,8 @@ export async function ensureParentUser(
   if (!parentRole) return null;
 
   const email = syntheticEmail('parent', phone);
-  const passwordHash = await hashPassword(phone);
+  const pin = generateLoginPin();
+  const passwordHash = await hashPassword(pin);
   const user = await prisma.user.create({
     data: {
       name: guardianName || 'Parent',
@@ -46,6 +55,7 @@ export async function ensureParentUser(
       phone,
       roleId: parentRole.id,
       passwordHash,
+      initialPin: pin,
       isActive: true,
     },
   });

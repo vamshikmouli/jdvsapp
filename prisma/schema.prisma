@@ -94,6 +94,9 @@ model User {
   // Password security
   passwordHash      String
   passwordChangedAt DateTime?
+  // Admin-distributable initial login PIN (plaintext). Set when the account is
+  // auto-provisioned; cleared to null the moment the user changes their password.
+  initialPin        String?
 
   // Login security
   lastLogin       DateTime?

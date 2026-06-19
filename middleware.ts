@@ -13,6 +13,7 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/my-attendance', perm: 'STAFF_ATTENDANCE_MARK' },
   { prefix: '/admin/kiosk', perm: ['STAFF_ATTENDANCE_KIOSK', 'STAFF_ATTENDANCE_MANAGE'] },
   { prefix: '/admin/staff', perm: 'STAFF_VIEW' },
+  { prefix: '/admin/users', perm: 'USERS_MANAGE' },
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
   { prefix: '/admin/communications', perm: 'NOTICES_MANAGE' },
   { prefix: '/admin/marks', perm: 'MARKS_VIEW' },

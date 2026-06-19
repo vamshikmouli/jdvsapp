@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash, passwordChangedAt: null, loginAttempts: 0, lockedUntil: null },
+        data: { passwordHash, passwordChangedAt: null, loginAttempts: 0, lockedUntil: null, initialPin: tempPin },
       }),
       prisma.userSession.deleteMany({ where: { userId: user.id } }), // sign out all devices
       prisma.loginAudit.create({ data: { userId: user.id, type: 'PASSWORD_RESET', detail: 'Admin reset PIN' } }),

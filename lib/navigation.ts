@@ -30,6 +30,7 @@ export const STAFF_NAV: NavGroup[] = [
     items: [
       { id: 'communications', label: 'Communications', icon: 'Megaphone', perm: 'NOTICES_MANAGE' },
       { id: 'promotions', label: 'Promotions', icon: 'GraduationCap', perm: 'SETTINGS_MANAGE' },
+      { id: 'users', label: 'Logins & PINs', icon: 'KeyRound', perm: 'USERS_MANAGE' },
       { id: 'roles', label: 'Roles & access', icon: 'Lock', perm: 'ROLES_MANAGE' },
       { id: 'settings', label: 'Settings', icon: 'Settings' }, // always (My Account)
     ],

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await hashPassword(String(pin));
     await prisma.$transaction([
-      prisma.user.update({ where: { id: userId }, data: { passwordHash, passwordChangedAt: new Date() } }),
+      prisma.user.update({ where: { id: userId }, data: { passwordHash, passwordChangedAt: new Date(), initialPin: null } }),
       prisma.loginAudit.create({ data: { userId, type: 'PASSWORD_CHANGED', detail: 'PIN set' } }),
     ]);
 
