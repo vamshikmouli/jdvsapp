@@ -237,7 +237,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
   return (
     <Modal open onClose={onClose} title={`Manage — ${row.name}`} subtitle={new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}>
       <div className="flex flex-wrap gap-1 mb-4 text-sm">
-        {([['punch', 'Add punch'], ['status', 'Set status'], ['pin', 'Kiosk PIN'], ['device', 'Device']] as const).map(([k, label]) => (
+        {([['punch', 'Add punch'], ['status', 'Set status'], ['pin', 'Attendance PIN'], ['device', 'Device']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md ${tab === k ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>
         ))}
       </div>
@@ -258,7 +258,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
       )}
       {tab === 'pin' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-600">For staff who punch on the shared kiosk. {row.hasPin ? 'A PIN is already set.' : 'No PIN set yet.'}</p>
+          <p className="text-sm text-slate-600">For staff who can’t use fingerprint / Face ID. Works on their own phone (“Punch with PIN”) and at the shared kiosk. {row.hasPin ? 'A PIN is already set.' : 'No PIN set yet.'}</p>
           <Field label="New PIN (4–6 digits)"><Input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} placeholder="••••" /></Field>
           <div className="flex gap-2">
             <Button kind="primary" disabled={busy || pin.length < 4} onClick={() => call('/api/staff-attendance/manage/pin', { staffId: row.staffId, pin })}>Save PIN</Button>
