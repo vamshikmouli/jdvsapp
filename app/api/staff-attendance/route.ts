@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
         lastOut: day?.lastOut ?? null,
         workedMinutes: day?.workedMinutes ?? 0,
         locked: day?.locked ?? false,
+        currentStreak: day?.currentStreak ?? 0,
       };
     });
 
