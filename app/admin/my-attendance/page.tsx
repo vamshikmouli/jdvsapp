@@ -15,7 +15,7 @@ interface MeData {
   enrolled: boolean;
   device: { deviceName: string | null; createdAt: string } | null;
   nextAction: 'IN' | 'OUT';
-  today: { status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number } | null;
+  today: { status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number; currentStreak: number } | null;
   punchesToday: { type: 'IN' | 'OUT'; at: string; source: string }[];
   todayKey: string;
   month: string;
@@ -235,7 +235,15 @@ export default function MyAttendancePage() {
           <div className="flex flex-col items-center text-center py-4">
             <div className="mb-2">
               {data.today ? (
-                <Chip tone={statusTone(data.today.status)}>{STATUS_LABEL[data.today.status] ?? data.today.status}{data.today.late ? ' · Late' : ''}</Chip>
+                <>
+                  <Chip tone={statusTone(data.today.status)}>{STATUS_LABEL[data.today.status] ?? data.today.status}{data.today.late ? ' · Late' : ''}</Chip>
+                  {data.today.currentStreak > 0 && (
+                    <div className="mt-2 flex items-center justify-center gap-1">
+                      <Icon name="Flame" size={18} className="text-orange-500" />
+                      <span className="text-lg font-semibold text-orange-600">{data.today.currentStreak} day{data.today.currentStreak === 1 ? '' : 's'} streak</span>
+                    </div>
+                  )}
+                </>
               ) : (
                 <Chip tone="neutral">Not punched in yet</Chip>
               )}
