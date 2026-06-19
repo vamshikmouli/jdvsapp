@@ -20,6 +20,7 @@ interface Row {
   lastOut: string | null;
   workedMinutes: number;
   locked: boolean;
+  currentStreak: number;
 }
 interface Board { date: string; rows: Row[]; summary: Record<string, number>; }
 
@@ -158,6 +159,9 @@ export default function StaffAttendancePage() {
                     <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('workedMinutes')}>
                       <div className="flex items-center gap-1.5">Worked {sortKey === 'workedMinutes' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
                     </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('currentStreak')}>
+                      <div className="flex items-center gap-1.5">Streak {sortKey === 'currentStreak' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
                     <th className="px-4 py-2 font-medium">Method</th>
                     {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
                   </tr>
@@ -173,6 +177,16 @@ export default function StaffAttendancePage() {
                       <td className="px-4 py-2 text-slate-600">{fmtTime(r.firstIn)}</td>
                       <td className="px-4 py-2 text-slate-600">{fmtTime(r.lastOut)}</td>
                       <td className="px-4 py-2 text-slate-600">{fmtMins(r.workedMinutes)}</td>
+                      <td className="px-4 py-2">
+                        {r.currentStreak > 0 ? (
+                          <div className="flex items-center gap-1.5">
+                            <Icon name="Flame" size={15} className="text-orange-500" />
+                            <span className="font-medium text-orange-600">{r.currentStreak}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2">
                         <span className="inline-flex gap-1 text-slate-400">
                           {r.hasDevice && <Icon name="Smartphone" size={15} />}

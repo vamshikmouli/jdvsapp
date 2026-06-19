@@ -464,11 +464,13 @@ model StaffAttendanceDay {
   late         Boolean        @default(false)
   lateMinutes  Int            @default(0)
   locked       Boolean        @default(false) // payroll close
+  currentStreak Int           @default(0)      // consecutive present days
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   @@unique([staffId, date])
   @@index([date])
+  @@index([staffId])
 }
 
 // Attendance regularization requests: staff request corrections when they forget
