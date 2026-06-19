@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
-import { recordPunch, recomputeDay } from '@/lib/staffAttendance/service';
+import { recordPunch, recomputeDay, recomputeStreakForward } from '@/lib/staffAttendance/service';
 
 // POST /api/staff-attendance/manage/regularize
 // Admin correction for a staff member's attendance.
@@ -41,11 +41,13 @@ export async function POST(req: NextRequest) {
       }
       if (!body.date) return NextResponse.json({ error: 'date required' }, { status: 400 });
       const date = new Date(`${body.date}T00:00:00Z`);
-      const day = await prisma.staffAttendanceDay.upsert({
+      await prisma.staffAttendanceDay.upsert({
         where: { staffId_date: { staffId, date } },
         update: { status: body.status, late: false, lateMinutes: 0 },
         create: { staffId, date, status: body.status },
       });
+      await recomputeStreakForward(staffId, body.date);
+      const day = await prisma.staffAttendanceDay.findUnique({ where: { staffId_date: { staffId, date } } });
       return NextResponse.json({ ok: true, day });
     }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
-import { recomputeDay } from '@/lib/staffAttendance/service';
+import { recomputeDay, recomputeStreakForward } from '@/lib/staffAttendance/service';
 import type { StaffDayStatus } from '@prisma/client';
 
 const ALLOWED: StaffDayStatus[] = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'HOLIDAY', 'WEEKLY_OFF'];
@@ -24,10 +24,12 @@ export async function POST(req: NextRequest) {
 
     const writes: any[] = [];
     const autos: string[] = [];
+    const markedStaff: string[] = [];
     for (const e of entries) {
       if (!e?.staffId) continue;
       if (e.status === 'AUTO') { autos.push(e.staffId); continue; }
       if (!ALLOWED.includes(e.status)) continue;
+      markedStaff.push(e.staffId);
       writes.push(
         prisma.staffAttendanceDay.upsert({
           where: { staffId_date: { staffId: e.staffId, date: dateObj } },
@@ -38,6 +40,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (writes.length) await prisma.$transaction(writes);
+    // Keep each marked staff member's streak correct (this day + later days).
+    for (const staffId of markedStaff) await recomputeStreakForward(staffId, date);
     // Recompute the 'AUTO' rows from their punches (outside the txn — each reads punches).
     for (const staffId of autos) await recomputeDay(staffId, date, { clearOverride: true });
 

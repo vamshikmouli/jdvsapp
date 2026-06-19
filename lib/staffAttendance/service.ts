@@ -22,23 +22,34 @@ async function punchesForLocalDay(staffId: string, dateKey: string, tz: string) 
   return rows.filter((p) => localDayInfo(p.at, tz).dateKey === dateKey);
 }
 
-/** Compute streak: consecutive present days. */
-async function computeStreak(staffId: string, dateKey: string, newStatus: StaffDayStatus): Promise<number> {
-  // Only PRESENT counts toward a streak
-  if (newStatus !== 'PRESENT') return 0;
+/**
+ * Recompute `currentStreak` (consecutive PRESENT days) for one staff member's
+ * stored days from `fromDateKey` forward, seeded by the day before it. Call this
+ * after ANY change to a day's status — a single change can lengthen or break the
+ * streak for every later day, so we cascade forward. Only stored rows are walked,
+ * so weekly-offs / holidays with no row don't break a streak. Idempotent.
+ */
+export async function recomputeStreakForward(staffId: string, fromDateKey: string): Promise<void> {
+  const fromDate = new Date(`${fromDateKey}T00:00:00Z`);
+  const prevDate = new Date(fromDate.getTime() - 24 * 3600_000);
 
-  // Get previous day's streak
-  const prevDate = new Date(`${dateKey}T00:00:00Z`);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateKey = prevDate.toISOString().slice(0, 10);
-
-  const prevDay = await prisma.staffAttendanceDay.findUnique({
+  const prevRow = await prisma.staffAttendanceDay.findUnique({
     where: { staffId_date: { staffId, date: prevDate } },
     select: { status: true, currentStreak: true },
   });
+  let streak = prevRow?.status === 'PRESENT' ? prevRow.currentStreak : 0;
 
-  // If previous day was also present, increment streak; otherwise start at 1
-  return (prevDay?.status === 'PRESENT') ? (prevDay.currentStreak || 0) + 1 : 1;
+  const days = await prisma.staffAttendanceDay.findMany({
+    where: { staffId, date: { gte: fromDate } },
+    orderBy: { date: 'asc' },
+    select: { id: true, status: true, currentStreak: true },
+  });
+  for (const d of days) {
+    streak = d.status === 'PRESENT' ? streak + 1 : 0;
+    if (d.currentStreak !== streak) {
+      await prisma.staffAttendanceDay.update({ where: { id: d.id }, data: { currentStreak: streak } });
+    }
+  }
 }
 
 /** Recompute and persist the StaffAttendanceDay roll-up for one local day. */
@@ -84,9 +95,7 @@ export async function recomputeDay(
     scheduled: session !== 'OFF',
   });
 
-  const streak = await computeStreak(staffId, dateKey, r.status as StaffDayStatus);
-
-  return prisma.staffAttendanceDay.upsert({
+  await prisma.staffAttendanceDay.upsert({
     where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
     update: {
       firstIn: r.firstIn,
@@ -95,7 +104,6 @@ export async function recomputeDay(
       status: r.status as StaffDayStatus,
       late: r.late,
       lateMinutes: r.lateMinutes,
-      currentStreak: streak,
     },
     create: {
       staffId,
@@ -106,8 +114,14 @@ export async function recomputeDay(
       status: r.status as StaffDayStatus,
       late: r.late,
       lateMinutes: r.lateMinutes,
-      currentStreak: streak,
     },
+  });
+
+  // Recompute the streak for this day and cascade to any later days.
+  await recomputeStreakForward(staffId, dateKey);
+
+  return prisma.staffAttendanceDay.findUnique({
+    where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
   });
 }
 

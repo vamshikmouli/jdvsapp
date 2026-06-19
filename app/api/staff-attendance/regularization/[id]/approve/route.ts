@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
-import { recordPunch, recomputeDay } from '@/lib/staffAttendance/service';
+import { recordPunch, recomputeStreakForward } from '@/lib/staffAttendance/service';
 
 // POST /api/staff-attendance/regularization/[id]/approve
 // Admin approves and applies a regularization request
@@ -50,6 +50,7 @@ export async function POST(
         update: { status: request.statusValue, late: false, lateMinutes: 0 },
         create: { staffId: request.staffId, date: request.date, status: request.statusValue },
       });
+      await recomputeStreakForward(request.staffId, dateKey);
     }
 
     // Mark request as approved

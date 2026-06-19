@@ -3,7 +3,7 @@
 // days back from punches.
 import { prisma } from '@/lib/db';
 import type { StaffDayStatus } from '@prisma/client';
-import { recomputeDay } from './service';
+import { recomputeDay, recomputeStreakForward } from './service';
 
 /** Inclusive list of YYYY-MM-DD keys between two dates (UTC date columns). */
 export function dateKeysBetween(from: Date, to: Date): string[] {
@@ -35,6 +35,8 @@ export async function applyLeave(staffId: string, from: Date, to: Date, halfDay:
       create: { staffId, date, status },
     });
   }
+  // Leave breaks the present-streak — recompute from the first affected day forward.
+  if (keys.length) await recomputeStreakForward(staffId, keys[0]);
 }
 
 /** Undo a previously-applied leave by recomputing each day from punches. */
