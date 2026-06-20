@@ -47,9 +47,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     if (typeof body.isActive === 'boolean') data.isActive = body.isActive;
 
-    // Detect security-relevant changes (require forced re-login)
+    // Permissions the role holds that aren't in the editable catalog (e.g. the
+    // internal STAFF_ATTENDANCE_KIOSK granted by script). The UI never renders or
+    // sends these back, so they must be preserved across a save — otherwise a
+    // naive rewrite strips them and silently breaks that capability.
+    const hiddenPerms = role.permissions
+      .map((p) => p.permission)
+      .filter((p) => !ALL_PERMISSIONS.includes(p));
+
+    // Detect security-relevant changes (require forced re-login). Merge the
+    // catalog perms the UI sent with the hidden perms we're preserving.
     const newPerms: Permission[] | undefined = Array.isArray(body.permissions)
-      ? (body.permissions as Permission[]).filter((p) => ALL_PERMISSIONS.includes(p))
+      ? Array.from(
+          new Set([
+            ...(body.permissions as Permission[]).filter((p) => ALL_PERMISSIONS.includes(p)),
+            ...hiddenPerms,
+          ])
+        )
       : undefined;
 
     const oldPerms = role.permissions.map((p) => p.permission).sort();
