@@ -83,17 +83,20 @@ export default function StaffAttendancePage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Staff attendance</h1>
           <p className="text-sm text-slate-500">Daily punch board for all staff.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={date} max={todayKey()} onChange={(e) => setDate(e.target.value)} className="flex-1 min-w-[140px] sm:flex-none" />
-          {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`} className="flex-1 sm:flex-none"><Button kind="primary" icon="ClipboardCheck" className="w-full justify-center">Mark</Button></Link>}
-          <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }}>Export</Button>
-          {canManage && <Link href="/admin/staff-attendance/regularization"><Button icon="FileText">Requests</Button></Link>}
-          {canConfig && <Link href="/admin/staff-attendance/config"><Button icon="Settings">Settings</Button></Link>}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input type="date" value={date} max={todayKey()} onChange={(e) => setDate(e.target.value)} className="w-full sm:w-auto" />
+          {/* Phones: a tidy 2-up grid of equal-width buttons. Desktop: inline row. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+            {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`} className="w-full sm:w-auto"><Button kind="primary" icon="ClipboardCheck" className="w-full justify-center">Mark</Button></Link>}
+            <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }} className="w-full justify-center sm:w-auto">Export</Button>
+            {canManage && <Link href="/admin/staff-attendance/regularization" className="w-full sm:w-auto"><Button icon="FileText" className="w-full justify-center">Requests</Button></Link>}
+            {canConfig && <Link href="/admin/staff-attendance/config" className="w-full sm:w-auto"><Button icon="Settings" className="w-full justify-center">Settings</Button></Link>}
+          </div>
         </div>
       </div>
 
