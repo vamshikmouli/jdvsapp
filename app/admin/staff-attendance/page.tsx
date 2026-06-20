@@ -124,19 +124,52 @@ export default function StaffAttendancePage() {
           <EmptyState icon="Users" title="No staff" body="Add staff to start tracking attendance." />
         ) : (
           <>
-            {/* Mobile: stacked cards */}
+            {/* Mobile: stacked cards — every desktop column surfaced as a labeled field. */}
             <div className="md:hidden divide-y divide-slate-100">
               {board.rows.map((r) => (
-                <div key={r.staffId} className="p-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900">{r.name}</Link>
-                    {r.designation && <div className="text-xs text-slate-400 truncate">{r.designation}</div>}
-                    <div className="flex items-center flex-wrap gap-2 mt-1.5">
-                      <Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m` : ''}</Chip>
-                      <span className="text-xs text-slate-400">{fmtTime(r.firstIn)}–{fmtTime(r.lastOut)} · {fmtMins(r.workedMinutes)}</span>
+                <div key={r.staffId} className="p-3 space-y-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900">{r.name}</Link>
+                      {r.designation && <div className="text-xs text-slate-400 truncate">{r.designation}</div>}
+                    </div>
+                    {canManage && <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)} className="shrink-0">Manage</Button>}
+                  </div>
+
+                  <Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m late` : ''}</Chip>
+
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <div className="text-slate-400">In</div>
+                      <div className="text-slate-700 font-medium">{fmtTime(r.firstIn)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">Out</div>
+                      <div className="text-slate-700 font-medium">{fmtTime(r.lastOut)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">Worked</div>
+                      <div className="text-slate-700 font-medium">{fmtMins(r.workedMinutes)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">Streak</div>
+                      {r.currentStreak > 0 ? (
+                        <div className="flex items-center gap-1 font-medium text-orange-600">
+                          <Icon name="Flame" size={13} className="text-orange-500" />{r.currentStreak}
+                        </div>
+                      ) : (
+                        <div className="text-slate-400">—</div>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-slate-400">Method</div>
+                      <div className="flex items-center gap-1.5 text-slate-500">
+                        {r.hasDevice && <span className="inline-flex items-center gap-1"><Icon name="Smartphone" size={14} />Phone</span>}
+                        {r.hasPin && <span className="inline-flex items-center gap-1"><Icon name="KeyRound" size={14} />PIN</span>}
+                        {!r.hasDevice && !r.hasPin && <span className="text-slate-400">—</span>}
+                      </div>
                     </div>
                   </div>
-                  {canManage && <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)} className="shrink-0">Manage</Button>}
                 </div>
               ))}
             </div>
