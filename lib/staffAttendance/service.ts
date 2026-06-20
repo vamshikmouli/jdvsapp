@@ -6,6 +6,7 @@ import type { PunchSource, PunchType, StaffDayStatus } from '@prisma/client';
 import { loadStaffAttConfig } from './config';
 import { computeDay, localDayInfo, type PunchLite } from './rules';
 import { parseWorkPattern, parseWorkDays, parseWeekSchedule, daySession, sessionPattern } from './schedule';
+import { notifyStaffPunch } from '@/lib/notifications';
 
 /** UTC window that safely brackets a local calendar day (handles tz offset). */
 function dayWindow(dateKey: string): { gte: Date; lt: Date } {
@@ -178,5 +179,13 @@ export async function recordPunch(input: RecordPunchInput) {
   });
 
   const day = await recomputeDay(input.staffId, dateKey);
+
+  // Alert staff-attendance watchers (bell + Web Push). Real punches only —
+  // skip MANUAL admin regularizations, which aren't a live in/out event.
+  // Best-effort: notifyStaffPunch swallows its own errors.
+  if (input.source !== 'MANUAL') {
+    await notifyStaffPunch({ staffId: input.staffId, type, at: now, timezone: cfg.timezone });
+  }
+
   return { punch, day, type };
 }

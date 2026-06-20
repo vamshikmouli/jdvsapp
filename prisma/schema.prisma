@@ -115,6 +115,7 @@ model User {
   loginAudits  LoginAudit[]
   resetTokens  PasswordReset[]
   pushSubscriptions PushSubscription[]
+  notifications     Notification[]
   marksEntered  MarkSheet[] @relation("MarksEnteredBy")
   marksApproved MarkSheet[] @relation("MarksApprovedBy")
 
@@ -136,6 +137,23 @@ model PushSubscription {
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// In-app notifications shown in the admin top-bar bell. One row per recipient
+// (an event fans out to every admin who should see it). Also delivered to the
+// device as Web Push when the user has enabled it. Read state is per-row.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    // e.g. "STAFF_PUNCH"
+  title     String
+  body      String
+  url       String?   // where the bell row / push tap navigates
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // Active sessions per user/device — for multi-device listing + revocation.

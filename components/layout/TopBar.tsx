@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
+import { NotificationBell } from '@/components/layout/NotificationBell';
 
 interface TopBarProps {
   title: string;
@@ -70,6 +71,8 @@ export function TopBar({ title, subtitle, onMenu }: TopBarProps) {
             className="bg-transparent border-0 outline-none text-sm flex-1 min-w-0"
           />
         </div>
+
+        <NotificationBell />
 
         {isParent && (
           <a href="/parent" className="inline-flex items-center gap-1.5 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors" title="Switch to the Parent app">
