@@ -1,6 +1,7 @@
 // Per-staff work-schedule helpers: which days a staff member is expected, their
 // work pattern (full / half-morning / half-afternoon), and what status an empty
 // day should show (holiday / weekly-off / absent). Pure — no DB.
+import { parseHm } from './rules';
 
 export type WorkPattern = 'FULL' | 'HALF_MORNING' | 'HALF_AFTERNOON';
 export type Session = 'OFF' | 'MORNING' | 'AFTERNOON' | 'FULL';
@@ -14,8 +15,26 @@ export const ATTENDANCE_START_MONTH = '2026-06';
 // the day (a punch IN and a punch OUT) counts as a full PRESENT, not a half day.
 export const SHORT_DAY_WEEKDAYS = [6]; // 6 = Saturday
 export const SHORT_DAY_START = '09:40'; // late reference on short days (Saturday starts 9:40)
+export const SHORT_DAY_END = '12:30';   // short-day finish (Saturday ends 12:30)
 export function isShortDay(weekday: number): boolean {
   return SHORT_DAY_WEEKDAYS.includes(weekday);
+}
+
+/**
+ * Start/end of a staff member's working window on a given day, in minutes since
+ * local midnight — used to time punch-in / punch-out reminders. Returns null for
+ * a day they don't work. Short days (Saturday) override with the short window.
+ */
+export function sessionTimes(
+  session: Session,
+  shortDay: boolean,
+  cfg: { shiftStart: string; shiftEnd: string; afternoonStart: string }
+): { startMin: number; endMin: number } | null {
+  if (session === 'OFF') return null;
+  if (shortDay) return { startMin: parseHm(SHORT_DAY_START), endMin: parseHm(SHORT_DAY_END) };
+  if (session === 'AFTERNOON') return { startMin: parseHm(cfg.afternoonStart), endMin: parseHm(cfg.shiftEnd) };
+  if (session === 'MORNING') return { startMin: parseHm(cfg.shiftStart), endMin: parseHm(cfg.afternoonStart) };
+  return { startMin: parseHm(cfg.shiftStart), endMin: parseHm(cfg.shiftEnd) }; // FULL
 }
 
 export function parseWorkPattern(v: unknown): WorkPattern {

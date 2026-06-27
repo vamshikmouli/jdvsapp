@@ -1,0 +1,38 @@
+# Drives staff punch-in / punch-out push reminders.
+# Vercel Hobby can't run frequent/day-of-week crons, so we trigger the endpoint
+# from GitHub Actions instead. Each run hits the time-window-aware route, which
+# decides who (if anyone) to remind based on each staff member's session.
+#
+# Setup (one-time): add two repo secrets under Settings → Secrets → Actions:
+#   REMINDER_URL = https://<your-vercel-domain>/api/staff-attendance/cron/reminders
+#   CRON_SECRET  = same value as the CRON_SECRET env var on Vercel
+#
+# Times are UTC (IST = UTC + 5:30), scheduled ~10 min before each session edge:
+#   03:20 UTC = 08:50 IST  weekday punch-in   (start 09:00)
+#   04:00 UTC = 09:30 IST  Saturday punch-in  (start 09:40)
+#   07:20 UTC = 12:50 IST  afternoon punch-in / morning punch-out (13:00)
+#   06:50 UTC = 12:20 IST  Saturday punch-out (end 12:30)
+#   10:20 UTC = 15:50 IST  weekday punch-out  (end 16:00)
+name: Attendance reminders
+
+on:
+  schedule:
+    - cron: '20 3 * * 1-5'
+    - cron: '0 4 * * 6'
+    - cron: '20 7 * * 1-5'
+    - cron: '50 6 * * 6'
+    - cron: '20 10 * * 1-5'
+  workflow_dispatch: {} # allow manual "Run workflow" for testing
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminders endpoint
+        run: |
+          curl -fsS -X POST "$REMINDER_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json"
+        env:
+          REMINDER_URL: ${{ secrets.REMINDER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
