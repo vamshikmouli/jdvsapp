@@ -32,10 +32,13 @@ async function punchesForLocalDay(staffId: string, dateKey: string, tz: string) 
  */
 export async function recomputeStreakForward(staffId: string, fromDateKey: string): Promise<void> {
   const fromDate = new Date(`${fromDateKey}T00:00:00Z`);
-  const prevDate = new Date(fromDate.getTime() - 24 * 3600_000);
 
-  const prevRow = await prisma.staffAttendanceDay.findUnique({
-    where: { staffId_date: { staffId, date: prevDate } },
+  // Seed from the most recent STORED day before this one — not the literal
+  // previous calendar day. Weekly-offs / holidays have no row, so looking at
+  // `fromDate - 1` would wrongly reset the streak to 0 after every weekend.
+  const prevRow = await prisma.staffAttendanceDay.findFirst({
+    where: { staffId, date: { lt: fromDate } },
+    orderBy: { date: 'desc' },
     select: { status: true, currentStreak: true },
   });
   let streak = prevRow?.status === 'PRESENT' ? prevRow.currentStreak : 0;

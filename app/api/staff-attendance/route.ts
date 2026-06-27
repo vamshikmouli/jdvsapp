@@ -4,6 +4,7 @@ import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
+import { currentStreak } from '@/lib/staffAttendance/streak';
 
 // GET /api/staff-attendance?date=YYYY-MM-DD
 // Daily board: every active staff member with their roll-up for the date.
@@ -39,16 +40,23 @@ export async function GET(req: NextRequest) {
 
     const byStaff = new Map(days.map((d) => [d.staffId, d]));
 
-    // Current running streak per staff: the streak on their most recent stored day
-    // on/before the viewed date. This keeps a streak visible on off-days and on
-    // days not yet marked (it only drops to 0 once an absent/leave row exists).
-    const latestStreakRows = await prisma.staffAttendanceDay.findMany({
+    // Current streak per staff, computed live from their stored days up to the
+    // viewed date — so retroactive leave approvals/regularizations are always
+    // reflected and no backfill is needed. Walks present-ish days back to the
+    // first leave/absence; holidays / weekly-offs / unmarked days are skipped.
+    const streakRows = await prisma.staffAttendanceDay.findMany({
       where: { staffId: { in: staff.map((s) => s.id) }, date: { lte: date } },
-      orderBy: [{ staffId: 'asc' }, { date: 'desc' }],
-      distinct: ['staffId'],
-      select: { staffId: true, currentStreak: true },
+      select: { staffId: true, date: true, status: true },
     });
-    const streakByStaff = new Map(latestStreakRows.map((r) => [r.staffId, r.currentStreak]));
+    const daysByStaff = new Map<string, { date: Date; status: string }[]>();
+    for (const r of streakRows) {
+      const arr = daysByStaff.get(r.staffId) ?? [];
+      arr.push({ date: r.date, status: r.status });
+      daysByStaff.set(r.staffId, arr);
+    }
+    const streakByStaff = new Map(
+      staff.map((s) => [s.id, currentStreak(daysByStaff.get(s.id) ?? [], dateKey)])
+    );
 
     const weekday = weekdayOfKey(dateKey);
     const weeklyOff = cfg.schedule.weeklyOffDays;

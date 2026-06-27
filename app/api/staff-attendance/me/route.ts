@@ -4,6 +4,7 @@ import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, synthesizeDays } from '@/lib/staffAttendance/schedule';
+import { currentStreak } from '@/lib/staffAttendance/streak';
 
 // GET /api/staff-attendance/me
 // Today's punch state + recent history + enrollment status for the signed-in
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
     const monthStart = new Date(Date.UTC(my, mm - 1, 1));
     const monthEnd = new Date(Date.UTC(my, mm, 1) - 24 * 3600_000);
 
-    const [cred, today, punchesToday, recent, storedMonthDays, staffRec, holidays] = await Promise.all([
+    const [cred, today, punchesToday, recent, storedMonthDays, staffRec, holidays, streakDays] = await Promise.all([
       prisma.staffCredential.findFirst({
         where: { staffId, active: true },
         select: { deviceName: true, createdAt: true, lastUsedAt: true },
@@ -55,7 +56,16 @@ export async function GET(req: NextRequest) {
       }),
       prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true, pinHash: true } }),
       prisma.holiday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
+      // All stored days up to today — enough to compute the running streak live.
+      prisma.staffAttendanceDay.findMany({
+        where: { staffId, date: { lte: todayDate } },
+        select: { date: true, status: true },
+      }),
     ]);
+
+    // Live streak as of today (recomputed every load, so a leave approved later
+    // or a regularization always reflects without any backfill).
+    const streak = currentStreak(streakDays, todayKey);
 
     // Fill non-punch days (holidays / off days) so the calendar isn't all blank/absent.
     const existing = new Set(storedMonthDays.map((d) => d.date.toISOString().slice(0, 10)));
@@ -83,7 +93,8 @@ export async function GET(req: NextRequest) {
       hasPin: !!staffRec?.pinHash,
       device: cred ?? null,
       nextAction: open ? 'OUT' : 'IN',
-      today: today ?? null,
+      currentStreak: streak,
+      today: today ? { ...today, currentStreak: streak } : null,
       punchesToday: punchesToday.filter((p) => localDayInfo(p.at, cfg.timezone).dateKey === todayKey),
       recent,
       todayKey,
