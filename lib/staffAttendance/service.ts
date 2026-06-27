@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import type { PunchSource, PunchType, StaffDayStatus } from '@prisma/client';
 import { loadStaffAttConfig } from './config';
 import { computeDay, localDayInfo, type PunchLite } from './rules';
-import { parseWorkPattern, parseWorkDays, parseWeekSchedule, daySession, sessionPattern } from './schedule';
+import { parseWorkPattern, parseWorkDays, parseWeekSchedule, daySession, sessionPattern, isShortDay, SHORT_DAY_START } from './schedule';
 import { notifyStaffPunch } from '@/lib/notifications';
 
 /** UTC window that safely brackets a local calendar day (handles tz offset). */
@@ -97,6 +97,8 @@ export async function recomputeDay(
     afternoonStart: cfg.schedule.afternoonStart,
     isHoliday: !!holiday,
     scheduled: session !== 'OFF',
+    shortDay: isShortDay(weekday) && session !== 'OFF',
+    shortDayStart: SHORT_DAY_START,
   });
 
   await prisma.staffAttendanceDay.upsert({

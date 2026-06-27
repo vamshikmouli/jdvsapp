@@ -92,6 +92,11 @@ export function computeDay(
     afternoonStart?: string;
     /** Date is a declared school holiday. */
     isHoliday?: boolean;
+    /** Short working day (e.g. Saturday 9:40–12:30): a completed punch IN+OUT is
+     *  a full PRESENT, with no minimum-minutes threshold. */
+    shortDay?: boolean;
+    /** Late reference (HH:mm) for short days — the shortened schedule's start. */
+    shortDayStart?: string;
   } = {}
 ): DayResult {
   const sorted = [...punches].sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -100,7 +105,9 @@ export function computeDay(
   const fullThreshold = pattern === 'FULL' ? cfg.fullDayMins : cfg.halfDayMins;
   const halfThreshold = pattern === 'FULL' ? cfg.halfDayMins : Math.round(cfg.halfDayMins / 2);
   // Late reference: afternoon staff are judged against the afternoon start time.
-  const refStart = pattern === 'HALF_AFTERNOON' ? (opts.afternoonStart || cfg.shiftStart) : cfg.shiftStart;
+  const refStart = opts.shortDay && opts.shortDayStart
+    ? opts.shortDayStart
+    : pattern === 'HALF_AFTERNOON' ? (opts.afternoonStart || cfg.shiftStart) : cfg.shiftStart;
   const scheduled = opts.scheduled ?? (opts.weekday == null || !cfg.weeklyOffDays.includes(opts.weekday));
 
   // Pair IN→OUT chronologically; sum completed pairs.
@@ -144,6 +151,10 @@ export function computeDay(
     else status = 'ABSENT';
   } else if (open) {
     // Still at work — optimistic until they punch out.
+    status = 'PRESENT';
+  } else if (opts.shortDay && firstIn && lastOut) {
+    // Short working day (Saturday): a completed in+out is a full present,
+    // regardless of how few minutes the shortened schedule actually is.
     status = 'PRESENT';
   } else if (workedMinutes >= fullThreshold) {
     status = 'PRESENT';

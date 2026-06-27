@@ -9,6 +9,15 @@ export type Session = 'OFF' | 'MORNING' | 'AFTERNOON' | 'FULL';
 export const ATTENDANCE_START_KEY = '2026-06-01';
 export const ATTENDANCE_START_MONTH = '2026-06';
 
+// Short working days: the school runs a shortened schedule (Saturday, 9:40–12:30).
+// On these days the normal full-day minute threshold doesn't apply — completing
+// the day (a punch IN and a punch OUT) counts as a full PRESENT, not a half day.
+export const SHORT_DAY_WEEKDAYS = [6]; // 6 = Saturday
+export const SHORT_DAY_START = '09:40'; // late reference on short days (Saturday starts 9:40)
+export function isShortDay(weekday: number): boolean {
+  return SHORT_DAY_WEEKDAYS.includes(weekday);
+}
+
 export function parseWorkPattern(v: unknown): WorkPattern {
   return v === 'HALF_MORNING' || v === 'HALF_AFTERNOON' ? v : 'FULL';
 }
