@@ -2,9 +2,12 @@
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { getClassScope } from '@/lib/rbac/roles';
+import { getClassScope, can } from '@/lib/rbac/roles';
 import { parseSessions } from '@/lib/attendance/sessions';
 import { getActiveYear } from '@/lib/services/fees';
+import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
+import { localDayInfo } from '@/lib/staffAttendance/rules';
+import { daySession, emptyStatusForSession, parseWeekSchedule, parseWorkPattern, parseWorkDays, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 
 // Use UTC date components consistently — attendance sessions are stored at
 // UTC midnight (parsed from "YYYY-MM-DD"), and the attendance page uses the
@@ -235,9 +238,47 @@ export async function GET() {
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       .slice(0, 8);
 
+    // --- Staff attendance (today) — only for users who can view it ---
+    // Mirrors the staff-attendance board: stored day status, else the derived
+    // empty-day status (holiday / weekly-off / absent) from each staff schedule.
+    let staffToday: {
+      present: number; halfDay: number; absent: number; leave: number; off: number; late: number; total: number;
+    } | null = null;
+    if (can(session, 'STAFF_ATTENDANCE_VIEW')) {
+      const cfg = await loadStaffAttConfig();
+      const staffDateKey = localDayInfo(new Date(), cfg.timezone).dateKey;
+      const staffDate = new Date(`${staffDateKey}T00:00:00Z`);
+      const staffWeekday = weekdayOfKey(staffDateKey);
+      const [staffRows, staffDays, staffHoliday] = await Promise.all([
+        prisma.staff.findMany({
+          where: { archived: false, NOT: { user: { role: { key: 'admin' } } } },
+          select: { id: true, weekSchedule: true, workPattern: true, workDays: true },
+        }),
+        prisma.staffAttendanceDay.findMany({ where: { date: staffDate }, select: { staffId: true, status: true, late: true } }),
+        prisma.holiday.findUnique({ where: { date: staffDate }, select: { id: true } }),
+      ]);
+      const dayByStaff = new Map(staffDays.map((d) => [d.staffId, d]));
+      const s = { present: 0, halfDay: 0, absent: 0, leave: 0, off: 0, late: 0, total: staffRows.length };
+      for (const st of staffRows) {
+        const day = dayByStaff.get(st.id);
+        const status = day?.status ?? emptyStatusForSession(
+          daySession(staffWeekday, parseWeekSchedule(st.weekSchedule), { workPattern: parseWorkPattern(st.workPattern), workDays: parseWorkDays(st.workDays) }, cfg.schedule.weeklyOffDays),
+          !!staffHoliday
+        );
+        if (status === 'PRESENT') s.present += 1;
+        else if (status === 'HALF_DAY') s.halfDay += 1;
+        else if (status === 'LEAVE') s.leave += 1;
+        else if (status === 'HOLIDAY' || status === 'WEEKLY_OFF') s.off += 1;
+        else s.absent += 1;
+        if (day?.late) s.late += 1;
+      }
+      staffToday = s;
+    }
+
     return NextResponse.json({
       kpis: { studentsTotal, studentsActive, staffTotal, classesTotal },
       today: { present, absent, leave, late, marked, pct: todayPct, activeStudents: studentsActive, absentNames, leaveNames },
+      staffToday,
       chart,
       todaySessions: todaySessionRows,
       classAttendance,

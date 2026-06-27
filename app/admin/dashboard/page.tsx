@@ -9,6 +9,7 @@ import { PushOptIn } from '@/components/PushOptIn';
 interface DashboardData {
   kpis: { studentsTotal: number; studentsActive: number; staffTotal: number; classesTotal: number };
   today: { present: number; absent: number; leave: number; late: number; marked: number; pct: number; activeStudents: number; absentNames: string[]; leaveNames: string[] };
+  staffToday: { present: number; halfDay: number; absent: number; leave: number; off: number; late: number; total: number } | null;
   chart: { date: string; present: number; total: number; pct: number }[];
   todaySessions: { classId: string; className: string; students: number; slots: { key: string; label: string; status: string }[] }[];
   classAttendance: { classId: string; className: string; total: number; marked: number; present: number; absent: number; leave: number; pct: number }[];
@@ -197,6 +198,27 @@ export default function DashboardPage() {
               caption="across the school"
             />
           </div>
+
+          {/* ===== Staff attendance — today ===== */}
+          {data.staffToday && (
+            <Card title="Staff attendance — today" className="mt-6" action={<Chip tone="neutral">{data.staffToday.total} staff</Chip>}>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                {([
+                  ['Present', data.staffToday.present, 'text-success-700'],
+                  ['Half day', data.staffToday.halfDay, 'text-warn-700'],
+                  ['Absent', data.staffToday.absent, 'text-danger-700'],
+                  ['Leave', data.staffToday.leave, 'text-info-700'],
+                  ['Off', data.staffToday.off, 'text-slate-700'],
+                  ['Late', data.staffToday.late, 'text-warn-700'],
+                ] as const).map(([label, val, color]) => (
+                  <div key={label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className={`text-lg font-semibold ${color}`}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* ===== Class-wise attendance — vertical bars ===== */}
           <Card title="Class-wise attendance — today" className="mt-6" action={<Chip tone="neutral">present / total</Chip>}>
