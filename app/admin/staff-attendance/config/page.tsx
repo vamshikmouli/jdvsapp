@@ -19,7 +19,7 @@ interface Cfg {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const LEAVE_TYPES: [string, string][] = [['CASUAL', 'Casual'], ['SICK', 'Sick'], ['EARNED', 'Earned'], ['UNPAID', 'Unpaid'], ['OTHER', 'Other']];
+const LEAVE_TYPES: [string, string][] = [['EARNED', 'Earned'], ['SICK', 'Sick'], ['UNPAID', 'Unpaid']];
 
 export default function StaffAttendanceConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, requireSession, can, authErrorResponse } from '@/lib/rbac/roles';
 import { leaveDays } from '@/lib/staffAttendance/leave';
+import { LEAVE_TYPES } from '@/lib/staffAttendance/leaveBalance';
 
-const TYPES = ['CASUAL', 'SICK', 'EARNED', 'UNPAID', 'OTHER'];
+const TYPES: string[] = LEAVE_TYPES;
 
 // GET /api/leave            — my requests
 // GET /api/leave?all=1      — all requests (needs LEAVE_APPROVE); ?status=PENDING filters
@@ -55,6 +56,12 @@ export async function POST(req: NextRequest) {
     if (halfDay && from.getTime() !== to.getTime()) {
       return NextResponse.json({ error: 'Half-day leave must be a single day' }, { status: 400 });
     }
+    // Half-day leave must say which session (morning/afternoon) is off.
+    let halfSession: string | null = null;
+    if (halfDay) {
+      halfSession = b.halfSession === 'AFTERNOON' ? 'AFTERNOON' : b.halfSession === 'MORNING' ? 'MORNING' : null;
+      if (!halfSession) return NextResponse.json({ error: 'Choose morning or afternoon for half-day leave' }, { status: 400 });
+    }
 
     const row = await prisma.leaveRequest.create({
       data: {
@@ -63,6 +70,7 @@ export async function POST(req: NextRequest) {
         fromDate: from,
         toDate: to,
         halfDay,
+        halfSession,
         days: leaveDays(from, to, halfDay),
         reason: b.reason || null,
         status: 'PENDING',

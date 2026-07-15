@@ -6,19 +6,26 @@ import { Button, Card, Chip, Field, Input, Select, EmptyState, Skeleton } from '
 import type { ChipTone } from '@/lib/staffAttendance/display';
 
 interface Leave {
-  id: string; type: string; fromDate: string; toDate: string; halfDay: boolean;
+  id: string; type: string; fromDate: string; toDate: string; halfDay: boolean; halfSession: string | null;
   days: number; reason: string | null; status: string; decisionNote: string | null; decidedAt: string | null;
   staff?: { id: string; name: string; designation: string | null };
 }
 
+// Full label map (incl. retired CASUAL/OTHER) so old records still render.
 const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', UNPAID: 'Unpaid', OTHER: 'Other' };
+// Types selectable when applying (CASUAL/OTHER retired).
+const SELECTABLE_TYPES = ['EARNED', 'SICK', 'UNPAID'] as const;
 function statusTone(s: string): ChipTone {
   return s === 'APPROVED' ? 'success' : s === 'PENDING' ? 'warn' : s === 'REJECTED' ? 'danger' : 'neutral';
 }
 function fmt(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
-function range(l: Leave) { return l.fromDate === l.toDate ? fmt(l.fromDate) + (l.halfDay ? ' (half)' : '') : `${fmt(l.fromDate)} – ${fmt(l.toDate)}`; }
+function halfLabel(s: string | null) { return s === 'AFTERNOON' ? 'afternoon' : s === 'MORNING' ? 'morning' : ''; }
+function range(l: Leave) {
+  const half = l.halfDay ? ` (half${halfLabel(l.halfSession) ? ` · ${halfLabel(l.halfSession)}` : ''})` : '';
+  return l.fromDate === l.toDate ? fmt(l.fromDate) + half : `${fmt(l.fromDate)} – ${fmt(l.toDate)}`;
+}
 
-const emptyForm = { type: 'CASUAL', fromDate: '', toDate: '', halfDay: false, reason: '' };
+const emptyForm = { type: 'EARNED', fromDate: '', toDate: '', halfDay: false, halfSession: 'MORNING', reason: '' };
 
 export default function LeavePage() {
   const { data: session } = useSession();
@@ -137,7 +144,7 @@ export default function LeavePage() {
       {canApply && (
         <Card title="Apply for leave">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Type"><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+            <Field label="Type"><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{SELECTABLE_TYPES.map((k) => <option key={k} value={k}>{TYPE_LABEL[k]}</option>)}</Select></Field>
             <div />
             <Field label="From"><Input type="date" value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })} /></Field>
             <Field label="To"><Input type="date" value={form.toDate} min={form.fromDate} disabled={form.halfDay} onChange={(e) => setForm({ ...form, toDate: e.target.value })} /></Field>
@@ -146,6 +153,23 @@ export default function LeavePage() {
             <input type="checkbox" checked={form.halfDay} onChange={(e) => setForm({ ...form, halfDay: e.target.checked, toDate: e.target.checked ? form.fromDate : form.toDate })} className="w-4 h-4" />
             <span>Half day (single day)</span>
           </label>
+          {form.halfDay && (
+            <div className="mt-2">
+              <div className="text-sm text-slate-600 mb-1.5">Which session is off?</div>
+              <div className="flex gap-2">
+                {([['MORNING', 'Morning'], ['AFTERNOON', 'Afternoon']] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setForm({ ...form, halfSession: val })}
+                    className={`px-3 py-1.5 rounded-md text-sm border ${form.halfSession === val ? 'bg-purple-100 border-purple-300 text-purple-700 font-medium' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <Field label="Reason (optional)"><Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="e.g. medical" /></Field>
           <div className="mt-3"><Button kind="primary" icon="Send" disabled={busy} onClick={apply}>Submit request</Button></div>
         </Card>

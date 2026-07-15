@@ -4,10 +4,15 @@
 import { prisma } from '@/lib/db';
 import type { LeaveType } from '@prisma/client';
 
-export const LEAVE_TYPES: LeaveType[] = ['CASUAL', 'SICK', 'EARNED', 'UNPAID', 'OTHER'];
+// Selectable leave types. CASUAL/OTHER are retired (kept in the DB enum only so
+// existing records still resolve), so they no longer appear in forms, quotas, or
+// balances.
+export const LEAVE_TYPES: LeaveType[] = ['EARNED', 'SICK', 'UNPAID'];
 
+// Keys for all enum values (retired ones default to 0 = no limit) — the Record
+// type requires every LeaveType, but only LEAVE_TYPES are surfaced.
 export const DEFAULT_QUOTAS: Record<LeaveType, number> = {
-  CASUAL: 12, SICK: 10, EARNED: 15, UNPAID: 0, OTHER: 0, // 0 = no limit
+  EARNED: 15, SICK: 10, UNPAID: 0, CASUAL: 0, OTHER: 0, // 0 = no limit
 };
 
 export interface LeaveYear {
