@@ -257,7 +257,9 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
   const [punchType, setPunchType] = useState<'IN' | 'OUT'>('IN');
   const [time, setTime] = useState('09:00');
   const [status, setStatus] = useState('LEAVE');
+  const [leaveType, setLeaveType] = useState('EARNED');
   const [pin, setPin] = useState('');
+  const deducts = status === 'LEAVE' || status === 'ABSENT';
 
   const call = async (url: string, body: any, method = 'POST') => {
     setBusy(true); setError('');
@@ -288,7 +290,17 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
       {tab === 'status' && (
         <div className="space-y-3">
           <Field label="Mark day as"><Select value={status} onChange={(e) => setStatus(e.target.value)}><option value="LEAVE">Leave</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
-          <Button kind="primary" disabled={busy} onClick={() => call('/api/staff-attendance/manage/regularize', { action: 'status', staffId: row.staffId, date, status })}>Set status</Button>
+          {deducts && (
+            <Field label="Deduct from">
+              <Select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+                <option value="EARNED">Earned leave</option>
+                <option value="SICK">Sick leave</option>
+                <option value="UNPAID">Unpaid leave</option>
+              </Select>
+            </Field>
+          )}
+          {deducts && <p className="text-xs text-slate-500">This {status === 'ABSENT' ? 'absence' : 'leave'} will be deducted from the staff member’s {leaveType.toLowerCase()} leave balance.</p>}
+          <Button kind="primary" disabled={busy} onClick={() => call('/api/staff-attendance/manage/regularize', { action: 'status', staffId: row.staffId, date, status, type: deducts ? leaveType : undefined })}>Set status</Button>
         </div>
       )}
       {tab === 'pin' && (

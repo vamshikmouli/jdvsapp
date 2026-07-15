@@ -488,6 +488,9 @@ model StaffAttendanceDay {
   lateMinutes  Int            @default(0)
   locked       Boolean        @default(false) // payroll close
   currentStreak Int           @default(0)      // consecutive present days
+  // When this day counts against a leave balance (approved leave, or an admin
+  // marking it Leave/Absent): which LeaveType to deduct. null = no deduction.
+  leaveType    String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 

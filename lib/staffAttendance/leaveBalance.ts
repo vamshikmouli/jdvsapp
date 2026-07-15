@@ -57,19 +57,29 @@ export async function getBalances(staffId: string, ly: LeaveYear): Promise<TypeB
   const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
   const defaults = parseQuotas(settings?.leaveQuotas);
 
-  const [overrides, requests] = await Promise.all([
+  const [overrides, pendingReqs, leaveDaysRows] = await Promise.all([
     prisma.leaveEntitlement.findMany({ where: { staffId, leaveYear: ly.startYear } }),
+    // Pending requests aren't stamped on days yet — count them from requests.
     prisma.leaveRequest.findMany({
-      where: { staffId, status: { in: ['APPROVED', 'PENDING'] }, fromDate: { gte: ly.from, lte: ly.to } },
-      select: { type: true, days: true, status: true },
+      where: { staffId, status: 'PENDING', fromDate: { gte: ly.from, lte: ly.to } },
+      select: { type: true, days: true },
+    }),
+    // "Used" is derived from the actual stamped days (approved leave AND admin
+    // Leave/Absent marks both set leaveType), so admin marks deduct too and any
+    // reversal (e.g. a later punch clearing leaveType) is reflected automatically.
+    prisma.staffAttendanceDay.findMany({
+      where: { staffId, date: { gte: ly.from, lte: ly.to }, leaveType: { not: null } },
+      select: { status: true, leaveType: true },
     }),
   ]);
   const overrideMap = new Map(overrides.map((o) => [o.type, o.days]));
 
   return LEAVE_TYPES.map((type) => {
     const entitlement = overrideMap.has(type) ? (overrideMap.get(type) as number) : defaults[type];
-    const used = requests.filter((r) => r.type === type && r.status === 'APPROVED').reduce((s, r) => s + r.days, 0);
-    const pending = requests.filter((r) => r.type === type && r.status === 'PENDING').reduce((s, r) => s + r.days, 0);
+    const used = leaveDaysRows
+      .filter((d) => d.leaveType === type)
+      .reduce((s, d) => s + (d.status === 'HALF_DAY' ? 0.5 : 1), 0);
+    const pending = pendingReqs.filter((r) => r.type === type).reduce((s, r) => s + r.days, 0);
     const unlimited = entitlement <= 0;
     return { type, entitlement, unlimited, used, pending, remaining: unlimited ? 0 : entitlement - used };
   });

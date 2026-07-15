@@ -23,16 +23,17 @@ export function leaveDays(from: Date, to: Date, halfDay: boolean): number {
   return halfDay ? 0.5 : n;
 }
 
-/** Stamp the leave onto attendance days. */
-export async function applyLeave(staffId: string, from: Date, to: Date, halfDay: boolean) {
+/** Stamp the leave onto attendance days, tagging each with the leave type so it
+ *  counts against that balance. */
+export async function applyLeave(staffId: string, from: Date, to: Date, halfDay: boolean, type: string) {
   const keys = dateKeysBetween(from, to);
   const status: StaffDayStatus = halfDay ? 'HALF_DAY' : 'LEAVE';
   for (const dk of keys) {
     const date = new Date(`${dk}T00:00:00Z`);
     await prisma.staffAttendanceDay.upsert({
       where: { staffId_date: { staffId, date } },
-      update: { status, late: false, lateMinutes: 0 },
-      create: { staffId, date, status },
+      update: { status, late: false, lateMinutes: 0, leaveType: type },
+      create: { staffId, date, status, leaveType: type },
     });
   }
   // Leave breaks the present-streak — recompute from the first affected day forward.

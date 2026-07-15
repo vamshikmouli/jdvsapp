@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { recordPunch, recomputeDay, recomputeStreakForward } from '@/lib/staffAttendance/service';
+import { LEAVE_TYPES } from '@/lib/staffAttendance/leaveBalance';
 
 // POST /api/staff-attendance/manage/regularize
 // Admin correction for a staff member's attendance.
@@ -40,11 +41,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
       }
       if (!body.date) return NextResponse.json({ error: 'date required' }, { status: 400 });
+      // Leave/Absent deduct from a leave balance — the admin must pick the type.
+      // Holiday never deducts.
+      let leaveType: string | null = null;
+      if (body.status === 'LEAVE' || body.status === 'ABSENT') {
+        if (!LEAVE_TYPES.includes(body.type)) {
+          return NextResponse.json({ error: 'Choose a leave type (Earned/Sick/Unpaid) to deduct' }, { status: 400 });
+        }
+        leaveType = body.type;
+      }
       const date = new Date(`${body.date}T00:00:00Z`);
       await prisma.staffAttendanceDay.upsert({
         where: { staffId_date: { staffId, date } },
-        update: { status: body.status, late: false, lateMinutes: 0 },
-        create: { staffId, date, status: body.status },
+        update: { status: body.status, late: false, lateMinutes: 0, leaveType },
+        create: { staffId, date, status: body.status, leaveType },
       });
       await recomputeStreakForward(staffId, body.date);
       const day = await prisma.staffAttendanceDay.findUnique({ where: { staffId_date: { staffId, date } } });
