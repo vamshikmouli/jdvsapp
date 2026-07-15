@@ -152,9 +152,11 @@ export function computeDay(
   } else if (open) {
     // Still at work — optimistic until they punch out.
     status = 'PRESENT';
-  } else if (opts.shortDay && firstIn && lastOut) {
-    // Short working day (Saturday): a completed in+out is a full present,
-    // regardless of how few minutes the shortened schedule actually is.
+  } else if ((opts.shortDay || pattern !== 'FULL') && firstIn && lastOut) {
+    // A completed in+out is a full present — no minutes threshold — for a short
+    // working day (Saturday) OR a single-session staff member (morning- or
+    // afternoon-only), whose entire assignment IS that one session. HALF_DAY
+    // only makes sense for full-day staff.
     status = 'PRESENT';
   } else if (workedMinutes >= fullThreshold) {
     status = 'PRESENT';
