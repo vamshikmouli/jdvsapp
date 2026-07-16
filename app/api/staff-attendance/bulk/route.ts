@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { recomputeDay, recomputeStreakForward } from '@/lib/staffAttendance/service';
+import { LEAVE_TYPES } from '@/lib/staffAttendance/leaveBalance';
 import type { StaffDayStatus } from '@prisma/client';
 
 const ALLOWED: StaffDayStatus[] = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'HOLIDAY', 'WEEKLY_OFF'];
+const DEDUCTS = (s: string) => s === 'LEAVE' || s === 'ABSENT';
 
 // POST /api/staff-attendance/bulk
 // Admin marks attendance for many staff on one date at once.
@@ -13,12 +15,17 @@ const ALLOWED: StaffDayStatus[] = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'HO
 export async function POST(req: NextRequest) {
   try {
     await requirePermission('STAFF_ATTENDANCE_MANAGE');
-    const { date, entries } = await req.json();
+    const { date, entries, leaveType } = await req.json();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
       return NextResponse.json({ error: 'A valid date is required.' }, { status: 400 });
     }
     if (!Array.isArray(entries) || entries.length === 0) {
       return NextResponse.json({ error: 'No staff to update.' }, { status: 400 });
+    }
+    // Leave/Absent deduct from a balance — a valid type is required for those.
+    const needsType = entries.some((e: any) => DEDUCTS(e?.status));
+    if (needsType && !LEAVE_TYPES.includes(leaveType)) {
+      return NextResponse.json({ error: 'Choose a leave type (Earned/Sick/Unpaid) for Leave/Absent marks.' }, { status: 400 });
     }
     const dateObj = new Date(`${date}T00:00:00Z`);
 
@@ -30,11 +37,13 @@ export async function POST(req: NextRequest) {
       if (e.status === 'AUTO') { autos.push(e.staffId); continue; }
       if (!ALLOWED.includes(e.status)) continue;
       markedStaff.push(e.staffId);
+      // Deduct for Leave/Absent; clear leaveType for anything else.
+      const lt = DEDUCTS(e.status) ? (leaveType as string) : null;
       writes.push(
         prisma.staffAttendanceDay.upsert({
           where: { staffId_date: { staffId: e.staffId, date: dateObj } },
-          update: { status: e.status, late: false, lateMinutes: 0 },
-          create: { staffId: e.staffId, date: dateObj, status: e.status },
+          update: { status: e.status, late: false, lateMinutes: 0, leaveType: lt },
+          create: { staffId: e.staffId, date: dateObj, status: e.status, leaveType: lt },
         })
       );
     }
