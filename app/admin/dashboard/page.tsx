@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { PushOptIn } from '@/components/PushOptIn';
+import { MonthlyLeavesCard } from '@/components/MonthlyLeavesCard';
 
 interface DashboardData {
   kpis: { studentsTotal: number; studentsActive: number; staffTotal: number; classesTotal: number };
@@ -219,6 +220,9 @@ export default function DashboardPage() {
               </div>
             </Card>
           )}
+
+          {/* ===== Staff leaves — monthly (who took most / none) ===== */}
+          {data.staffToday && <MonthlyLeavesCard />}
 
           {/* ===== Class-wise attendance — vertical bars ===== */}
           <Card title="Class-wise attendance — today" className="mt-6" action={<Chip tone="neutral">present / total</Chip>}>
