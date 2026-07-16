@@ -29,10 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger reminders endpoint
-        run: |
-          curl -fsS -X POST "$REMINDER_URL" \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            -H "Content-Type: application/json"
         env:
           REMINDER_URL: ${{ secrets.REMINDER_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$REMINDER_URL" ]; then echo "::error::REMINDER_URL secret is not set (Settings → Secrets and variables → Actions)"; exit 1; fi
+          if [ -z "$CRON_SECRET" ]; then echo "::error::CRON_SECRET secret is not set"; exit 1; fi
+          echo "POST $REMINDER_URL"
+          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST "$REMINDER_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json")
+          echo "HTTP $code"
+          echo "Response: $(cat /tmp/resp.txt)"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::reminders endpoint returned $code — check REMINDER_URL is correct and CRON_SECRET matches Vercel"
+            exit 1
+          fi
