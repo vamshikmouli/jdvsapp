@@ -450,10 +450,10 @@ export default function AttendancePage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           {[
             { label: 'Present', value: counts.present, color: 'text-success-700' },
-            { label: 'DA', value: counts.late, color: 'text-marigold-700' },
+            { label: 'Delayed Arrival', value: counts.late, color: 'text-marigold-700' },
             { label: 'Absent', value: counts.absent, color: 'text-danger-700' },
             { label: 'Leave', value: counts.leave, color: 'text-info-700' },
           ].map((s) => (
