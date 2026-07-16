@@ -24,6 +24,30 @@ function range(l: Leave) {
   const half = l.halfDay ? ` (half${halfLabel(l.halfSession) ? ` · ${halfLabel(l.halfSession)}` : ''})` : '';
   return l.fromDate === l.toDate ? fmt(l.fromDate) + half : `${fmt(l.fromDate)} – ${fmt(l.toDate)}`;
 }
+function statusLabel(s: string) { return s.charAt(0) + s.slice(1).toLowerCase(); }
+
+// Build a WhatsApp share link so staff can forward a request to management.
+// No number = WhatsApp lets them pick the recipient (app on mobile, web on desktop).
+function waShareUrl(l: Leave, name: string) {
+  const lines = [
+    '*Leave Request*',
+    `Name: ${name}`,
+    `Type: ${TYPE_LABEL[l.type] ?? l.type}`,
+    `Date: ${range(l)}`,
+    `Days: ${l.days}`,
+  ];
+  if (l.reason) lines.push(`Reason: ${l.reason}`);
+  lines.push(`Status: ${statusLabel(l.status)}`);
+  return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`;
+}
+
+function WhatsAppIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="currentColor" className={className} aria-hidden="true">
+      <path d="M17.47 14.38c-.3-.15-1.74-.86-2-.95-.27-.1-.47-.15-.66.15-.2.3-.76.95-.94 1.15-.17.2-.35.22-.64.07-.3-.15-1.25-.46-2.38-1.47-.88-.78-1.47-1.75-1.65-2.05-.17-.3-.02-.46.13-.6.13-.14.3-.35.44-.53.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.66-1.6-.9-2.18-.24-.57-.48-.5-.66-.5l-.56-.01c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.5 0 1.47 1.07 2.9 1.22 3.1.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.7.63.71.23 1.36.2 1.87.12.57-.08 1.74-.71 1.98-1.4.24-.68.24-1.27.17-1.4-.07-.12-.27-.2-.56-.34zM12.02 21.5h-.01a9.44 9.44 0 0 1-4.8-1.32l-.35-.2-3.57.93.96-3.48-.23-.36a9.42 9.42 0 0 1-1.44-5.02c0-5.2 4.24-9.44 9.46-9.44a9.4 9.4 0 0 1 6.68 2.77 9.38 9.38 0 0 1 2.77 6.68c0 5.2-4.24 9.44-9.46 9.44zm8.05-17.5A11.32 11.32 0 0 0 12.01.5C5.74.5.64 5.6.64 11.86c0 2.09.55 4.13 1.6 5.93L.5 23.5l5.85-1.53a11.33 11.33 0 0 0 5.66 1.44h.01c6.27 0 11.37-5.1 11.37-11.36 0-3.04-1.18-5.9-3.32-8.05z" />
+    </svg>
+  );
+}
 
 const emptyForm = { type: 'EARNED', fromDate: '', toDate: '', halfDay: false, halfSession: 'MORNING', reason: '' };
 
@@ -32,6 +56,7 @@ export default function LeavePage() {
   const perms = ((session?.user as any)?.perms as string[]) || [];
   const canApply = perms.includes('STAFF_ATTENDANCE_MARK');
   const canApprove = perms.includes('LEAVE_APPROVE');
+  const myName = session?.user?.name || 'Staff';
 
   const [mine, setMine] = useState<Leave[]>([]);
   const [pending, setPending] = useState<Leave[]>([]);
@@ -187,7 +212,16 @@ export default function LeavePage() {
                   <div className="text-sm text-slate-500">{range(l)}{l.reason ? ` — ${l.reason}` : ''}{l.decisionNote ? ` · note: ${l.decisionNote}` : ''}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Chip tone={statusTone(l.status)}>{l.status.charAt(0) + l.status.slice(1).toLowerCase()}</Chip>
+                  <Chip tone={statusTone(l.status)}>{statusLabel(l.status)}</Chip>
+                  <a
+                    href={waShareUrl(l, myName)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-[#25D366] px-2.5 py-1.5 text-xs font-medium text-white hover:brightness-95"
+                    title="Share this request on WhatsApp"
+                  >
+                    <WhatsAppIcon /> Share
+                  </a>
                   {(l.status === 'PENDING' || l.status === 'APPROVED') && (
                     <Button size="sm" kind="tertiary" disabled={busy} onClick={() => decide(l.id, 'cancel')}>Cancel</Button>
                   )}
