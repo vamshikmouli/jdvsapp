@@ -26,18 +26,20 @@ function range(l: Leave) {
 }
 function statusLabel(s: string) { return s.charAt(0) + s.slice(1).toLowerCase(); }
 
-// Build a WhatsApp share link so staff can forward a request to management.
-// No number = WhatsApp lets them pick the recipient (app on mobile, web on desktop).
+// Build a WhatsApp share link so staff can forward a polite request to
+// management. No number = WhatsApp lets them pick the recipient.
 function waShareUrl(l: Leave, name: string) {
+  const type = `${TYPE_LABEL[l.type] ?? l.type} leave`;
+  const when = l.fromDate === l.toDate
+    ? `on ${fmt(l.fromDate)}${l.halfDay ? ` (${halfLabel(l.halfSession) || 'half'} half-day)` : ''}`
+    : `from ${fmt(l.fromDate)} to ${fmt(l.toDate)} (${l.days} days)`;
   const lines = [
-    '*Leave Request*',
-    `Name: ${name}`,
-    `Type: ${TYPE_LABEL[l.type] ?? l.type}`,
-    `Date: ${range(l)}`,
-    `Days: ${l.days}`,
+    'Respected Sir/Madam,',
+    '',
+    `I, ${name}, would like to request ${type} ${when}.`,
   ];
-  if (l.reason) lines.push(`Reason: ${l.reason}`);
-  lines.push(`Status: ${statusLabel(l.status)}`);
+  if (l.reason) lines.push(`Reason: ${l.reason}.`);
+  lines.push('', 'Kindly approve. Thank you.');
   return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`;
 }
 
