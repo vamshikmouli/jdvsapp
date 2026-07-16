@@ -46,6 +46,13 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
 
     if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
 
+    // Which half is off for half-day leaves → split calendar cell.
+    const halfLeaves = await prisma.leaveRequest.findMany({
+      where: { staffId, status: 'APPROVED', halfDay: true, fromDate: { gte: from, lte: to } },
+      select: { fromDate: true, halfSession: true },
+    });
+    const halfSessionByDate = new Map(halfLeaves.map((l) => [l.fromDate.toISOString().slice(0, 10), l.halfSession]));
+
     const todayKey = new Date().toISOString().slice(0, 10);
     const existing = new Set(storedDays.map((d) => d.date.toISOString().slice(0, 10)));
     const holidaySet = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
@@ -70,7 +77,10 @@ export async function GET(req: NextRequest, { params }: { params: { staffId: str
         device: staff.attCredentials[0] ?? null,
         weekSchedule: parseWeekSchedule(staff.weekSchedule),
       },
-      days: [...storedDays, ...synthetic],
+      days: [
+        ...storedDays.map((d) => ({ ...d, halfSession: halfSessionByDate.get(d.date.toISOString().slice(0, 10)) ?? null })),
+        ...synthetic,
+      ],
       punches,
     });
   } catch (err) {

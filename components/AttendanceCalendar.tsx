@@ -8,6 +8,16 @@ export interface CalDay {
   date: string;        // ISO date (…T00:00:00Z)
   status: string;      // PRESENT | HALF_DAY | ABSENT | LEAVE | HOLIDAY | WEEKLY_OFF
   late?: boolean;
+  halfSession?: string | null; // for HALF_DAY leave: MORNING | AFTERNOON (which half is off)
+}
+
+// A half-day leave's cell is split left→right (morning | afternoon): the session
+// they attended is green, the session off is red. halfSession = the OFF session.
+function halfSplitStyle(halfSession?: string | null): React.CSSProperties | undefined {
+  const GREEN = '#16a34a', RED = '#dc2626';
+  if (halfSession === 'MORNING') return { background: `linear-gradient(90deg, ${RED} 50%, ${GREEN} 50%)` };   // morning off
+  if (halfSession === 'AFTERNOON') return { background: `linear-gradient(90deg, ${GREEN} 50%, ${RED} 50%)` }; // afternoon off
+  return undefined;
 }
 
 interface Props {
@@ -81,13 +91,15 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
           const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const rec = byDate.get(dateKey);
           const st = rec ? (STYLE[rec.status] || EMPTY) : EMPTY;
+          const split = rec?.status === 'HALF_DAY' ? halfSplitStyle(rec.halfSession) : undefined;
           const isToday = dateKey === todayKey;
           return (
             <div key={i} title={rec ? rec.status.replace('_', ' ').toLowerCase() : ''}
-              className={`relative aspect-square rounded-md flex flex-col items-center justify-center ${st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
+              style={split}
+              className={`relative aspect-square rounded-md flex flex-col items-center justify-center ${split ? 'text-white' : st.cls} ${isToday ? 'ring-2 ring-purple-400' : ''}`}>
               <span className="text-[11px] leading-none opacity-70">{day}</span>
               {st.label && <span className="text-sm font-semibold leading-tight">{st.label}</span>}
-              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white ring-1 ring-black/10" title="late" />}
+              {rec?.late && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-danger-600 ring-1 ring-white" title="late" />}
             </div>
           );
         })}
@@ -96,10 +108,13 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-3">
         {LEGEND.map(([label, dot]) => (
           <span key={label} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-            <span className={`w-2.5 h-2.5 rounded-sm ${dot}`} />{label}
+            {label === 'Half day'
+              ? <span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg,#16a34a 50%,#dc2626 50%)' }} />
+              : <span className={`w-2.5 h-2.5 rounded-sm ${dot}`} />}
+            {label}
           </span>
         ))}
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500"><span className="w-1.5 h-1.5 rounded-full bg-warn-500" />late</span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500"><span className="w-1.5 h-1.5 rounded-full bg-danger-600 ring-1 ring-white" />late</span>
       </div>
 
       <div className="flex flex-wrap gap-3 mt-3 text-xs">
