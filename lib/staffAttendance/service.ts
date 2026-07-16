@@ -101,10 +101,11 @@ export async function recomputeDay(
     shortDayStart: SHORT_DAY_START,
   });
 
-  // A leave/absent deduction (leaveType) is cleared the moment they punch IN —
-  // showing up removes the deduction. With no punch, an admin-set leaveType is
-  // preserved (recompute of an already-marked day must not silently drop it).
-  const leaveType = r.firstIn ? null : (existing?.leaveType ?? null);
+  // A leave/absent deduction (leaveType) is cleared only when the day recomputes
+  // to a full PRESENT (late-but-present is still PRESENT) — they actually showed
+  // up all day, so no deduction. It is preserved for HALF_DAY (a half-day leave
+  // where they worked the other session still deducts 0.5) and ABSENT (admin mark).
+  const leaveType = r.status === 'PRESENT' ? null : (existing?.leaveType ?? null);
 
   await prisma.staffAttendanceDay.upsert({
     where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
