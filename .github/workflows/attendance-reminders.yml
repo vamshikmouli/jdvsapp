@@ -7,21 +7,20 @@
 #   REMINDER_URL = https://<your-vercel-domain>/api/staff-attendance/cron/reminders
 #   CRON_SECRET  = same value as the CRON_SECRET env var on Vercel
 #
-# Times are UTC (IST = UTC + 5:30), scheduled ~10 min before each session edge:
-#   03:20 UTC = 08:50 IST  weekday punch-in   (start 09:00)
-#   04:00 UTC = 09:30 IST  Saturday punch-in  (start 09:40)
-#   07:20 UTC = 12:50 IST  afternoon punch-in / morning punch-out (13:00)
-#   06:50 UTC = 12:20 IST  Saturday punch-out (end 12:30)
-#   10:20 UTC = 15:50 IST  weekday punch-out  (end 16:00)
+# Times are UTC (IST = UTC + 5:30), scheduled ~10 min before each session edge
+# for the current schedule (shift 09:40-15:50, afternoon 13:10):
+#   04:00 UTC = 09:30 IST  Mon-Sat punch-in            (shift starts 09:40)
+#   07:30 UTC = 13:00 IST  afternoon punch-in / morning punch-out (13:10)
+#   06:50 UTC = 12:20 IST  Saturday punch-out          (short day ends 12:30)
+#   10:10 UTC = 15:40 IST  Mon-Fri punch-out           (shift ends 15:50)
 name: Attendance reminders
 
 on:
   schedule:
-    - cron: '20 3 * * 1-5'
-    - cron: '0 4 * * 6'
-    - cron: '20 7 * * 1-5'
+    - cron: '0 4 * * 1-6'
+    - cron: '30 7 * * 1-5'
     - cron: '50 6 * * 6'
-    - cron: '20 10 * * 1-5'
+    - cron: '10 10 * * 1-5'
   workflow_dispatch: {} # allow manual "Run workflow" for testing
 
 jobs:
