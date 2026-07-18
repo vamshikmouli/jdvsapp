@@ -14,7 +14,7 @@ export interface CalDay {
 // A half-day leave's cell is split left→right (morning | afternoon): the session
 // they attended is green, the session off is red. halfSession = the OFF session.
 function halfSplitStyle(halfSession?: string | null): React.CSSProperties | undefined {
-  const GREEN = '#16a34a', RED = '#dc2626';
+  const GREEN = '#156D3B', RED = '#A4231F'; // matches success-600 (present) / danger-600 (absent)
   if (halfSession === 'MORNING') return { background: `linear-gradient(90deg, ${RED} 50%, ${GREEN} 50%)` };   // morning off
   if (halfSession === 'AFTERNOON') return { background: `linear-gradient(90deg, ${GREEN} 50%, ${RED} 50%)` }; // afternoon off
   return undefined;
@@ -109,7 +109,7 @@ export function AttendanceCalendar({ month, days, todayKey, onMonthChange, maxMo
         {LEGEND.map(([label, dot]) => (
           <span key={label} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
             {label === 'Half day'
-              ? <span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg,#16a34a 50%,#dc2626 50%)' }} />
+              ? <span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg,#156D3B 50%,#A4231F 50%)' }} />
               : <span className={`w-2.5 h-2.5 rounded-sm ${dot}`} />}
             {label}
           </span>
