@@ -25,6 +25,7 @@ export default function BulkAttendancePage() {
 
   const [date, setDate] = useState(todayKey());
   const [leaveType, setLeaveType] = useState('EARNED');
+  const [halfSession, setHalfSession] = useState('MORNING');
 
   // Honor a ?date= passed from the board (client-only — avoids the useSearchParams Suspense rule).
   useEffect(() => {
@@ -55,7 +56,8 @@ export default function BulkAttendancePage() {
   useEffect(() => { load(); }, [load]);
 
   const changed = Object.keys(edited).filter((id) => edited[id] !== original[id]);
-  const hasDeduct = changed.some((id) => edited[id] === 'LEAVE' || edited[id] === 'ABSENT');
+  const hasDeduct = changed.some((id) => edited[id] === 'LEAVE' || edited[id] === 'ABSENT' || edited[id] === 'HALF_DAY');
+  const hasHalf = changed.some((id) => edited[id] === 'HALF_DAY');
   const setAll = (status: string) => setEdited(Object.fromEntries(rows.map((r) => [r.staffId, status])));
 
   const save = async () => {
@@ -64,7 +66,7 @@ export default function BulkAttendancePage() {
       const entries = changed.map((staffId) => ({ staffId, status: edited[staffId] }));
       const res = await fetch('/api/staff-attendance/bulk', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, entries, leaveType }),
+        body: JSON.stringify({ date, entries, leaveType, halfSession }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || 'Save failed');
@@ -140,9 +142,18 @@ export default function BulkAttendancePage() {
       <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm">
         <span className="text-sm text-slate-500">{changed.length} change{changed.length === 1 ? '' : 's'} pending</span>
         <div className="flex items-center gap-2">
+          {hasHalf && (
+            <label className="flex items-center gap-1.5 text-sm text-slate-600">
+              Half day off:
+              <Select value={halfSession} onChange={(e) => setHalfSession(e.target.value)} className="w-32">
+                <option value="MORNING">Morning</option>
+                <option value="AFTERNOON">Afternoon</option>
+              </Select>
+            </label>
+          )}
           {hasDeduct && (
             <label className="flex items-center gap-1.5 text-sm text-slate-600">
-              Leave/Absent deducts:
+              Deducts:
               <Select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="w-32">
                 <option value="EARNED">Earned</option>
                 <option value="SICK">Sick</option>

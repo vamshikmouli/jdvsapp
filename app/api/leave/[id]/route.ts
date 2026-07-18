@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             { status: 409 }
           );
         }
-        await applyLeave(lr.staffId, lr.fromDate, lr.toDate, lr.halfDay, lr.type);
+        await applyLeave(lr.staffId, lr.fromDate, lr.toDate, lr.halfDay, lr.type, lr.halfSession);
       }
 
       const row = await prisma.leaveRequest.update({

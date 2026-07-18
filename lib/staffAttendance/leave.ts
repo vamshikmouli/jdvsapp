@@ -25,15 +25,16 @@ export function leaveDays(from: Date, to: Date, halfDay: boolean): number {
 
 /** Stamp the leave onto attendance days, tagging each with the leave type so it
  *  counts against that balance. */
-export async function applyLeave(staffId: string, from: Date, to: Date, halfDay: boolean, type: string) {
+export async function applyLeave(staffId: string, from: Date, to: Date, halfDay: boolean, type: string, halfSession?: string | null) {
   const keys = dateKeysBetween(from, to);
   const status: StaffDayStatus = halfDay ? 'HALF_DAY' : 'LEAVE';
+  const hs = halfDay ? (halfSession ?? null) : null;
   for (const dk of keys) {
     const date = new Date(`${dk}T00:00:00Z`);
     await prisma.staffAttendanceDay.upsert({
       where: { staffId_date: { staffId, date } },
-      update: { status, late: false, lateMinutes: 0, leaveType: type },
-      create: { staffId, date, status, leaveType: type },
+      update: { status, late: false, lateMinutes: 0, leaveType: type, halfSession: hs },
+      create: { staffId, date, status, leaveType: type, halfSession: hs },
     });
   }
   // Leave breaks the present-streak — recompute from the first affected day forward.

@@ -489,8 +489,11 @@ model StaffAttendanceDay {
   locked       Boolean        @default(false) // payroll close
   currentStreak Int           @default(0)      // consecutive present days
   // When this day counts against a leave balance (approved leave, or an admin
-  // marking it Leave/Absent): which LeaveType to deduct. null = no deduction.
+  // marking it Leave/Absent/Half day): which LeaveType to deduct. null = none.
   leaveType    String?
+  // For a HALF_DAY: which session is off — MORNING | AFTERNOON. Drives the
+  // split calendar cell. null = unspecified (shows solid).
+  halfSession  String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 

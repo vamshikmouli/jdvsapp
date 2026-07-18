@@ -106,6 +106,8 @@ export async function recomputeDay(
   // up all day, so no deduction. It is preserved for HALF_DAY (a half-day leave
   // where they worked the other session still deducts 0.5) and ABSENT (admin mark).
   const leaveType = r.status === 'PRESENT' ? null : (existing?.leaveType ?? null);
+  // Half-day session only applies while the day stays HALF_DAY.
+  const halfSession = r.status === 'HALF_DAY' ? (existing?.halfSession ?? null) : null;
 
   await prisma.staffAttendanceDay.upsert({
     where: { staffId_date: { staffId, date: new Date(`${dateKey}T00:00:00Z`) } },
@@ -117,6 +119,7 @@ export async function recomputeDay(
       late: r.late,
       lateMinutes: r.lateMinutes,
       leaveType,
+      halfSession,
     },
     create: {
       staffId,
@@ -128,6 +131,7 @@ export async function recomputeDay(
       late: r.late,
       lateMinutes: r.lateMinutes,
       leaveType,
+      halfSession,
     },
   });
 

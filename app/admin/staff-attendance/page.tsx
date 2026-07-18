@@ -258,8 +258,10 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
   const [time, setTime] = useState('09:00');
   const [status, setStatus] = useState('LEAVE');
   const [leaveType, setLeaveType] = useState('EARNED');
+  const [halfSession, setHalfSession] = useState('MORNING');
   const [pin, setPin] = useState('');
-  const deducts = status === 'LEAVE' || status === 'ABSENT';
+  const isHalf = status === 'HALF_DAY';
+  const deducts = status === 'LEAVE' || status === 'ABSENT' || isHalf;
 
   const call = async (url: string, body: any, method = 'POST') => {
     setBusy(true); setError('');
@@ -289,7 +291,15 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
       )}
       {tab === 'status' && (
         <div className="space-y-3">
-          <Field label="Mark day as"><Select value={status} onChange={(e) => setStatus(e.target.value)}><option value="LEAVE">Leave</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
+          <Field label="Mark day as"><Select value={status} onChange={(e) => setStatus(e.target.value)}><option value="LEAVE">Leave</option><option value="HALF_DAY">Half day</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
+          {isHalf && (
+            <Field label="Which session is off?">
+              <Select value={halfSession} onChange={(e) => setHalfSession(e.target.value)}>
+                <option value="MORNING">Morning</option>
+                <option value="AFTERNOON">Afternoon</option>
+              </Select>
+            </Field>
+          )}
           {deducts && (
             <Field label="Deduct from">
               <Select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
@@ -299,8 +309,8 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
               </Select>
             </Field>
           )}
-          {deducts && <p className="text-xs text-slate-500">This {status === 'ABSENT' ? 'absence' : 'leave'} will be deducted from the staff member’s {leaveType.toLowerCase()} leave balance.</p>}
-          <Button kind="primary" disabled={busy} onClick={() => call('/api/staff-attendance/manage/regularize', { action: 'status', staffId: row.staffId, date, status, type: deducts ? leaveType : undefined })}>Set status</Button>
+          {deducts && <p className="text-xs text-slate-500">This {status === 'ABSENT' ? 'absence' : isHalf ? 'half day' : 'leave'} will deduct {isHalf ? '0.5 day' : '1 day'} from the staff member’s {leaveType.toLowerCase()} leave balance.</p>}
+          <Button kind="primary" disabled={busy} onClick={() => call('/api/staff-attendance/manage/regularize', { action: 'status', staffId: row.staffId, date, status, type: deducts ? leaveType : undefined, session: isHalf ? halfSession : undefined })}>Set status</Button>
         </div>
       )}
       {tab === 'pin' && (

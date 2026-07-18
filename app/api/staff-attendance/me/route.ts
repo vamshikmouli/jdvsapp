@@ -67,13 +67,6 @@ export async function GET(req: NextRequest) {
     // or a regularization always reflects without any backfill).
     const streak = currentStreak(streakDays, todayKey);
 
-    // Which half is off for half-day leaves this month → split calendar cell.
-    const halfLeaves = await prisma.leaveRequest.findMany({
-      where: { staffId, status: 'APPROVED', halfDay: true, fromDate: { gte: monthStart, lte: monthEnd } },
-      select: { fromDate: true, halfSession: true },
-    });
-    const halfSessionByDate = new Map(halfLeaves.map((l) => [l.fromDate.toISOString().slice(0, 10), l.halfSession]));
-
     // Fill non-punch days (holidays / off days) so the calendar isn't all blank/absent.
     const existing = new Set(storedMonthDays.map((d) => d.date.toISOString().slice(0, 10)));
     const holidaySet = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
@@ -88,11 +81,7 @@ export async function GET(req: NextRequest) {
       workDays: parseWorkDays(staffRec?.workDays),
       weeklyOffDays: cfg.schedule.weeklyOffDays,
     });
-    const storedWithHalf = storedMonthDays.map((d) => ({
-      ...d,
-      halfSession: halfSessionByDate.get(d.date.toISOString().slice(0, 10)) ?? null,
-    }));
-    const monthDays = [...storedWithHalf, ...synthetic];
+    const monthDays = [...storedMonthDays, ...synthetic];
 
     const lastPunch = punchesToday[punchesToday.length - 1];
     const open = lastPunch?.type === 'IN';

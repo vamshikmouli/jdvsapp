@@ -36,25 +36,32 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'status') {
-      const allowed = ['LEAVE', 'HOLIDAY', 'ABSENT'];
+      const allowed = ['LEAVE', 'HOLIDAY', 'ABSENT', 'HALF_DAY'];
       if (!allowed.includes(body.status)) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
       }
       if (!body.date) return NextResponse.json({ error: 'date required' }, { status: 400 });
-      // Leave/Absent deduct from a leave balance — the admin must pick the type.
-      // Holiday never deducts.
+      // Leave/Absent/Half day deduct from a leave balance — the admin must pick the
+      // type. Half day also needs the session (morning/afternoon). Holiday never deducts.
       let leaveType: string | null = null;
-      if (body.status === 'LEAVE' || body.status === 'ABSENT') {
+      let halfSession: string | null = null;
+      if (body.status === 'LEAVE' || body.status === 'ABSENT' || body.status === 'HALF_DAY') {
         if (!LEAVE_TYPES.includes(body.type)) {
           return NextResponse.json({ error: 'Choose a leave type (Earned/Sick/Unpaid) to deduct' }, { status: 400 });
         }
         leaveType = body.type;
       }
+      if (body.status === 'HALF_DAY') {
+        if (body.session !== 'MORNING' && body.session !== 'AFTERNOON') {
+          return NextResponse.json({ error: 'Choose morning or afternoon for a half day' }, { status: 400 });
+        }
+        halfSession = body.session;
+      }
       const date = new Date(`${body.date}T00:00:00Z`);
       await prisma.staffAttendanceDay.upsert({
         where: { staffId_date: { staffId, date } },
-        update: { status: body.status, late: false, lateMinutes: 0, leaveType },
-        create: { staffId, date, status: body.status, leaveType },
+        update: { status: body.status, late: false, lateMinutes: 0, leaveType, halfSession },
+        create: { staffId, date, status: body.status, leaveType, halfSession },
       });
       await recomputeStreakForward(staffId, body.date);
       const day = await prisma.staffAttendanceDay.findUnique({ where: { staffId_date: { staffId, date } } });
