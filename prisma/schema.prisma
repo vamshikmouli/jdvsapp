@@ -225,6 +225,9 @@ model Staff {
   pinHash             String?
   pinAttempts         Int       @default(0)
   pinLockedUntil      DateTime?
+  // Enrollment id on the physical biometric terminal (SalaryBox). The device
+  // sends punches as {enrollid}; this maps that number back to the staff member.
+  deviceUserId        String?   @unique
   // Attendance schedule.
   // weekSchedule (preferred): per-weekday session map { "0".."6": OFF|MORNING|AFTERNOON|FULL }.
   //   Lets a teacher come e.g. Mon afternoon, Tue morning, Wed afternoon… Absent keys = FULL
@@ -408,6 +411,7 @@ enum PunchSource {
   KIOSK     // shared on-campus device + PIN
   PIN       // staff's own phone + PIN (geofenced) — fallback when biometric can't enroll
   MANUAL    // admin entered / regularized
+  DEVICE    // physical biometric terminal (SalaryBox BS-52) via the WebSocket bridge
 }
 
 enum StaffDayStatus {

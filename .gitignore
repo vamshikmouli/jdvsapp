@@ -43,3 +43,6 @@ prisma/.dev.db
 /public/uploads/
 
 .vercel
+
+biometric-bridge/node_modules/
+biometric-bridge/captures/

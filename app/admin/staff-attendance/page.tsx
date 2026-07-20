@@ -13,6 +13,7 @@ interface Row {
   designation: string | null;
   hasDevice: boolean;
   hasPin: boolean;
+  deviceUserId: string | null;
   status: string;
   late: boolean;
   lateMinutes: number;
@@ -260,6 +261,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
   const [leaveType, setLeaveType] = useState('EARNED');
   const [halfSession, setHalfSession] = useState('MORNING');
   const [pin, setPin] = useState('');
+  const [deviceId, setDeviceId] = useState(row.deviceUserId ?? '');
   const isHalf = status === 'HALF_DAY';
   const deducts = status === 'LEAVE' || status === 'ABSENT' || isHalf;
 
@@ -324,9 +326,21 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
         </div>
       )}
       {tab === 'device' && (
-        <div className="space-y-3">
-          <p className="text-sm text-slate-600">{row.hasDevice ? 'A phone is registered. Reset it so the staff member can enroll a new phone.' : 'No phone registered.'}</p>
-          <Button kind="danger" disabled={busy || !row.hasDevice} onClick={() => call('/api/staff-attendance/manage/reset-device', { staffId: row.staffId })}>Reset registered device</Button>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">{row.hasDevice ? 'A phone is registered. Reset it so the staff member can enroll a new phone.' : 'No phone registered.'}</p>
+            <Button kind="danger" disabled={busy || !row.hasDevice} onClick={() => call('/api/staff-attendance/manage/reset-device', { staffId: row.staffId })}>Reset registered device</Button>
+          </div>
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <Field label="Fingerprint machine ID">
+              <Input inputMode="numeric" value={deviceId} onChange={(e) => setDeviceId(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 1" />
+            </Field>
+            <p className="text-xs text-slate-500">
+              The number this staff member is enrolled as on the SalaryBox fingerprint machine.
+              Punches from that ID are recorded for them. Leave blank if they don’t use the machine.
+            </p>
+            <Button kind="primary" disabled={busy} onClick={() => call(`/api/staff/${row.staffId}`, { deviceUserId: deviceId }, 'PATCH')}>Save machine ID</Button>
+          </div>
         </div>
       )}
     </Modal>

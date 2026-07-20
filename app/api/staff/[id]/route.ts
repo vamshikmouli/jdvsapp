@@ -25,6 +25,8 @@ export async function PATCH(
     if (body.email !== undefined) data.email = body.email || null;
     if (body.phone !== undefined) data.phone = normalizePhone(body.phone) || null;
     if (body.designation !== undefined) data.designation = body.designation || null;
+    // Enrollment id on the physical biometric terminal (maps device punches -> staff).
+    if (body.deviceUserId !== undefined) data.deviceUserId = String(body.deviceUserId).trim() || null;
     if (Array.isArray(body.classIds)) {
       data.classes = { set: body.classIds.map((id: string) => ({ id })) };
     }
