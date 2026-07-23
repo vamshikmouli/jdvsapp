@@ -46,3 +46,12 @@ prisma/.dev.db
 
 biometric-bridge/node_modules/
 biometric-bridge/captures/
+
+# Local operational data — DB exports, credential dumps, ad-hoc prod scripts.
+# NEVER commit: contains student PII, password hashes, and login lists.
+/prod-backups/
+/.claude/
+/scripts/_*.js
+/scripts/_*.ts
+/scripts/lkg-*.js
+/scripts/backups/

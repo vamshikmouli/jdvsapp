@@ -299,6 +299,10 @@ enum StudentStatus {
 
 model Student {
   id            String        @id
+  // The number physically written in the school's admission register book —
+  // manually entered, distinct from `id` (which is an auto-generated system
+  // identifier, e.g. JDVS...). Never auto-filled from `id`.
+  admissionNo   String?
   name          String
   classId       String?
   class         SchoolClass?  @relation(fields: [classId], references: [id], onDelete: SetNull)
@@ -323,8 +327,20 @@ model Student {
   guardianUser  User?         @relation("GuardianStudents", fields: [guardianUserId], references: [id])
   guardianUserId String?
   village       String?
+  taluk         String?
+  district      String?
+  placeOfBirth  String?
+  motherTongue  String?
+  aadharNumber  String?
+  // Karnataka SATS (Student Achievement Tracking System) enrolment number —
+  // the govt "Enrollment No." from admission sheets. Unique per student; optional
+  // because older records may not have it captured yet.
+  satsId        String?       @unique
+  previousSchool String?
+  annualIncome  Int?
+  noOfDependents Int?
   status        StudentStatus @default(ACTIVE)
-  joinedDate    DateTime?
+  joinedDate    DateTime?     // admission date
   attendance    AttendanceRecord[]
   feeAssignments StudentFeeAssignment[]
   payments       Payment[]
@@ -615,7 +631,7 @@ model Holiday {
 model Settings {
   id              String @id @default("singleton")
   // School profile
-  schoolName      String  @default("Jnana Deepika")
+  schoolName      String  @default("Jnana Deepika Vidhya Samsthe")
   logoUrl         String?
   principalName   String?
   address         String?

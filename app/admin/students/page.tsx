@@ -35,6 +35,7 @@ interface SchoolClass {
 
 interface Student {
   id: string;
+  admissionNo?: string | null;
   name: string;
   classId: string | null;
   class: { id: string; name: string } | null;
@@ -55,11 +56,21 @@ interface Student {
   guardianPhone: string;
   guardianUserId?: string | null;
   village: string | null;
+  taluk?: string | null;
+  district?: string | null;
+  placeOfBirth?: string | null;
+  motherTongue?: string | null;
+  aadharNumber?: string | null;
+  previousSchool?: string | null;
+  annualIncome?: number | null;
+  noOfDependents?: number | null;
+  joinedDate?: string | null;
   status: 'ACTIVE' | 'INACTIVE';
 }
 
 const emptyForm = {
   id: '',
+  admissionNo: '',
   name: '',
   classId: '',
   roll: '',
@@ -76,6 +87,15 @@ const emptyForm = {
   smsFor: 'FATHER',
   photoUrl: '',
   village: '',
+  taluk: '',
+  district: '',
+  placeOfBirth: '',
+  motherTongue: '',
+  aadharNumber: '',
+  previousSchool: '',
+  annualIncome: '',
+  noOfDependents: '',
+  joinedDate: '',
   status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
 };
 
@@ -196,6 +216,7 @@ export default function StudentsPage() {
     setEditing(s);
     setForm({
       id: s.id,
+      admissionNo: s.admissionNo || '',
       name: s.name,
       classId: s.classId || '',
       roll: s.roll || '',
@@ -212,6 +233,15 @@ export default function StudentsPage() {
       smsFor: s.smsFor || 'FATHER',
       photoUrl: s.photoUrl || '',
       village: s.village || '',
+      taluk: s.taluk || '',
+      district: s.district || '',
+      placeOfBirth: s.placeOfBirth || '',
+      motherTongue: s.motherTongue || '',
+      aadharNumber: s.aadharNumber || '',
+      previousSchool: s.previousSchool || '',
+      annualIncome: s.annualIncome != null ? String(s.annualIncome) : '',
+      noOfDependents: s.noOfDependents != null ? String(s.noOfDependents) : '',
+      joinedDate: s.joinedDate ? String(s.joinedDate).slice(0, 10) : '',
       status: s.status,
     });
     setFormError('');
@@ -245,6 +275,7 @@ export default function StudentsPage() {
 
       const payload = {
         id: form.id || undefined,
+        admissionNo: form.admissionNo.trim() || null,
         name: form.name.trim(),
         classId: form.classId || null,
         roll: form.roll || null,
@@ -261,6 +292,15 @@ export default function StudentsPage() {
         smsFor: form.smsFor,
         photoUrl: form.photoUrl || null,
         village: form.village.trim() || null,
+        taluk: form.taluk.trim() || null,
+        district: form.district.trim() || null,
+        placeOfBirth: form.placeOfBirth.trim() || null,
+        motherTongue: form.motherTongue.trim() || null,
+        aadharNumber: form.aadharNumber.trim() || null,
+        previousSchool: form.previousSchool.trim() || null,
+        annualIncome: form.annualIncome.trim() || null,
+        noOfDependents: form.noOfDependents.trim() || null,
+        joinedDate: form.joinedDate || null,
         status: form.status,
       };
 
@@ -628,6 +668,12 @@ export default function StudentsPage() {
               <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="JD2026-0001" />
             </Field>
           )}
+          <Field label="Admission no." hint="Written in the admission register">
+            <Input value={form.admissionNo} onChange={(e) => setForm({ ...form, admissionNo: e.target.value })} placeholder="e.g. 76/2025-26" />
+          </Field>
+          <Field label="Admission date">
+            <Input type="date" value={form.joinedDate} onChange={(e) => setForm({ ...form, joinedDate: e.target.value })} />
+          </Field>
           <Field label="Class">
             <Select value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>
               <option value="">Unassigned</option>
@@ -662,6 +708,18 @@ export default function StudentsPage() {
           <Field label="Caste">
             <Input value={form.caste} onChange={(e) => setForm({ ...form, caste: e.target.value })} placeholder="Caste" />
           </Field>
+          <Field label="Place of birth">
+            <Input value={form.placeOfBirth} onChange={(e) => setForm({ ...form, placeOfBirth: e.target.value })} placeholder="Town / city" />
+          </Field>
+          <Field label="Mother tongue">
+            <Input value={form.motherTongue} onChange={(e) => setForm({ ...form, motherTongue: e.target.value })} placeholder="Telugu / Kannada / Hindi…" />
+          </Field>
+          <Field label="Aadhar number">
+            <Input value={form.aadharNumber} onChange={(e) => setForm({ ...form, aadharNumber: e.target.value })} placeholder="XXXX XXXX XXXX" />
+          </Field>
+          <Field label="Previous school">
+            <Input value={form.previousSchool} onChange={(e) => setForm({ ...form, previousSchool: e.target.value })} placeholder="Name of previous school" />
+          </Field>
           <Field label="Status">
             <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}>
               <option value="ACTIVE">Active</option>
@@ -693,6 +751,18 @@ export default function StudentsPage() {
           </Field>
           <Field label="Village">
             <Input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} placeholder="Village name" />
+          </Field>
+          <Field label="Taluk">
+            <Input value={form.taluk} onChange={(e) => setForm({ ...form, taluk: e.target.value })} placeholder="Taluk" />
+          </Field>
+          <Field label="District">
+            <Input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} placeholder="District" />
+          </Field>
+          <Field label="Annual income">
+            <Input type="number" value={form.annualIncome} onChange={(e) => setForm({ ...form, annualIncome: e.target.value })} placeholder="₹ per year" />
+          </Field>
+          <Field label="No. of dependents">
+            <Input type="number" value={form.noOfDependents} onChange={(e) => setForm({ ...form, noOfDependents: e.target.value })} placeholder="0" />
           </Field>
           <div className="sm:col-span-2">
             <Field label="Address">
@@ -743,17 +813,27 @@ export default function StudentsPage() {
               </div>
             </div>
             <DetailRow label="Student ID" value={viewing.id} />
+            <DetailRow label="Admission no." value={viewing.admissionNo} />
+            <DetailRow label="Admission date" value={viewing.joinedDate ? String(viewing.joinedDate).slice(0, 10) : null} />
             <DetailRow label="Class" value={viewing.class?.name || 'Unassigned'} />
             <DetailRow label="Roll no" value={viewing.roll} />
             <DetailRow label="Gender" value={viewing.gender === 'F' ? 'Girl' : 'Boy'} />
             <DetailRow label="Date of birth" value={viewing.dob ? String(viewing.dob).slice(0, 10) : null} />
+            <DetailRow label="Place of birth" value={viewing.placeOfBirth} />
             <DetailRow label="Religion" value={viewing.religion} />
             <DetailRow label="Category" value={viewing.category} />
             <DetailRow label="Caste" value={viewing.caste} />
+            <DetailRow label="Mother tongue" value={viewing.motherTongue} />
+            <DetailRow label="Aadhar number" value={viewing.aadharNumber} />
+            <DetailRow label="Previous school" value={viewing.previousSchool} />
             <DetailRow label="Father" value={viewing.fatherName ? `${viewing.fatherName}${viewing.fatherPhone ? ` · ${viewing.fatherPhone}` : ''}` : null} />
             <DetailRow label="Mother" value={viewing.motherName ? `${viewing.motherName}${viewing.motherPhone ? ` · ${viewing.motherPhone}` : ''}` : null} />
             <DetailRow label="SMS / login to" value={viewing.smsFor ? viewing.smsFor[0] + viewing.smsFor.slice(1).toLowerCase() : null} />
             <DetailRow label="Village" value={viewing.village} />
+            <DetailRow label="Taluk" value={viewing.taluk} />
+            <DetailRow label="District" value={viewing.district} />
+            <DetailRow label="Annual income" value={viewing.annualIncome != null ? `₹${viewing.annualIncome.toLocaleString('en-IN')}` : null} />
+            <DetailRow label="No. of dependents" value={viewing.noOfDependents != null ? String(viewing.noOfDependents) : null} />
             <DetailRow label="Address" value={viewing.address} />
             {canManage && viewing.guardianUserId && (
               <div className="mt-4 pt-4 border-t border-slate-100">
@@ -817,24 +897,41 @@ interface ParsedRow {
   dob?: string; religion?: string; category?: string; caste?: string; address?: string;
   fatherName?: string; fatherPhone?: string; motherName?: string; motherPhone?: string;
   smsFor?: string; photoUrl?: string; guardianName?: string; guardianPhone?: string; village?: string;
+  taluk?: string; district?: string; placeOfBirth?: string; motherTongue?: string;
+  aadharNumber?: string; previousSchool?: string; annualIncome?: string; noOfDependents?: string;
+  joinedDate?: string; satsId?: string; admissionNo?: string;
 }
 
 function mapHeaders(headers: string[]): Record<string, keyof ParsedRow> {
   const map: Record<string, keyof ParsedRow> = {};
   for (const h of headers) {
     const k = h.toLowerCase().trim();
-    if (/student\s*id|admission|adm\.?\s*no|^id$/.test(k)) map[h] = 'id';
+    if (/sats|enroll?ment/.test(k)) map[h] = 'satsId';
+    else if (/admission.*(date|data)|date.*admission|joining|joined/.test(k)) map[h] = 'joinedDate';
+    else if (/^admission\s*no|cumulative.*record|^adm\.?\s*no$/.test(k)) map[h] = 'admissionNo';
+    else if (/student\s*id|^id$/.test(k)) map[h] = 'id';
     else if (/father/.test(k) && /name/.test(k)) map[h] = 'fatherName';
     else if (/father/.test(k) && /(phone|mobile|contact|number|no)/.test(k)) map[h] = 'fatherPhone';
+    else if (/mother/.test(k) && /tongue/.test(k)) map[h] = 'motherTongue';
     else if (/mother/.test(k) && /name/.test(k)) map[h] = 'motherName';
     else if (/mother/.test(k) && /(phone|mobile|contact|number|no)/.test(k)) map[h] = 'motherPhone';
     else if (/(guardian|parent)/.test(k) && /name/.test(k)) map[h] = 'guardianName';
     else if (/(guardian|parent)/.test(k) && /(phone|mobile|contact|number|no)/.test(k)) map[h] = 'guardianPhone';
     else if (/sms/.test(k)) map[h] = 'smsFor';
+    else if (/place.*birth|pob/.test(k)) map[h] = 'placeOfBirth';
     else if (/dob|birth/.test(k)) map[h] = 'dob';
     else if (/religion/.test(k)) map[h] = 'religion';
-    else if (/category/.test(k)) map[h] = 'category';
-    else if (/caste/.test(k)) map[h] = 'caste';
+    // Reservation category — tolerate common misspellings (CATEGORY / CATOGERY / CATAGORY).
+    else if (/categ|catog|catag/.test(k)) map[h] = 'category';
+    // Caste, but NOT the "caste-income no" certificate-number column.
+    else if (/caste/.test(k) && !/income|cert/.test(k)) map[h] = 'caste';
+    else if (/aadhar|aadhaar|adhar/.test(k)) map[h] = 'aadharNumber';
+    else if (/previous.*school|prev\.?\s*school/.test(k)) map[h] = 'previousSchool';
+    // Annual income, but NOT "caste-income no" (a certificate number, handled above/ignored).
+    else if (/annual.*income/.test(k) || (/income/.test(k) && !/caste|cert/.test(k))) map[h] = 'annualIncome';
+    else if (/dependent/.test(k)) map[h] = 'noOfDependents';
+    else if (/taluk|taluka/.test(k)) map[h] = 'taluk';
+    else if (/district/.test(k)) map[h] = 'district';
     else if (/address/.test(k)) map[h] = 'address';
     else if (/photo|image|picture/.test(k)) map[h] = 'photoUrl';
     else if (/student.*name|child.*name|^name$|^student$/.test(k)) map[h] = 'name';
@@ -852,20 +949,25 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
   const [fileName, setFileName] = useState('');
   const [parseError, setParseError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok?: boolean; total: number; created: number; failed: number; errors: { row: number; name: string; reason: string }[] } | null>(null);
+  const [result, setResult] = useState<{ ok?: boolean; total: number; created: number; updated?: number; skipped?: number; failed: number; errors: { row: number; name: string; reason: string }[] } | null>(null);
+  const [updateExisting, setUpdateExisting] = useState(false);
+  const [fillBlanksOnly, setFillBlanksOnly] = useState(true);
 
-  const reset = () => { setRows([]); setFileName(''); setParseError(''); setResult(null); };
+  const reset = () => { setRows([]); setFileName(''); setParseError(''); setResult(null); setUpdateExisting(false); setFillBlanksOnly(true); };
   const close = () => { reset(); onClose(); };
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
       {
-        'Student ID': '', Name: 'Asha Rao', Class: '1st STD', Roll: '01', Gender: 'F',
-        DOB: '2018-06-10', Religion: 'Hindu', Category: 'General', Caste: '',
-        Address: '12 Main Road, Channasandra',
+        'Student ID': '', 'SATS ID': '279408695', 'Admission No': '01/2025-26', Name: 'Asha Rao', Class: '1st STD', Roll: '01', Gender: 'F',
+        DOB: '2018-06-10', Religion: 'Hindu', Caste: 'Vokkaliga', Category: '3A',
+        'Mother Tongue': 'Kannada', 'Place of Birth': 'Kyalanur',
         'Father Name': 'Ramesh Rao', 'Father Phone': '9876543210',
         'Mother Name': 'Sita Rao', 'Mother Phone': '9876500000',
-        'SMS For': 'Father', 'Photo URL': '', Village: 'Channasandra',
+        'Guardian Name': '', 'Guardian Phone': '', 'SMS For': 'Father',
+        Address: 'Kyalanur', Village: 'Kyalanur', Taluk: 'Kolar', District: 'Kolar',
+        'Aadhar Number': '', 'Annual Income': '45000', 'No. of Dependents': '5',
+        'Previous School': '', 'Admission Date': '2026-06-01', 'Photo URL': '',
       },
     ]);
     const wb = XLSX.utils.book_new();
@@ -893,7 +995,7 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
           if (f) { const v = r[h]; (o as any)[f] = v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '').trim(); }
         }
         return o;
-      }).filter((o) => Object.values(o).some(Boolean));
+      }).filter((o) => Object.values(o).some(Boolean) && o.name); // skip rows with no name (subheaders)
       setRows(parsed);
     } catch (err) {
       setRows([]);
@@ -905,12 +1007,13 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
     setBusy(true);
     try {
       const res = await fetch('/api/students/import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows, mode: updateExisting ? 'upsert' : 'create', onlyFillBlanks: updateExisting && fillBlanksOnly }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       setResult(data);
-      if (data.created > 0) onImported();
+      if ((data.created || 0) + (data.updated || 0) > 0) onImported();
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Import failed');
     } finally {
@@ -946,7 +1049,7 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
       }
     >
       {result ? (
-        result.created === 0 && result.failed > 0 ? (
+        (result.created + (result.updated || 0)) === 0 && result.failed > 0 ? (
           <div className="space-y-4">
             <div className="rounded-xl border border-danger-100 bg-danger-50 p-4 text-center">
               <div className="w-12 h-12 rounded-full bg-white text-danger-600 flex items-center justify-center mx-auto mb-2"><Icon name="AlertTriangle" size={26} /></div>
@@ -968,8 +1071,14 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
         ) : (
           <div className="rounded-xl border border-success-100 bg-success-50 p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-white text-success-600 flex items-center justify-center mx-auto mb-2"><Icon name="CheckCircle2" size={26} /></div>
-            <div className="text-lg font-bold text-slate-900">{result.created} students imported</div>
-            <div className="text-sm text-slate-500 mt-0.5">Fees and parent logins were created automatically.</div>
+            <div className="text-lg font-bold text-slate-900">
+              {[result.created ? `${result.created} added` : '', result.updated ? `${result.updated} updated` : '']
+                .filter(Boolean).join(' · ') || 'Nothing changed'}
+            </div>
+            <div className="text-sm text-slate-500 mt-0.5">
+              {result.created ? 'Fees and parent logins were created automatically for new students. ' : ''}
+              {result.skipped ? `${result.skipped} matched row${result.skipped > 1 ? 's' : ''} already complete — left unchanged.` : ''}
+            </div>
           </div>
         )
       ) : (
@@ -1015,6 +1124,47 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
               <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded-md p-3">
                 <Icon name="Info" size={14} className="mt-0.5 flex-shrink-0 text-slate-400" />
                 <span>Class is matched flexibly (e.g. "10", "10th", "10th STD"). A parent login is auto-created from the guardian phone. Blank student IDs are auto-generated.</span>
+              </div>
+
+              {/* Update-existing options */}
+              <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
+                  <span className="text-sm">
+                    <span className="font-medium text-slate-800">Update existing students when Student ID matches</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      {updateExisting
+                        ? 'Rows with a known Student ID will be updated. New IDs (or blank) are still added as new students.'
+                        : 'Off: rows whose Student ID already exists are rejected and nothing is imported.'}
+                    </span>
+                  </span>
+                </label>
+
+                {updateExisting && (
+                  <div className="pl-6 space-y-2 border-t border-slate-100 pt-3">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input type="radio" name="upd-mode" className="mt-0.5 h-4 w-4 border-slate-300 text-purple-600 focus:ring-purple-500"
+                        checked={fillBlanksOnly} onChange={() => setFillBlanksOnly(true)} />
+                      <span className="text-sm">
+                        <span className="font-medium text-slate-800">Only fill blank fields</span>
+                        <span className="block text-xs text-slate-500">Never overwrites data that's already filled in — safe for topping up missing details.</span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input type="radio" name="upd-mode" className="mt-0.5 h-4 w-4 border-slate-300 text-purple-600 focus:ring-purple-500"
+                        checked={!fillBlanksOnly} onChange={() => setFillBlanksOnly(false)} />
+                      <span className="text-sm">
+                        <span className="font-medium text-slate-800">Overwrite with sheet values</span>
+                        <span className="block text-xs text-slate-500">The sheet is the source of truth. Blank cells are always skipped, so an empty column won't wipe data.</span>
+                      </span>
+                    </label>
+                    <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-md p-2 mt-1">
+                      <Icon name="AlertTriangle" size={13} className="mt-0.5 flex-shrink-0" />
+                      <span>Class is <b>not</b> changed for existing students — class moves go through promotion/enrollment so fees stay correct.</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
