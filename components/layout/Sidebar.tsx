@@ -30,6 +30,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const brand = useBranding();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
+  // Collapsible nav groups — open by default, preference remembered per device.
+  const [closedGroups, setClosedGroups] = React.useState<Record<string, boolean>>({});
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('navGroupsClosed');
+      if (saved) setClosedGroups(JSON.parse(saved));
+    } catch {}
+  }, []);
+  const isGroupOpen = (label: string) => !closedGroups[label];
+  const toggleGroup = (label: string) => {
+    setClosedGroups((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      try { localStorage.setItem('navGroupsClosed', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const userName = session?.user?.name || 'User';
   const perms = ((session?.user as any)?.perms as string[]) || [];
   const surface = ((session?.user as any)?.surface as Surface) || 'ADMIN';
@@ -86,13 +103,8 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
-        {groups.map((group, index) => (
-          <div key={index} className="mb-4">
-            {group.label && (
-              <div className="px-4 py-2 text-xs uppercase font-semibold text-slate-400 tracking-wide">
-                {group.label}
-              </div>
-            )}
+        {groups.map((group, index) => {
+          const itemsList = (
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = isActive(item.id);
@@ -111,8 +123,39 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 );
               })}
             </div>
-          </div>
-        ))}
+          );
+
+          if (!group.label) {
+            return <div key={index} className="mb-4">{itemsList}</div>;
+          }
+
+          const open = isGroupOpen(group.label);
+          return (
+            <div key={index} className="mb-4">
+              <button
+                onClick={() => toggleGroup(group.label!)}
+                className="w-full flex items-center justify-between px-4 py-2 text-xs uppercase font-semibold text-slate-400 tracking-wide hover:text-slate-600 transition-colors"
+                aria-expanded={open}
+              >
+                <span>{group.label}</span>
+                <Icon
+                  name="ChevronDown"
+                  size={14}
+                  className="flex-shrink-0 transition-transform duration-200"
+                  style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                />
+              </button>
+              <div
+                className="grid"
+                style={{ gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 200ms ease-in-out' }}
+              >
+                <div className="overflow-hidden">
+                  <div className="pt-1">{itemsList}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* User menu */}

@@ -80,11 +80,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const year = await getActiveYear();
 
-    // Admission number: JDVS+YY+CC+RR (snapshot at admission). Falls back to a
+    // System student ID: JDVS+YY+CC+RR (snapshot at admission). Falls back to a
     // timestamp id only when class/roll are missing so creation never fails.
-    let admissionNo = String(body.id || '').trim();
-    if (!admissionNo) {
-      admissionNo = (await generateAdmissionNo({ classId: body.classId, roll: body.roll, yearId: year.id })) || `JD${Date.now()}`;
+    // NOT the same as "Admission No." — that's the number written by hand in
+    // the school's physical admission register, stored separately below.
+    let studentId = String(body.id || '').trim();
+    if (!studentId) {
+      studentId = (await generateAdmissionNo({ classId: body.classId, roll: body.roll, yearId: year.id })) || `JD${Date.now()}`;
     }
 
     // Names are stored in uppercase (student + parents).
@@ -99,7 +101,8 @@ export async function POST(req: NextRequest) {
 
     const student = await prisma.student.create({
       data: {
-        id: admissionNo,
+        id: studentId,
+        admissionNo: body.admissionNo || null,
         name: body.name,
         classId: body.classId || null,
         roll: body.roll || null,
@@ -119,6 +122,15 @@ export async function POST(req: NextRequest) {
         guardianPhone: primary.phone || '',
         guardianUserId: guardianUserId || undefined,
         village: body.village || null,
+        taluk: body.taluk || null,
+        district: body.district || null,
+        placeOfBirth: body.placeOfBirth || null,
+        motherTongue: body.motherTongue || null,
+        aadharNumber: body.aadharNumber || null,
+        previousSchool: body.previousSchool || null,
+        annualIncome: body.annualIncome != null && body.annualIncome !== '' ? Number(body.annualIncome) : null,
+        noOfDependents: body.noOfDependents != null && body.noOfDependents !== '' ? Number(body.noOfDependents) : null,
+        joinedDate: body.joinedDate ? new Date(body.joinedDate) : null,
         status: 'ACTIVE',
       },
     });

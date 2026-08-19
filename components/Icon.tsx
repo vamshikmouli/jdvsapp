@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import * as Icons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -6,9 +7,10 @@ interface IconProps {
   className?: string;
   size?: number;
   strokeWidth?: number;
+  style?: CSSProperties;
 }
 
-export function Icon({ name, className = '', size = 24, strokeWidth = 1.5 }: IconProps) {
+export function Icon({ name, className = '', size = 24, strokeWidth = 1.5, style }: IconProps) {
   const IconComponent = Icons[name] as unknown as LucideIcon | undefined;
 
   if (!IconComponent) {
@@ -21,6 +23,7 @@ export function Icon({ name, className = '', size = 24, strokeWidth = 1.5 }: Ico
       size={size}
       strokeWidth={strokeWidth}
       className={`inline-block ${className}`}
+      style={style}
     />
   );
 }

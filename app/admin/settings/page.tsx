@@ -72,6 +72,73 @@ function deviceLabel(ua: string | null) {
   return [browser, os].filter(Boolean).join(' · ');
 }
 
+interface YearRow { id: string; label: string; isActive: boolean; enrollmentCount: number; }
+
+// Manage the AcademicYear rows (the ones that drive fees / enrolment / the year
+// switcher). Distinct from the free-text "Academic year" label on the profile.
+function AcademicYears({ canManage }: { canManage: boolean }) {
+  const [years, setYears] = useState<YearRow[] | null>(null);
+  const [newId, setNewId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/years');
+    if (res.ok) { const j = await res.json(); setYears(j.years); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const create = async () => {
+    const id = newId.trim();
+    if (!/^\d{4}-\d{2}$/.test(id)) { setErr('Year must look like 2027-28.'); return; }
+    setBusy(true); setErr('');
+    const res = await fetch('/api/years', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    if (res.ok) { setNewId(''); await load(); } else { const j = await res.json().catch(() => ({})); setErr(j.error || 'Could not add year.'); }
+    setBusy(false);
+  };
+  const makeCurrent = async (id: string) => {
+    setBusy(true); setErr('');
+    const res = await fetch('/api/years', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yearId: id }) });
+    if (res.ok) await load(); else { const j = await res.json().catch(() => ({})); setErr(j.error || 'Could not update.'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-6">
+      <Card title="Academic years">
+        <p className="text-xs text-slate-500 mb-4">Add each school year here — these drive fees, enrolment, and the year switcher. The current year is used by default across the app.</p>
+        {err && <div className="mb-3 px-3 py-2 bg-danger-50 text-danger-700 rounded-md text-sm">{err}</div>}
+        {years === null ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={40} />)}</div>
+        ) : (
+          <ul className="divide-y divide-slate-100 mb-4">
+            {years.map((y) => (
+              <li key={y.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-slate-800">{y.label}</span>
+                  <span className="text-xs text-slate-400">{y.enrollmentCount} enrolled</span>
+                </div>
+                {y.isActive
+                  ? <Chip tone="success">Current</Chip>
+                  : canManage
+                    ? <Button size="sm" kind="tertiary" disabled={busy} onClick={() => makeCurrent(y.id)}>Make current</Button>
+                    : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        {canManage && (
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+            <Input value={newId} disabled={busy} onChange={(e) => setNewId(e.target.value)} placeholder="e.g. 2027-28" className="w-40"
+              onKeyDown={(e) => { if (e.key === 'Enter') create(); }} />
+            <Button kind="primary" icon="Plus" disabled={busy || !newId.trim()} onClick={create}>{busy ? 'Working…' : 'Add year'}</Button>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'school', label: 'School profile', icon: 'Building2' },
   { id: 'attendance', label: 'Attendance', icon: 'Calendar' },
@@ -215,6 +282,7 @@ export default function SettingsPage() {
               </div>
             </Card>
           ) : tab === 'school' ? (
+            <>
             <Card title="School profile">
               {!canManage && (
                 <div className="mb-4 text-xs text-slate-500 bg-slate-50 rounded-md p-3 inline-flex items-center gap-2">
@@ -299,6 +367,8 @@ export default function SettingsPage() {
                 </div>
               )}
             </Card>
+            <AcademicYears canManage={canManage} />
+            </>
           ) : (
             // ATTENDANCE
             <Card title="Attendance">

@@ -62,6 +62,8 @@ export default function LeavePage() {
 
   const [mine, setMine] = useState<Leave[]>([]);
   const [pending, setPending] = useState<Leave[]>([]);
+  const [decided, setDecided] = useState<Leave[]>([]);
+  const [decidedFilter, setDecidedFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
   const [balance, setBalance] = useState<{ year: string; balances: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -77,8 +79,10 @@ export default function LeavePage() {
     setMine(Array.isArray(m) ? m : []);
     setBalance(b && b.balances ? b : null);
     if (canApprove) {
-      const p = await fetch('/api/leave?all=1&status=PENDING').then((r) => r.json());
-      setPending(Array.isArray(p) ? p : []);
+      const all = await fetch('/api/leave?all=1').then((r) => r.json());
+      const rows: Leave[] = Array.isArray(all) ? all : [];
+      setPending(rows.filter((r) => r.status === 'PENDING'));
+      setDecided(rows.filter((r) => r.status === 'APPROVED' || r.status === 'REJECTED'));
     }
     setLoading(false);
   }, [canApprove]);
@@ -165,6 +169,41 @@ export default function LeavePage() {
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {canApprove && (
+        <Card title={`Decided requests${decided.length ? ` (${decided.length})` : ''}`} padded={false}>
+          <div className="px-4 pt-3 flex gap-1.5">
+            {(['ALL', 'APPROVED', 'REJECTED'] as const).map((f) => (
+              <button key={f} onClick={() => setDecidedFilter(f)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${decidedFilter === f ? 'bg-purple-50 border-purple-300 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                {f === 'ALL' ? 'All' : statusLabel(f)}
+              </button>
+            ))}
+          </div>
+          {loading ? <div className="p-4"><Skeleton height={48} /></div> : (() => {
+            const list = decided.filter((l) => decidedFilter === 'ALL' || l.status === decidedFilter);
+            return list.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-slate-400 text-center">No decided requests.</div>
+            ) : (
+              <div className="divide-y divide-slate-50 mt-2">
+                {list.map((l) => (
+                  <div key={l.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium text-slate-900">{l.staff?.name} <span className="text-xs text-slate-400">· {TYPE_LABEL[l.type]} · {l.days}d</span></div>
+                      <div className="text-sm text-slate-500">{range(l)}{l.reason ? ` — ${l.reason}` : ''}</div>
+                      {l.decisionNote && <div className="text-xs text-slate-400 mt-0.5">Note: {l.decisionNote}</div>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <Chip tone={statusTone(l.status)}>{statusLabel(l.status)}</Chip>
+                      {l.decidedAt && <div className="text-xs text-slate-400 mt-1">{fmt(l.decidedAt)}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </Card>
       )}
 

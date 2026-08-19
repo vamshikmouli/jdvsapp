@@ -39,6 +39,21 @@ export default function StaffAttendancePage() {
   const [active, setActive] = useState<Row | null>(null);
   const [sortKey, setSortKey] = useState<keyof Row>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sending, setSending] = useState(false);
+
+  // Manually trigger the WhatsApp attendance report (same engine as the weekly
+  // cron). No staffId = send to every opted-in staff member for the current month.
+  const sendReports = async () => {
+    if (!confirm("Send this month's attendance calendar on WhatsApp to ALL opted-in staff now?")) return;
+    setSending(true);
+    try {
+      const res = await fetch('/api/staff-attendance/cron/weekly-report', { method: 'POST' });
+      const j = await res.json();
+      if (res.ok) alert(`WhatsApp reports (${j.month}): ${j.sent} sent, ${j.skipped} skipped, ${j.failed} failed.`);
+      else alert(`Could not send: ${j.error || 'error'}`);
+    } catch { alert('Could not send — network error.'); }
+    setSending(false);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +110,7 @@ export default function StaffAttendancePage() {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             {canManage && <Link href={`/admin/staff-attendance/bulk?date=${date}`} className="w-full sm:w-auto"><Button kind="primary" icon="ClipboardCheck" className="w-full justify-center">Mark</Button></Link>}
             <Button icon="Download" onClick={() => { const m = date.slice(0, 7); window.open(`/api/staff-attendance/export?from=${m}-01&to=${date}`, '_blank'); }} className="w-full justify-center sm:w-auto">Export</Button>
+            {canManage && <Button icon="Send" disabled={sending} onClick={sendReports} className="w-full justify-center sm:w-auto">{sending ? 'Sending…' : 'WhatsApp'}</Button>}
             {canManage && <Link href="/admin/staff-attendance/regularization" className="w-full sm:w-auto"><Button icon="FileText" className="w-full justify-center">Requests</Button></Link>}
             {canConfig && <Link href="/admin/staff-attendance/config" className="w-full sm:w-auto"><Button icon="Settings" className="w-full justify-center">Settings</Button></Link>}
           </div>
@@ -162,13 +178,9 @@ export default function StaffAttendancePage() {
                         <div className="text-slate-400">—</div>
                       )}
                     </div>
-                    <div className="col-span-2">
-                      <div className="text-slate-400">Method</div>
-                      <div className="flex items-center gap-1.5 text-slate-500">
-                        {r.hasDevice && <span className="inline-flex items-center gap-1"><Icon name="Smartphone" size={14} />Phone</span>}
-                        {r.hasPin && <span className="inline-flex items-center gap-1"><Icon name="KeyRound" size={14} />PIN</span>}
-                        {!r.hasDevice && !r.hasPin && <span className="text-slate-400">—</span>}
-                      </div>
+                    <div>
+                      <div className="text-slate-400">Device No</div>
+                      <div className="text-slate-700 font-medium tabular-nums">{r.deviceUserId || '—'}</div>
                     </div>
                   </div>
                 </div>
@@ -198,7 +210,7 @@ export default function StaffAttendancePage() {
                     <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('currentStreak')}>
                       <div className="flex items-center gap-1.5">Streak {sortKey === 'currentStreak' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
                     </th>
-                    <th className="px-4 py-2 font-medium">Method</th>
+                    <th className="px-4 py-2 font-medium">Device No</th>
                     {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -224,11 +236,9 @@ export default function StaffAttendancePage() {
                         )}
                       </td>
                       <td className="px-4 py-2">
-                        <span className="inline-flex gap-1 text-slate-400">
-                          {r.hasDevice && <Icon name="Smartphone" size={15} />}
-                          {r.hasPin && <Icon name="KeyRound" size={15} />}
-                          {!r.hasDevice && !r.hasPin && <span className="text-xs">—</span>}
-                        </span>
+                        {r.deviceUserId
+                          ? <span className="font-medium text-slate-700 tabular-nums">{r.deviceUserId}</span>
+                          : <span className="text-slate-400 text-xs">—</span>}
                       </td>
                       {canManage && (
                         <td className="px-4 py-2 text-right">
@@ -340,6 +350,19 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
               Punches from that ID are recorded for them. Leave blank if they don’t use the machine.
             </p>
             <Button kind="primary" disabled={busy} onClick={() => call(`/api/staff/${row.staffId}`, { deviceUserId: deviceId }, 'PATCH')}>Save machine ID</Button>
+          </div>
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <p className="text-sm text-slate-600">Send this staff member their current-month attendance calendar on WhatsApp now.</p>
+            <Button kind="primary" icon="Send" disabled={busy} onClick={async () => {
+              setBusy(true); setError('');
+              try {
+                const res = await fetch(`/api/staff-attendance/cron/weekly-report?staffId=${row.staffId}`, { method: 'POST' });
+                const j = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(j.error || 'Failed');
+                const d = (j.details || [])[0];
+                alert(d?.status === 'sent' ? `Sent to ${row.name} on WhatsApp.` : `Not sent: ${d?.reason || d?.error || 'staff has no phone or is opted out'}`);
+              } catch (e: any) { setError(e?.message || 'Failed'); } finally { setBusy(false); }
+            }}>Send WhatsApp report now</Button>
           </div>
         </div>
       )}

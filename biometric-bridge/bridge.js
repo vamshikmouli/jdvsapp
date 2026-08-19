@@ -37,8 +37,24 @@ async function forwardPunch(rec, sn) {
 
 const wss = new WebSocket.Server({ port: PORT }, () => log(`bridge listening on :${PORT} -> ${APP_URL}`));
 
+// Over Wi-Fi this terminal's own "push on punch" logic can silently stall —
+// the connection stays open (TCP-alive) but it stops sending anything until a
+// reboot. Rather than trust it to push, proactively pull the full log on a
+// timer over every open connection. Duplicates are cheap (dedup on staff+at).
+const POLL_MS = 3 * 60 * 1000;
+const activeConns = new Set();
+setInterval(() => {
+  for (const ws of activeConns) {
+    if (ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ cmd: 'getalllog', stn: true, from: '2020-01-01 00:00:00', to: '2030-01-01 00:00:00' })); }
+      catch (e) { log('poll send failed:', e.message); }
+    }
+  }
+}, POLL_MS);
+
 wss.on('connection', (ws, req) => {
   log(`device connected from ${req.socket.remoteAddress} ${req.url}`);
+  activeConns.add(ws);
   const send = (o) => ws.send(JSON.stringify(o));
 
   ws.on('message', async (data) => {
@@ -48,6 +64,10 @@ wss.on('connection', (ws, req) => {
     if (msg.cmd === 'reg') {
       log(`registered: sn=${msg.sn} model=${msg.devinfo?.modelname} newlogs=${msg.devinfo?.usednewlog}`);
       send({ ret: 'reg', result: true, cloudtime: nowIST(), nosenduser: true });
+      // Don't rely on the device's own "new logs" bookkeeping (it can miss
+      // punches after a rough reconnect) — pull the full log every time it
+      // checks in. Duplicates are cheap: /bridge/punch dedupes on (staff, at).
+      send({ cmd: 'getalllog', stn: true, from: '2020-01-01 00:00:00', to: '2030-01-01 00:00:00' });
     } else if (msg.cmd === 'sendlog') {
       const records = Array.isArray(msg.record) ? msg.record : [];
       log(`punch batch: ${records.length} record(s)`);
@@ -66,7 +86,7 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.on('close', () => log('device disconnected'));
+  ws.on('close', () => { log('device disconnected'); activeConns.delete(ws); });
   ws.on('error', (e) => log('ws error:', e.message));
 });
 

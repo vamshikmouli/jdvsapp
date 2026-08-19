@@ -7,21 +7,39 @@ export const STAFF_NAV: NavGroup[] = [
   {
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }, // always
-      { id: 'attendance', label: 'Attendance', icon: 'Calendar', perm: 'ATTENDANCE_VIEW' },
-      { id: 'marks', label: 'Marks', icon: 'ClipboardList', perm: 'MARKS_VIEW' },
-      { id: 'my-attendance', label: 'My attendance', icon: 'Fingerprint', perm: 'STAFF_ATTENDANCE_MARK' },
+    ],
+  },
+  {
+    label: 'Attendance',
+    items: [
+      { id: 'attendance', label: 'Student attendance', icon: 'Calendar', perm: 'ATTENDANCE_VIEW' },
+      { id: 'staff-attendance', label: 'Staff attendance', icon: 'CalendarClock', perm: 'STAFF_ATTENDANCE_VIEW' },
+      { id: 'kiosk', label: 'Kiosk', icon: 'Tablet', perm: 'STAFF_ATTENDANCE_KIOSK' },
       { id: 'leave', label: 'Leave', icon: 'CalendarOff', perm: 'STAFF_ATTENDANCE_MARK' },
+      { id: 'my-attendance', label: 'My attendance', icon: 'Fingerprint', perm: 'STAFF_ATTENDANCE_MARK' },
+    ],
+  },
+  {
+    label: 'Exams',
+    items: [
+      { id: 'marks', label: 'Marks', icon: 'ClipboardList', perm: 'MARKS_VIEW' },
+    ],
+  },
+  {
+    label: 'Super Tools',
+    items: [
+      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_MANAGE' }, // admin-only by default; hidden for teacher/accountant
+      { id: 'admission-extract', label: 'Admission extract', icon: 'FileText', perm: 'STUDENTS_MANAGE' },
+      { id: 'study-certificate', label: 'Study certificate', icon: 'FileCheck', perm: 'STUDENTS_MANAGE' },
+      { id: 'rural-certificate', label: 'Rural certificate', icon: 'Trees', perm: 'STUDENTS_MANAGE' },
     ],
   },
   {
     label: 'Manage',
     items: [
       { id: 'students', label: 'Students', icon: 'Users', perm: 'STUDENTS_VIEW' },
-      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_MANAGE' }, // admin-only by default; hidden for teacher/accountant
       { id: 'classes', label: 'Classes', icon: 'BookOpen', perm: 'CLASSES_VIEW' },
       { id: 'staff', label: 'Staff', icon: 'UserCog', perm: 'STAFF_VIEW' },
-      { id: 'staff-attendance', label: 'Staff attendance', icon: 'CalendarClock', perm: 'STAFF_ATTENDANCE_VIEW' },
-      { id: 'kiosk', label: 'Kiosk', icon: 'Tablet', perm: 'STAFF_ATTENDANCE_KIOSK' },
       { id: 'fees', label: 'Fees', icon: 'CreditCard', perm: 'FEES_VIEW' },
     ],
   },
@@ -29,6 +47,7 @@ export const STAFF_NAV: NavGroup[] = [
     label: 'Administration',
     items: [
       { id: 'communications', label: 'Communications', icon: 'Megaphone', perm: 'NOTICES_MANAGE' },
+      { id: 'whatsapp', label: 'WhatsApp', icon: 'MessageCircle', perm: 'SETTINGS_MANAGE' },
       { id: 'promotions', label: 'Promotions', icon: 'GraduationCap', perm: 'SETTINGS_MANAGE' },
       { id: 'users', label: 'Logins & PINs', icon: 'KeyRound', perm: 'USERS_MANAGE' },
       { id: 'roles', label: 'Roles & access', icon: 'Lock', perm: 'ROLES_MANAGE' },

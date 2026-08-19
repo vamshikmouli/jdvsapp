@@ -1,0 +1,37 @@
+# Sends each active staff member their month-to-date attendance calendar as a
+# WhatsApp image, once a week. Triggers the app endpoint (which renders + sends
+# via the WhatsApp Cloud API) from GitHub Actions on a schedule.
+#
+# Setup (one-time): add two repo secrets under Settings → Secrets → Actions:
+#   WEEKLY_REPORT_URL = https://<your-domain>/api/staff-attendance/cron/weekly-report
+#   CRON_SECRET       = same value as the CRON_SECRET env var on the server
+#
+# Time is UTC (IST = UTC + 5:30):
+#   12:30 UTC = 18:00 IST  Saturday  → weekly send
+name: Weekly attendance report
+
+on:
+  schedule:
+    - cron: '30 12 * * 6'   # Saturday 18:00 IST
+  workflow_dispatch: {}      # allow manual "Run workflow" for testing
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly-report endpoint
+        env:
+          WEEKLY_REPORT_URL: ${{ secrets.WEEKLY_REPORT_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$WEEKLY_REPORT_URL" ]; then echo "::error::WEEKLY_REPORT_URL secret is not set"; exit 1; fi
+          if [ -z "$CRON_SECRET" ]; then echo "::error::CRON_SECRET secret is not set"; exit 1; fi
+          echo "POST $WEEKLY_REPORT_URL"
+          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST "$WEEKLY_REPORT_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" --max-time 300)
+          echo "HTTP $code"
+          echo "Response: $(cat /tmp/resp.txt)"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::weekly-report endpoint returned $code"
+            exit 1
+          fi

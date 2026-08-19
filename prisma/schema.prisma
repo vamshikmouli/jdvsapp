@@ -236,6 +236,8 @@ model Staff {
   weekSchedule        Json?
   workPattern         String    @default("FULL")
   workDays            Json?
+  // Weekly WhatsApp attendance report: on by default; admin can opt a staff out.
+  waReportOptIn       Boolean   @default(true)
   attCredentials      StaffCredential[]
   attPunches          StaffPunch[]
   attDays             StaffAttendanceDay[]
@@ -272,6 +274,7 @@ model SchoolClass {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
 
 model Section {
   id        String      @id @default(cuid())
@@ -650,6 +653,11 @@ model Settings {
   afternoonClose  String  @default("14:00")
   autoLock        Boolean @default(true)
   notifyAbsence   Boolean @default(true)
+  // WhatsApp — admin digest recipients (comma-separated phone numbers). Editable
+  // in-app; falls back to the WHATSAPP_ADMIN_RECIPIENTS env var when empty.
+  waAdminRecipients String?
+  waDailyEnabled    Boolean @default(true)
+  waWeeklyEnabled   Boolean @default(true)
   // Staff attendance — geofence + work schedule (drives late/half-day rules)
   staffAttEnabled   Boolean @default(false)
   schoolLat         Float?

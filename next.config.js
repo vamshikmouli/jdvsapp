@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // pdf-parse pulls in pdfjs at runtime; keep it external so Next doesn't try to
-  // bundle its worker/sample files (used by /api/marks/upload).
+  // Native/runtime packages Next must NOT try to webpack-bundle:
+  //  - pdf-parse pulls in pdfjs worker/sample files (used by /api/marks/upload)
+  //  - @napi-rs/canvas ships a .node binary (used by the weekly attendance image)
   experimental: {
-    serverComponentsExternalPackages: ['pdf-parse', 'exceljs'],
+    serverComponentsExternalPackages: ['pdf-parse', 'exceljs', '@napi-rs/canvas'],
   },
   images: {
     remotePatterns: [

@@ -48,6 +48,7 @@ export async function PATCH(
     const updated = await prisma.student.update({
       where: { id: params.id },
       data: {
+        admissionNo: body.admissionNo || null,
         name: body.name,
         classId: body.classId || null,
         roll: body.roll || null,
@@ -66,6 +67,15 @@ export async function PATCH(
         guardianName: primary.name || '—',
         guardianPhone: primary.phone || '',
         village: body.village || null,
+        taluk: body.taluk || null,
+        district: body.district || null,
+        placeOfBirth: body.placeOfBirth || null,
+        motherTongue: body.motherTongue || null,
+        aadharNumber: body.aadharNumber || null,
+        previousSchool: body.previousSchool || null,
+        annualIncome: body.annualIncome != null && body.annualIncome !== '' ? Number(body.annualIncome) : null,
+        noOfDependents: body.noOfDependents != null && body.noOfDependents !== '' ? Number(body.noOfDependents) : null,
+        joinedDate: body.joinedDate ? new Date(body.joinedDate) : null,
         status: body.status,
       },
       include: { class: { select: { id: true, name: true } } },
