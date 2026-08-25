@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { requirePermission, requireSession, can, authErrorResponse } from '@/lib/rbac/roles';
 import { leaveDays } from '@/lib/staffAttendance/leave';
 import { LEAVE_TYPES } from '@/lib/staffAttendance/leaveBalance';
+import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
+import { notifyLeaveRequest } from '@/lib/notifications';
 
 const TYPES: string[] = LEAVE_TYPES;
 
@@ -76,6 +78,24 @@ export async function POST(req: NextRequest) {
         status: 'PENDING',
       },
     });
+
+    // Alert leave approvers (in-app bell + Web Push + WhatsApp). Best-effort.
+    const [staffRec, cfg] = await Promise.all([
+      prisma.staff.findUnique({ where: { id: staffId }, select: { name: true } }),
+      loadStaffAttConfig(),
+    ]);
+    await notifyLeaveRequest({
+      staffName: staffRec?.name || 'A staff member',
+      type: row.type,
+      fromDate: from,
+      toDate: to,
+      halfDay,
+      halfSession,
+      days: row.days,
+      reason: row.reason,
+      timezone: cfg.timezone,
+    });
+
     return NextResponse.json(row);
   } catch (err) {
     const { status, body } = authErrorResponse(err);

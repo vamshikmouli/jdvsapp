@@ -558,7 +558,9 @@ model AttendanceRegularizationRequest {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
 
-  @@unique([staffId, date, type])
+  // One request per direction per day: a staff can request BOTH a missed IN and
+  // a missed OUT for the same date (they're independent rows).
+  @@unique([staffId, date, type, punchType])
   @@index([staffId, status])
   @@index([status])
 }

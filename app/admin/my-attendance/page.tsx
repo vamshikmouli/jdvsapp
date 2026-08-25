@@ -408,9 +408,9 @@ export default function MyAttendancePage() {
         </Card>
       )}
 
-      {data?.enrolled && data.configured && (
-        <RegularizationWidget />
-      )}
+      {/* Available to every tracked staff member — the whole point is to cover
+          days they couldn't punch, so it must NOT require an enrolled device. */}
+      {data?.enabled && <RegularizationWidget />}
     </div>
   );
 }

@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
+import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
+import { notifyRegularizationRequest } from '@/lib/notifications';
 import type { PunchType, StaffDayStatus } from '@prisma/client';
+
+/** Convert a wall-clock date+time in an IANA timezone to the true UTC instant. */
+function zonedWallTimeToUtc(dateKey: string, hh: number, mm: number, tz: string): Date {
+  const naiveUtc = new Date(`${dateKey}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`);
+  // How that same instant reads in the target tz vs UTC gives the offset to subtract.
+  const inTz = new Date(naiveUtc.toLocaleString('en-US', { timeZone: tz }));
+  const inUtc = new Date(naiveUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(naiveUtc.getTime() - (inTz.getTime() - inUtc.getTime()));
+}
 
 // GET /api/staff-attendance/regularization
 // Admin lists pending regularization requests
@@ -37,7 +48,7 @@ export async function POST(req: NextRequest) {
     // Get staff ID from user ID
     const staff = await prisma.staff.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     const staffId = staff?.id;
     if (!staffId) {
@@ -63,20 +74,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "punchType must be 'IN' or 'OUT'" }, { status: 400 });
     }
 
-    // Parse time as HH:mm and create datetime
+    // Parse time as HH:mm. The staff picks a wall-clock time in the school's
+    // timezone, so convert to the real UTC instant (server runs in UTC).
     const [hours, mins] = punchTime.split(':').map(Number);
     if (isNaN(hours) || isNaN(mins)) {
       return NextResponse.json({ error: 'Invalid punchTime format (use HH:mm)' }, { status: 400 });
     }
-    const punchDateTime = new Date(dateObj);
-    punchDateTime.setHours(hours, mins, 0, 0);
+    const cfg = await loadStaffAttConfig();
+    const punchDateTime = zonedWallTimeToUtc(date, hours, mins, cfg.timezone);
 
-    // Check if already requested for this date
+    // Check if this same direction was already requested for this date. IN and
+    // OUT are independent — a staff who missed both can request each separately.
     const existing = await prisma.attendanceRegularizationRequest.findFirst({
-      where: { staffId, date: dateObj, type: 'PUNCH' },
+      where: { staffId, date: dateObj, type: 'PUNCH', punchType: punchType as PunchType },
     });
     if (existing && ['PENDING', 'APPROVED'].includes(existing.status)) {
-      return NextResponse.json({ error: 'A punch request already exists for this date' }, { status: 409 });
+      const dir = punchType === 'IN' ? 'punch-in' : 'punch-out';
+      return NextResponse.json({ error: `A ${dir} request already exists for this date` }, { status: 409 });
     }
 
     let request;
@@ -97,6 +111,17 @@ export async function POST(req: NextRequest) {
         },
       });
     }
+
+    // Alert attendance managers (in-app bell + Web Push + WhatsApp). Best-effort.
+    await notifyRegularizationRequest({
+      staffId,
+      staffName: staff.name,
+      date: dateObj,
+      punchType: punchType as PunchType,
+      punchTime: punchDateTime,
+      reason,
+      timezone: cfg.timezone,
+    });
 
     return NextResponse.json(request);
   } catch (err) {

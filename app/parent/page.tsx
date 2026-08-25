@@ -7,6 +7,7 @@ import { feeMoney } from '@/lib/fees';
 import { PushOptIn } from '@/components/PushOptIn';
 import { useBranding } from '@/components/useBranding';
 import { StreakCard } from '@/components/StreakCard';
+import { BrandAssets } from '@/components/BrandAssets';
 
 interface Child {
   id: string;
@@ -394,6 +395,12 @@ function HomeScreen() {
       <PushOptIn />
       <StreakCard studentId={child.id} />
       <ChildCard child={child} fee={fee} />
+      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+          <Icon name="Download" size={16} className="text-purple-600" /> School logos
+        </h3>
+        <BrandAssets compact />
+      </div>
     </>
   );
 }

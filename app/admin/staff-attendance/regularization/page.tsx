@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { Button, Card, Chip, Modal, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { fmtTime } from '@/lib/staffAttendance/display';
 
 interface RegularizationRequest {
   id: string;
@@ -83,7 +84,7 @@ export default function RegularizationPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
                     <Chip tone="info">
-                      {req.punchType} at {req.punchTime}
+                      Missed punch {req.punchType} at {fmtTime(req.punchTime)}
                     </Chip>
                     <Chip tone={
                       req.status === 'PENDING' ? 'warn' :
@@ -167,7 +168,7 @@ function ReviewModal({
         <div>
           <div className="text-xs text-slate-500">Punch request</div>
           <div className="font-medium">
-            {request.punchType} at {request.punchTime}
+            Missed punch {request.punchType} at {fmtTime(request.punchTime)}
           </div>
         </div>
         {request.reason && (
