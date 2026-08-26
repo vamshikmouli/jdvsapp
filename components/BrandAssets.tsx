@@ -70,14 +70,15 @@ export function BrandAssets({ compact = false }: { compact?: boolean }) {
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-slate-900">{a.label}</div>
-              <div className="text-xs text-slate-400">{a.name}{a.size != null ? ` · ${fmtSize(a.size)}` : ''}</div>
+              <div className="truncate text-xs text-slate-400">{a.name}{a.size != null ? ` · ${fmtSize(a.size)}` : ''}</div>
             </div>
             <a
               href={a.downloadUrl}
               download={a.name}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700"
+              title="Download"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-purple-600 px-2.5 sm:px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700"
             >
-              <Icon name="Download" size={15} /> Download
+              <Icon name="Download" size={15} /> <span className="hidden min-[380px]:inline">Download</span>
             </a>
           </div>
         );
