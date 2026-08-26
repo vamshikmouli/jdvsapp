@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       prisma.staff.findMany({
         // Admins aren't tracked for attendance — exclude admin-role staff.
         // Staff with no linked user account are kept (regular non-login staff).
-        where: { archived: false, NOT: { user: { role: { key: 'admin' } } } },
+        where: { archived: false, attendanceTracked: true, NOT: { user: { role: { key: 'admin' } } } },
         orderBy: { name: 'asc' },
         select: {
           id: true,

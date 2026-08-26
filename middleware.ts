@@ -20,6 +20,7 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
   { prefix: '/admin/communications', perm: 'NOTICES_MANAGE' },
   { prefix: '/admin/marks', perm: 'MARKS_VIEW' },
+  { prefix: '/admin/payroll', perm: 'PAYROLL_VIEW' },
   { prefix: '/admin/promotions', perm: 'SETTINGS_MANAGE' },
   // /admin/dashboard and /admin/settings need no specific permission
 ];

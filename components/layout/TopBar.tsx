@@ -10,6 +10,8 @@ interface TopBarProps {
   subtitle?: string;
   showMenu?: boolean;
   onMenu?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 interface YearOpt { id: string; label: string; isActive: boolean }
@@ -44,16 +46,22 @@ function YearSwitcher() {
   );
 }
 
-export function TopBar({ title, subtitle, onMenu }: TopBarProps) {
+export function TopBar({ title, subtitle, onMenu, collapsed = false, onToggleCollapse }: TopBarProps) {
   const { data: session } = useSession();
   const isParent = !!(session?.user as any)?.isParent;
   return (
-    <header className="fixed left-0 lg:left-60 right-0 top-0 h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-20">
+    <header className={`fixed left-0 right-0 top-0 h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-20 transition-all duration-200 ${collapsed ? 'lg:left-16' : 'lg:left-60'}`}>
       <div className="flex items-center gap-2 min-w-0">
         {/* Hamburger — mobile/tablet only */}
         <button onClick={onMenu} className="lg:hidden p-2 -ml-2 hover:bg-slate-100 rounded-md flex-shrink-0">
           <Icon name="Menu" size={20} />
         </button>
+        {/* Collapse toggle — desktop only */}
+        {onToggleCollapse && (
+          <button onClick={onToggleCollapse} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="hidden lg:flex p-2 -ml-2 hover:bg-slate-100 rounded-md flex-shrink-0 text-slate-500">
+            <Icon name={collapsed ? 'PanelLeftOpen' : 'PanelLeftClose'} size={20} />
+          </button>
+        )}
         <div className="min-w-0">
           <h1 className="font-semibold text-slate-900 truncate">{title}</h1>
           {subtitle && <p className="text-xs text-slate-500 truncate">{subtitle}</p>}

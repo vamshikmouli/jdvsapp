@@ -54,6 +54,8 @@ enum Permission {
   ROLES_MANAGE
   USERS_MANAGE
   ALL_CLASSES_ACCESS // see data for ALL classes; without it, scoped to assigned classes
+  PAYROLL_VIEW    // view salary register / payslips
+  PAYROLL_MANAGE  // generate runs, edit amounts, approve, mark paid
 }
 
 // A role is data, not an enum. Admins can create custom roles.
@@ -238,6 +240,23 @@ model Staff {
   workDays            Json?
   // Weekly WhatsApp attendance report: on by default; admin can opt a staff out.
   waReportOptIn       Boolean   @default(true)
+
+  // Payroll / salary banking (all money in whole rupees, matching the fee module).
+  bankAccountNo       String?
+  bankIfsc            String?
+  bankName            String?
+  accountHolderName   String?   // as printed on the passbook (defaults to name)
+  grossSalary         Int?      // monthly gross salary
+  monthlyDeduction    Int       @default(0)  // recurring deduction each month, e.g. LIC premium
+  monthlyBonus        Int       @default(0)  // recurring allowance / bonus each month
+  pfApplicable        Boolean   @default(false)
+  pfWage              Int?      // 12% PF basis; falls back to grossSalary when null
+  esiApplicable       Boolean   @default(false)  // ESI (0.75%) — optional per staff
+  salaryActive        Boolean   @default(true)   // include this staff in payroll runs
+  // Off for drivers / off-campus staff: they never punch, are never marked absent
+  // or nagged, and are paid full salary (no attendance-based loss of pay).
+  attendanceTracked   Boolean   @default(true)
+  payrollItems        PayrollItem[]
   attCredentials      StaffCredential[]
   attPunches          StaffPunch[]
   attDays             StaffAttendanceDay[]
@@ -1081,4 +1100,77 @@ model GradeBand {
   order      Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Payroll / salary banking. Monthly run; period = previous calendar month;
+// credited on the 10th of the following month. The app computes + tracks +
+// exports payroll — it never moves money (admin does the actual bank transfer).
+// ---------------------------------------------------------------------------
+
+enum PayrollStatus {
+  DRAFT     // generated, editable
+  APPROVED  // amounts locked, ready to pay
+  PAID      // transferred by admin, marked paid
+}
+
+model PayrollRun {
+  id           String        @id @default(cuid())
+  periodMonth  String        // salary month "YYYY-MM" (e.g. "2026-06")
+  status       PayrollStatus @default(DRAFT)
+  creditOn     DateTime      @db.Date  // 10th of the following month
+  note         String?
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?
+  items        PayrollItem[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([periodMonth])
+  @@index([status])
+}
+
+model PayrollItem {
+  id       String     @id @default(cuid())
+  runId    String
+  run      PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  staffId  String
+  staff    Staff      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  // Frozen snapshots so later edits to staff/bank/salary never rewrite history.
+  staffName   String
+  designation String?
+  accountNo   String?
+  ifsc        String?
+  attendanceTracked Boolean @default(true)  // false = driver/off-campus: full pay, no LOP
+
+  // Attendance summary for the period (previous calendar month).
+  presentDays     Int   @default(0)  // PRESENT + LATE
+  halfDays        Int   @default(0)  // HALF_DAY (counted as 0.5 in lopDays)
+  paidLeaveDays   Int   @default(0)  // EARNED + SICK
+  unpaidLeaveDays Int   @default(0)  // UNPAID
+  absentDays      Int   @default(0)
+  holidayDays     Int   @default(0)
+  weeklyOffDays   Int   @default(0)
+  lopDays         Float @default(0)  // absent + unpaid + 0.5*half
+
+  // Money — whole rupees.
+  grossSalary     Int @default(0)
+  lopAmount       Int @default(0)  // round(gross/30 * lopDays)
+  pfAmount        Int @default(0)  // 12% of pfWage when pfApplicable
+  esiApplicable   Boolean @default(false) // so edits can recompute ESI on the new Net
+  esiAmount       Int @default(0)  // 0.75% of Net (after LOP/other/bonus) when applicable
+  otherDeductions Int @default(0)  // admin-editable (advances, LIC, etc.)
+  bonus           Int @default(0)  // admin-editable (allowance/bonus)
+  netSalary       Int @default(0)
+
+  status    PayrollStatus @default(DRAFT)
+  paidAt    DateTime?
+  note      String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([runId, staffId])
+  @@index([staffId])
 }

@@ -27,6 +27,19 @@ export async function PATCH(
     if (body.designation !== undefined) data.designation = body.designation || null;
     // Enrollment id on the physical biometric terminal (maps device punches -> staff).
     if (body.deviceUserId !== undefined) data.deviceUserId = String(body.deviceUserId).trim() || null;
+    // Payroll / bank details.
+    if (body.bankAccountNo !== undefined) data.bankAccountNo = String(body.bankAccountNo).trim() || null;
+    if (body.bankIfsc !== undefined) data.bankIfsc = String(body.bankIfsc).trim().toUpperCase() || null;
+    if (body.bankName !== undefined) data.bankName = String(body.bankName).trim() || null;
+    if (body.accountHolderName !== undefined) data.accountHolderName = String(body.accountHolderName).trim() || null;
+    if (body.grossSalary !== undefined) data.grossSalary = body.grossSalary === null || body.grossSalary === '' ? null : Math.max(0, Math.round(Number(body.grossSalary) || 0));
+    if (body.monthlyDeduction !== undefined) data.monthlyDeduction = Math.max(0, Math.round(Number(body.monthlyDeduction) || 0));
+    if (body.monthlyBonus !== undefined) data.monthlyBonus = Math.max(0, Math.round(Number(body.monthlyBonus) || 0));
+    if (body.pfApplicable !== undefined) data.pfApplicable = !!body.pfApplicable;
+    if (body.pfWage !== undefined) data.pfWage = body.pfWage === null || body.pfWage === '' ? null : Math.max(0, Math.round(Number(body.pfWage) || 0));
+    if (body.esiApplicable !== undefined) data.esiApplicable = !!body.esiApplicable;
+    if (body.salaryActive !== undefined) data.salaryActive = !!body.salaryActive;
+    if (body.attendanceTracked !== undefined) data.attendanceTracked = !!body.attendanceTracked;
     if (Array.isArray(body.classIds)) {
       data.classes = { set: body.classIds.map((id: string) => ({ id })) };
     }

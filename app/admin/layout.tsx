@@ -27,11 +27,22 @@ export default function AdminLayout({
 }) {
   const pathname = usePathname();
   const [navOpen, setNavOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
 
   // Close the mobile drawer whenever the route changes
   React.useEffect(() => {
     setNavOpen(false);
   }, [pathname]);
+
+  // Sidebar collapse preference (desktop), remembered per device.
+  React.useEffect(() => {
+    try { setCollapsed(localStorage.getItem('sidebarCollapsed') === '1'); } catch {}
+  }, []);
+  const toggleCollapse = () => setCollapsed((c) => {
+    const next = !c;
+    try { localStorage.setItem('sidebarCollapsed', next ? '1' : '0'); } catch {}
+    return next;
+  });
 
   // Derive the page title from the route segment, e.g. /admin/students -> "Students"
   const segment = pathname.split('/')[2] || 'dashboard';
@@ -45,11 +56,11 @@ export default function AdminLayout({
   return (
     <div className="h-screen bg-slate-25">
       {/* Sidebar (off-canvas drawer on mobile, fixed on desktop) */}
-      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} collapsed={collapsed} />
 
       {/* Main Content */}
-      <div className="flex flex-col h-full lg:ml-60">
-        <TopBar title={title} onMenu={() => setNavOpen(true)} />
+      <div className={`flex flex-col h-full transition-all duration-200 ${collapsed ? 'lg:ml-16' : 'lg:ml-60'}`}>
+        <TopBar title={title} onMenu={() => setNavOpen(true)} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden pt-20 pb-8">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{children}</div>

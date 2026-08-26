@@ -59,6 +59,7 @@ async function handler(req: NextRequest) {
   const staff = await prisma.staff.findMany({
     where: {
       archived: false,
+      attendanceTracked: true,
       waReportOptIn: true,
       ...(onlyStaff ? { id: onlyStaff } : {}),
     },

@@ -16,6 +16,7 @@ export async function GET() {
     const staff = await prisma.staff.findMany({
       where: {
         archived: false,
+        attendanceTracked: true,
         pinHash: { not: null },
         NOT: { user: { role: { key: 'admin' } } },
       },

@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
     if ((session.user as any)?.roleKey === 'admin') {
       return NextResponse.json({ tracked: false });
     }
+    // Drivers / off-campus staff don't punch either.
+    const staffFlags = await prisma.staff.findUnique({ where: { id: staffId }, select: { attendanceTracked: true } });
+    if (staffFlags && staffFlags.attendanceTracked === false) {
+      return NextResponse.json({ tracked: false });
+    }
 
     const cfg = await loadStaffAttConfig();
     const todayKey = localDayInfo(new Date(), cfg.timezone).dateKey;

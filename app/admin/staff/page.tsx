@@ -18,6 +18,18 @@ interface StaffMember {
   userId?: string | null;
   roleId?: string | null;
   roleName?: string | null;
+  bankAccountNo?: string | null;
+  bankIfsc?: string | null;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  grossSalary?: number | null;
+  monthlyDeduction?: number;
+  monthlyBonus?: number;
+  pfApplicable?: boolean;
+  pfWage?: number | null;
+  esiApplicable?: boolean;
+  salaryActive?: boolean;
+  attendanceTracked?: boolean;
 }
 
 interface RoleOption {
@@ -31,7 +43,11 @@ interface ClassOption {
   name: string;
 }
 
-const emptyForm = { name: '', email: '', phone: '', designation: '', roleId: '', classIds: [] as string[] };
+const emptyForm = {
+  name: '', email: '', phone: '', designation: '', roleId: '', classIds: [] as string[],
+  bankAccountNo: '', bankIfsc: '', bankName: '', accountHolderName: '',
+  grossSalary: '', monthlyDeduction: '', monthlyBonus: '', pfApplicable: false, pfWage: '', esiApplicable: false, salaryActive: true, attendanceTracked: true,
+};
 
 export default function StaffPage() {
   const { data: session } = useSession();
@@ -158,6 +174,18 @@ export default function StaffPage() {
       designation: s.designation || '',
       roleId: s.roleId || '',
       classIds: s.classes.map((c) => c.id),
+      bankAccountNo: s.bankAccountNo || '',
+      bankIfsc: s.bankIfsc || '',
+      bankName: s.bankName || '',
+      accountHolderName: s.accountHolderName || '',
+      grossSalary: s.grossSalary != null ? String(s.grossSalary) : '',
+      monthlyDeduction: s.monthlyDeduction ? String(s.monthlyDeduction) : '',
+      monthlyBonus: s.monthlyBonus ? String(s.monthlyBonus) : '',
+      pfApplicable: !!s.pfApplicable,
+      pfWage: s.pfWage != null ? String(s.pfWage) : '',
+      esiApplicable: !!s.esiApplicable,
+      salaryActive: s.salaryActive !== false,
+      attendanceTracked: s.attendanceTracked !== false,
     });
     setFormError('');
     setFormOpen(true);
@@ -174,8 +202,9 @@ export default function StaffPage() {
     setFormError('');
     try {
       if (!form.name.trim()) throw new Error('Name is required');
-      if (!form.phone.trim()) throw new Error('Phone is required — it becomes the login password');
-      if (!form.roleId) throw new Error('Please select a login role');
+      // A login is optional (drivers/off-campus staff may have none). Only when a
+      // role is chosen do we need a phone (it becomes the initial password).
+      if (form.roleId && !form.phone.trim()) throw new Error('Phone is required to create a login — or leave the role blank for a no-login staff member');
 
       const payload = {
         name: form.name.trim(),
@@ -184,6 +213,18 @@ export default function StaffPage() {
         designation: form.designation.trim() || null,
         roleId: form.roleId,
         classIds: form.classIds,
+        bankAccountNo: form.bankAccountNo.trim() || null,
+        bankIfsc: form.bankIfsc.trim().toUpperCase() || null,
+        bankName: form.bankName.trim() || null,
+        accountHolderName: form.accountHolderName.trim() || null,
+        grossSalary: form.grossSalary === '' ? null : Number(form.grossSalary),
+        monthlyDeduction: form.monthlyDeduction === '' ? 0 : Number(form.monthlyDeduction),
+        monthlyBonus: form.monthlyBonus === '' ? 0 : Number(form.monthlyBonus),
+        pfApplicable: form.pfApplicable,
+        pfWage: form.pfWage === '' ? null : Number(form.pfWage),
+        esiApplicable: form.esiApplicable,
+        salaryActive: form.salaryActive,
+        attendanceTracked: form.attendanceTracked,
       };
 
       const res = await fetch(editing ? `/api/staff/${editing.id}` : '/api/staff', {
@@ -448,9 +489,9 @@ export default function StaffPage() {
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Staff name" />
           </Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Login role">
+            <Field label="Login role (optional)">
               <Select value={form.roleId} onChange={(e) => setForm({ ...form, roleId: e.target.value })}>
-                <option value="">Select role…</option>
+                <option value="">No login (e.g. driver)</option>
                 {roles.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
@@ -460,12 +501,68 @@ export default function StaffPage() {
               <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Maths teacher" />
             </Field>
           </div>
-          <Field label="Phone (becomes the login password)">
+          <Field label="Phone (login password — only needed with a role)">
             <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="e.g. 9876543210" />
           </Field>
           <Field label="Email (optional — for login & notices)">
             <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@jnanadeepika.edu" />
           </Field>
+
+          {/* Salary & bank (payroll) */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-sm font-semibold text-slate-900">Salary &amp; bank</label>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" checked={form.salaryActive} onChange={(e) => setForm({ ...form, salaryActive: e.target.checked })} />
+                Include in payroll
+              </label>
+            </div>
+            <label className="flex items-start gap-2 mb-3 rounded-md bg-slate-50 px-3 py-2">
+              <input type="checkbox" className="mt-0.5" checked={form.attendanceTracked} onChange={(e) => setForm({ ...form, attendanceTracked: e.target.checked })} />
+              <span className="text-sm text-slate-700">
+                Tracks attendance (punches in/out)
+                <span className="block text-xs text-slate-500">Turn OFF for drivers &amp; off-campus staff — never marked absent, paid full salary.</span>
+              </span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Monthly gross salary (₹)">
+                <Input type="number" min="0" value={form.grossSalary} onChange={(e) => setForm({ ...form, grossSalary: e.target.value })} placeholder="e.g. 18000" />
+              </Field>
+              <Field label="Monthly deduction (₹, e.g. LIC)">
+                <Input type="number" min="0" value={form.monthlyDeduction} onChange={(e) => setForm({ ...form, monthlyDeduction: e.target.value })} placeholder="0" />
+              </Field>
+              <Field label="Monthly bonus / allowance (₹)">
+                <Input type="number" min="0" value={form.monthlyBonus} onChange={(e) => setForm({ ...form, monthlyBonus: e.target.value })} placeholder="0" />
+              </Field>
+              <Field label="Account holder name">
+                <Input value={form.accountHolderName} onChange={(e) => setForm({ ...form, accountHolderName: e.target.value })} placeholder="As printed on passbook" />
+              </Field>
+              <Field label="Bank account no.">
+                <Input value={form.bankAccountNo} onChange={(e) => setForm({ ...form, bankAccountNo: e.target.value })} placeholder="Account number" />
+              </Field>
+              <Field label="IFSC">
+                <Input value={form.bankIfsc} onChange={(e) => setForm({ ...form, bankIfsc: e.target.value.toUpperCase() })} placeholder="e.g. CNRB0001234" />
+              </Field>
+              <Field label="Bank name (optional)">
+                <Input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} placeholder="e.g. Canara Bank" />
+              </Field>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-4">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.pfApplicable} onChange={(e) => setForm({ ...form, pfApplicable: e.target.checked })} />
+                Deduct PF (12%)
+              </label>
+              {form.pfApplicable && (
+                <Field label="PF wage (₹, blank = gross)">
+                  <Input type="number" min="0" value={form.pfWage} onChange={(e) => setForm({ ...form, pfWage: e.target.value })} placeholder="Defaults to gross" />
+                </Field>
+              )}
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.esiApplicable} onChange={(e) => setForm({ ...form, esiApplicable: e.target.checked })} />
+                Deduct ESI (0.75%)
+              </label>
+            </div>
+          </div>
 
           {/* Assigned classes */}
           <div>

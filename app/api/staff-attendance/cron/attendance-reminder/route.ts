@@ -42,7 +42,7 @@ async function handler(req: NextRequest) {
 
   const [staff, days, holiday, leaves] = await Promise.all([
     prisma.staff.findMany({
-      where: { archived: false, NOT: { user: { role: { key: 'admin' } } } },
+      where: { archived: false, attendanceTracked: true, NOT: { user: { role: { key: 'admin' } } } },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, phone: true, weekSchedule: true, workPattern: true, workDays: true },
     }),
