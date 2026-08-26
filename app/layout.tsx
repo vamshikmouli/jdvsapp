@@ -7,7 +7,7 @@ import './globals.css';
 // Title + favicon follow the school configured in Settings (admin-uploaded logo).
 export async function generateMetadata(): Promise<Metadata> {
   let schoolName = 'Jnana Deepika';
-  let icon = '/icon.svg';
+  let icon = '/icon-512.png';
   try {
     const s = await prisma.settings.findUnique({
       where: { id: 'singleton' },
