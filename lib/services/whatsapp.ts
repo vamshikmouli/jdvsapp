@@ -134,6 +134,43 @@ export async function sendTextTemplate(opts: {
   return { ok: true, id: j?.messages?.[0]?.id };
 }
 
+/**
+ * Send an AUTHENTICATION-category template (the only category Meta allows for
+ * OTP codes). These templates have a fixed body ("{{1}} is your verification
+ * code…") plus a copy-code / one-tap button — and the send payload must repeat
+ * the code in BOTH the body and the button component.
+ */
+export async function sendAuthTemplate(opts: {
+  to: string; templateName: string; lang?: string; code: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!token || !phoneId) return { ok: false, error: 'WhatsApp not configured' };
+  const body = {
+    messaging_product: 'whatsapp',
+    to: opts.to,
+    type: 'template',
+    template: {
+      name: opts.templateName,
+      language: { code: opts.lang || 'en' },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: opts.code }] },
+        // Authentication button: sub_type 'url' + the code as its text param
+        // (works for both copy-code and one-tap authentication buttons).
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: opts.code }] },
+      ],
+    },
+  };
+  const res = await fetch(`${GRAPH}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j: any = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: `${res.status} ${JSON.stringify(j?.error || j)}` };
+  return { ok: true, id: j?.messages?.[0]?.id };
+}
+
 /** Upload a PNG to the WhatsApp media store; returns the media id used in a send. */
 export async function uploadWhatsAppMedia(png: Buffer): Promise<string> {
   const token = process.env.WHATSAPP_TOKEN;

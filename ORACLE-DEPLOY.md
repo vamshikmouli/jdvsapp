@@ -33,6 +33,24 @@ ssh -i "D:/Apps/jdvserpclaudeapp/oraclekeys/ssh-key-2026-07-18.key" ubuntu@130.2
 
 ---
 
+## 🔴 Deploy policy — ALWAYS deploy from git (first priority, no exceptions)
+
+**Every deploy MUST go through git. This is the first priority, always.**
+
+1. **Commit + push** your changes to `origin/master` (GitHub `vamshikmouli/jdvsapp`).
+2. **Deploy on the VM by pulling from git** — `git pull origin master` → build → `pm2 restart jdvsapp`.
+
+**Method C (git-based) below is the PRIMARY method — use it.** Methods A and B
+(scp changed files / ship a tarball) are **emergency fallbacks only** (e.g. GitHub
+unreachable). If you ever fall back to A/B, **push the same changes to `master`
+immediately after**, so git never lags production.
+
+> ⚠️ If `master` is behind prod and someone runs the Method C `git reset --hard
+> origin/master`, it will **revert the un-pushed changes on prod.** Keep `master`
+> in sync with what's deployed, always.
+
+---
+
 ## ‼️ Important gotchas (learned the hard way)
 
 1. **`/home/ubuntu/jdvsapp` is NOT a git repo.** The original deploy was an uploaded
@@ -54,7 +72,7 @@ ssh -i "D:/Apps/jdvserpclaudeapp/oraclekeys/ssh-key-2026-07-18.key" ubuntu@130.2
 
 ---
 
-## Deploy method A — copy changed files (fast, surgical) ✅ used last time
+## Deploy method A — copy changed files (⚠️ FALLBACK ONLY — prefer git / Method C)
 
 Best when only a few files changed. Does not disturb anything else on the VM.
 
@@ -120,7 +138,9 @@ ssh -i "$KEY" ubuntu@130.210.20.155 '
 '
 ```
 
-## Deploy method C — convert to git (one-time, then `git pull` forever)
+## Deploy method C — git-based deploy (✅ PRIMARY — always use this)
+
+One-time: convert the VM app dir to a git checkout. Thereafter every deploy is `git pull`.
 
 ```bash
 # VM, one time:

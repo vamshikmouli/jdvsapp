@@ -67,6 +67,18 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Account locked due to failed attempts. Try again later.');
         }
 
+        // First-time users (and accounts an admin has reset) must verify via
+        // WhatsApp OTP and set their own PIN — the provisioned phone-number
+        // password is NOT accepted for login.
+        // Gated behind FORCE_OTP_FIRST_LOGIN so we can ship the OTP feature to
+        // prod WITHOUT locking out not-yet-PIN-set users before the WhatsApp
+        // template is live. Flip the env var to "true" once OTP is working end
+        // to end in prod; until then the phone-number password still works.
+        if (process.env.FORCE_OTP_FIRST_LOGIN === 'true' && user.passwordChangedAt == null) {
+          await failAudit('First login requires OTP');
+          throw new Error('First-time login: tap "Verify by WhatsApp" to set your PIN.');
+        }
+
         // Verify password
         const ok = await verifyPassword(credentials.password, user.passwordHash);
         if (!ok) {

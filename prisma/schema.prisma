@@ -205,6 +205,23 @@ model PasswordReset {
   createdAt DateTime @default(now())
 }
 
+// First-login / forgot-PIN verification over WhatsApp. Two-phase, keyed by phone:
+//   LOGIN grant → a 6-digit OTP the user types back
+//   SET_PIN grant → a one-time token minted after a correct OTP, spent by set-pin
+// Codes/tokens are stored HASHED (bcrypt), never in plaintext. Rows are short-lived.
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  phone     String                 // normalized (digits, matches User.phone key)
+  codeHash  String                 // bcrypt of the OTP (LOGIN) or grant token (SET_PIN)
+  purpose   String                 // "LOGIN" | "SET_PIN"
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([phone, purpose])
+  @@index([expiresAt])
+}
+
 model Staff {
   id          String   @id @default(cuid())
   userId      String?  @unique
