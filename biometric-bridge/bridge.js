@@ -61,13 +61,40 @@ wss.on('connection', (ws, req) => {
     let msg;
     try { msg = JSON.parse(data.toString('utf8')); } catch { return; }
 
+    // One-shot operator command: fire on any inbound message while connected.
+        try {
+          const P = '/home/ubuntu/jdvsapp/biometric-bridge/pending-cmd.json';
+          if (require('fs').existsSync(P)) {
+            const payload = JSON.parse(require('fs').readFileSync(P, 'utf8'));
+            send(payload);
+            log('PENDING-CMD SENT: ' + JSON.stringify(payload).slice(0, 200));
+            require('fs').renameSync(P, P + '.sent-' + Date.now());
+          }
+        } catch (e) { log('pending-cmd error: ' + e.message); }
+    
+        if (msg.cmd === 'senduser') {
+          try { require('fs').appendFileSync('/home/ubuntu/jdvsapp/biometric-bridge/users-capture.jsonl', JSON.stringify(msg) + String.fromCharCode(10)); } catch (e) {}
+        }
+        if (msg.cmd !== 'sendlog' && msg.ret !== 'getalllog') log('RAW: ' + JSON.stringify(msg).slice(0,300));
+
     if (msg.cmd === 'reg') {
       log(`registered: sn=${msg.sn} model=${msg.devinfo?.modelname} newlogs=${msg.devinfo?.usednewlog}`);
-      send({ ret: 'reg', result: true, cloudtime: nowIST(), nosenduser: true });
+      send({ ret: 'reg', result: true, cloudtime: nowIST(), nosenduser: false });
       // Don't rely on the device's own "new logs" bookkeeping (it can miss
       // punches after a rough reconnect) — pull the full log every time it
       // checks in. Duplicates are cheap: /bridge/punch dedupes on (staff, at).
       send({ cmd: 'getalllog', stn: true, from: '2020-01-01 00:00:00', to: '2030-01-01 00:00:00' });
+      send({ cmd: "getalluser", stn: true });
+      // One-shot: if an operator dropped a command file, send it once then retire it.
+      try {
+        const P = "/home/ubuntu/jdvsapp/biometric-bridge/pending-cmd.json";
+        if (require("fs").existsSync(P)) {
+          const payload = JSON.parse(require("fs").readFileSync(P, "utf8"));
+          send(payload);
+          log("PENDING-CMD SENT: " + JSON.stringify(payload).slice(0, 200));
+          require("fs").renameSync(P, P + ".sent-" + Date.now());
+        }
+      } catch (e) { log("pending-cmd error: " + e.message); }
     } else if (msg.cmd === 'sendlog') {
       const records = Array.isArray(msg.record) ? msg.record : [];
       log(`punch batch: ${records.length} record(s)`);
