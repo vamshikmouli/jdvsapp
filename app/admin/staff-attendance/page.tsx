@@ -303,7 +303,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
       )}
       {tab === 'status' && (
         <div className="space-y-3">
-          <Field label="Mark day as"><Select value={status} onChange={(e) => setStatus(e.target.value)}><option value="LEAVE">Leave</option><option value="HALF_DAY">Half day</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
+          <Field label="Mark day as"><Select value={status} onChange={(e) => setStatus(e.target.value)}><option value="PRESENT">Present</option><option value="LEAVE">Leave</option><option value="HALF_DAY">Half day</option><option value="HOLIDAY">Holiday</option><option value="ABSENT">Absent</option></Select></Field>
           {isHalf && (
             <Field label="Which session is off?">
               <Select value={halfSession} onChange={(e) => setHalfSession(e.target.value)}>
@@ -317,6 +317,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
               <Select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
                 <option value="EARNED">Earned leave</option>
                 <option value="SICK">Sick leave</option>
+                <option value="EMERGENCY">Emergency leave</option>
                 <option value="UNPAID">Unpaid leave</option>
               </Select>
             </Field>

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'status') {
-      const allowed = ['LEAVE', 'HOLIDAY', 'ABSENT', 'HALF_DAY'];
+      const allowed = ['PRESENT', 'LEAVE', 'HOLIDAY', 'ABSENT', 'HALF_DAY'];
       if (!allowed.includes(body.status)) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
       }
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       let halfSession: string | null = null;
       if (body.status === 'LEAVE' || body.status === 'ABSENT' || body.status === 'HALF_DAY') {
         if (!LEAVE_TYPES.includes(body.type)) {
-          return NextResponse.json({ error: 'Choose a leave type (Earned/Sick/Unpaid) to deduct' }, { status: 400 });
+          return NextResponse.json({ error: 'Choose a leave type (Earned/Sick/Emergency/Unpaid) to deduct' }, { status: 400 });
         }
         leaveType = body.type;
       }
