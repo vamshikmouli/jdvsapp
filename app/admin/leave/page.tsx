@@ -12,7 +12,7 @@ interface Leave {
 }
 
 // Full label map (incl. retired CASUAL/OTHER) so old records still render.
-const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', UNPAID: 'Unpaid', OTHER: 'Other' };
+const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', EMERGENCY: 'Emergency', UNPAID: 'Unpaid', OTHER: 'Other' };
 // Types selectable when applying (CASUAL/OTHER retired).
 const SELECTABLE_TYPES = ['EARNED', 'SICK', 'UNPAID'] as const;
 function statusTone(s: string): ChipTone {

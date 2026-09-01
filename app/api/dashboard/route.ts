@@ -251,7 +251,9 @@ export async function GET() {
       const staffWeekday = weekdayOfKey(staffDateKey);
       const [staffRows, staffDays, staffHoliday] = await Promise.all([
         prisma.staff.findMany({
-          where: { archived: false, NOT: { user: { role: { key: 'admin' } } } },
+          // Match the staff-attendance board: exclude admins AND drivers/off-campus
+          // (attendanceTracked=false) so the dashboard counts line up.
+          where: { archived: false, attendanceTracked: true, NOT: { user: { role: { key: 'admin' } } } },
           select: { id: true, weekSchedule: true, workPattern: true, workDays: true },
         }),
         prisma.staffAttendanceDay.findMany({ where: { date: staffDate }, select: { staffId: true, status: true, late: true } }),

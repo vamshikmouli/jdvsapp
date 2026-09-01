@@ -609,6 +609,7 @@ enum LeaveType {
   EARNED
   UNPAID
   OTHER
+  EMERGENCY
 }
 
 enum LeaveStatus {
@@ -1170,7 +1171,8 @@ model PayrollItem {
   absentDays      Int   @default(0)
   holidayDays     Int   @default(0)
   weeklyOffDays   Int   @default(0)
-  lopDays         Float @default(0)  // absent + unpaid + 0.5*half
+  overBalanceDays Float @default(0)  // paid-leave days beyond yearly quota → counted as LOP
+  lopDays         Float @default(0)  // absent + unpaid + 0.5*half + overBalance
 
   // Money — whole rupees.
   grossSalary     Int @default(0)

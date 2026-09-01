@@ -9,7 +9,7 @@ import { Icon } from '@/components/Icon';
 import { fmtTime } from '@/lib/staffAttendance/display';
 import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
 
-const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', UNPAID: 'Unpaid', OTHER: 'Other' };
+const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', EMERGENCY: 'Emergency', UNPAID: 'Unpaid', OTHER: 'Other' };
 
 function currentMonth() {
   const d = new Date();

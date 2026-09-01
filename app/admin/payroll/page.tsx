@@ -9,7 +9,7 @@ interface RunSummary { id: string; periodMonth: string; status: string; creditOn
 interface Item {
   id: string; staffName: string; designation: string | null; accountNo: string | null; ifsc: string | null; attendanceTracked: boolean;
   presentDays: number; halfDays: number; paidLeaveDays: number; unpaidLeaveDays: number; absentDays: number;
-  holidayDays: number; weeklyOffDays: number; lopDays: number;
+  holidayDays: number; weeklyOffDays: number; overBalanceDays: number; lopDays: number;
   grossSalary: number; lopAmount: number; pfAmount: number; esiAmount: number; esiApplicable?: boolean; otherDeductions: number; bonus: number; netSalary: number;
   status: string; paidAt: string | null;
 }
@@ -269,7 +269,8 @@ export default function PayrollPage() {
                             <div className="flex flex-wrap gap-1 text-[11px]">
                               <span className="px-1.5 py-0.5 rounded-md bg-success-50 text-success-700 font-medium" title="Present (incl. late)">P {it.presentDays}</span>
                               {it.halfDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-marigold-50 text-marigold-700 font-medium" title="Half days">½ {it.halfDays}</span>}
-                              {it.paidLeaveDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 font-medium" title="Paid leave">PL {it.paidLeaveDays}</span>}
+                              {it.paidLeaveDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 font-medium" title="Paid leave (within balance)">PL {it.paidLeaveDays}</span>}
+                              {it.overBalanceDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Leave beyond yearly balance → LOP">OB {it.overBalanceDays}</span>}
                               {it.unpaidLeaveDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Unpaid leave">UL {it.unpaidLeaveDays}</span>}
                               {it.absentDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Absent">A {it.absentDays}</span>}
                             </div>

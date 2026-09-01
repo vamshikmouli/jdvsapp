@@ -11,7 +11,7 @@ interface Row {
   byType: Record<string, number>;
 }
 
-const TYPE_LABEL: Record<string, string> = { EARNED: 'Earned', SICK: 'Sick', UNPAID: 'Unpaid', CASUAL: 'Casual', OTHER: 'Other' };
+const TYPE_LABEL: Record<string, string> = { EARNED: 'Earned', SICK: 'Sick', EMERGENCY: 'Emergency', UNPAID: 'Unpaid', CASUAL: 'Casual', OTHER: 'Other' };
 function curMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function fmtDays(n: number) { return `${n} day${n === 1 ? '' : 's'}`; }
 function breakdown(byType: Record<string, number>) {
