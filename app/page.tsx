@@ -16,7 +16,7 @@ function homeForSurface(surface?: string, roleKey?: string) {
 
 type OtpAccount = { email: string; displayName: string; roleName: string; surface?: string };
 type Mode = 'password' | 'otp';
-type OtpStep = 'phone' | 'code' | 'setpin' | 'role';
+type OtpStep = 'phone' | 'wa' | 'setpin' | 'role';
 
 async function api(path: string, body: object): Promise<any> {
   const res = await fetch(path, {
@@ -50,6 +50,31 @@ export default function LoginPage() {
   const [newPin2, setNewPin2] = React.useState('');
   const [grantToken, setGrantToken] = React.useState('');
   const [accounts, setAccounts] = React.useState<OtpAccount[]>([]);
+  // Reverse WhatsApp verification (user sends us a code)
+  const [waId, setWaId] = React.useState('');
+  const [waCode, setWaCode] = React.useState('');
+  const [waLink, setWaLink] = React.useState('');
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll for the inbound code while on the WhatsApp step.
+  React.useEffect(() => {
+    if (otpStep !== 'wa' || !waId) return;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/auth/wa-verify/confirm?id=${encodeURIComponent(waId)}`);
+        const d = await r.json();
+        if (d.grantToken) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setGrantToken(d.grantToken); setOtpStep('setpin');
+        } else if (d.verified) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setError('We got your message, but this number isn’t registered. Use your PIN or contact the office.');
+        }
+      } catch {}
+    };
+    pollRef.current = setInterval(tick, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [otpStep, waId]);
 
   // Already signed in? Skip the login form and go straight to the home page.
   React.useEffect(() => {
@@ -112,23 +137,16 @@ export default function LoginPage() {
     // Prefill the phone if they already typed a number in the email/phone field.
     setOtpPhone(/^\+?\d[\d\s-]{6,}$/.test(email.trim()) ? email.trim() : '');
     setOtpCode(''); setNewPin(''); setNewPin2(''); setGrantToken(''); setAccounts([]);
+    setWaId(''); setWaCode(''); setWaLink('');
   };
   const backToPassword = () => { setError(''); setMode('password'); };
 
   const submitPhone = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true); setError('');
     try {
-      await api('/api/auth/otp/request', { phone: otpPhone });
-      setOtpStep('code');
-    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
-  };
-
-  const submitCode = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true); setError('');
-    try {
-      const { grantToken } = await api('/api/auth/otp/verify', { phone: otpPhone, code: otpCode });
-      setGrantToken(grantToken);
-      setOtpStep('setpin');
+      const { id, code, waLink } = await api('/api/auth/wa-verify/start', { phone: otpPhone });
+      setWaId(id); setWaCode(code); setWaLink(waLink);
+      setOtpStep('wa');
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
@@ -251,7 +269,7 @@ export default function LoginPage() {
                 <form onSubmit={submitPhone} className="space-y-4">
                   <div>
                     <h2 className="text-lg font-semibold text-slate-900">Verify your number</h2>
-                    <p className="text-sm text-slate-500 mb-1">We'll send a 6-digit code to your WhatsApp.</p>
+                    <p className="text-sm text-slate-500 mb-1">Enter your registered phone — you'll send us a quick WhatsApp message to verify it's you.</p>
                   </div>
                   {errorBox}
                   <div>
@@ -263,30 +281,31 @@ export default function LoginPage() {
                     </div>
                   </div>
                   <button type="submit" disabled={loading} className={primaryBtn}>
-                    {loading ? <><Icon name="Loader2" size={18} className="animate-spin" /> Sending…</> : <>Send code <Icon name="ArrowRight" size={18} /></>}
+                    {loading ? <><Icon name="Loader2" size={18} className="animate-spin" /> Starting…</> : <>Verify on WhatsApp <Icon name="ArrowRight" size={18} /></>}
                   </button>
                 </form>
               )}
 
-              {otpStep === 'code' && (
-                <form onSubmit={submitCode} className="space-y-4">
+              {otpStep === 'wa' && (
+                <div className="space-y-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-900">Enter the code</h2>
-                    <p className="text-sm text-slate-500 mb-1">Sent to {otpPhone} on WhatsApp.</p>
+                    <h2 className="text-lg font-semibold text-slate-900">Verify on WhatsApp</h2>
+                    <p className="text-sm text-slate-500">Tap the button below — it opens WhatsApp with a message already typed. Just press <b>send</b> from <b>{otpPhone}</b>, then come back here.</p>
                   </div>
                   {errorBox}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">6-digit code</label>
-                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="––––––"
-                      value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))} required disabled={loading}
-                      className="w-full h-12 px-3 rounded-xl border border-slate-300 bg-white text-center text-2xl tracking-[0.4em] outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60" />
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-center">
+                    <div className="text-xs text-slate-500">Your one-time code</div>
+                    <div className="text-2xl font-bold tracking-[0.25em] text-slate-900 mt-0.5">{waCode}</div>
                   </div>
-                  <button type="submit" disabled={loading || otpCode.length !== 6} className={primaryBtn}>
-                    {loading ? <><Icon name="Loader2" size={18} className="animate-spin" /> Verifying…</> : <>Verify <Icon name="ArrowRight" size={18} /></>}
-                  </button>
-                  <button type="button" onClick={submitPhone as any} disabled={loading}
-                    className="w-full text-sm text-purple-700 hover:text-purple-800">Resend code</button>
-                </form>
+                  <a href={waLink} target="_blank" rel="noopener noreferrer" className={primaryBtn + ' !bg-[#25D366] hover:!bg-[#1da851]'}>
+                    <Icon name="MessageCircle" size={18} /> Open WhatsApp &amp; send
+                  </a>
+                  <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+                    <Icon name="Loader2" size={16} className="animate-spin" /> Waiting for your message…
+                  </div>
+                  <button type="button" onClick={backToPassword} disabled={loading}
+                    className="w-full text-sm text-purple-700 hover:text-purple-800">Use my PIN instead</button>
+                </div>
               )}
 
               {otpStep === 'setpin' && (

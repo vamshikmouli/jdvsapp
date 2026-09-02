@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { matchInboundVerification } from '@/lib/auth/waVerify';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,10 @@ export async function POST(req: NextRequest) {
         }
         for (const msg of v.messages || []) {
           console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${msg.text?.body || ''}`);
+          // Reverse login-verification: the user sent us their one-time code.
+          if (msg.type === 'text' && msg.text?.body && msg.from) {
+            await matchInboundVerification(msg.from, msg.text.body).catch((e) => console.log('[WA-VERIFY] match error:', e?.message));
+          }
         }
       }
     }

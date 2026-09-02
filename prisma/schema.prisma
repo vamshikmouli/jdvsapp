@@ -1193,3 +1193,20 @@ model PayrollItem {
   @@unique([runId, staffId])
   @@index([staffId])
 }
+
+// WhatsApp "reverse" verification: the user sends a one-time code to the school
+// WhatsApp number; the inbound webhook matches it (and the sender number) to
+// prove they control that phone. Free — no Authentication template needed.
+model WaVerification {
+  id         String    @id @default(cuid())
+  phone      String    // phone being verified, wa_id form (e.g. 919876543210)
+  code       String    @unique // short code the user sends in the message
+  verifiedAt DateTime?
+  fromNumber String?   // the wa_id that actually sent the code (proof)
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+
+  @@index([phone])
+  @@index([createdAt])
+}
