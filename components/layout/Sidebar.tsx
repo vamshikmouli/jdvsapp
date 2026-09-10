@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { STAFF_NAV, ROLE_META } from '@/lib/navigation';
@@ -27,9 +27,21 @@ interface SidebarProps {
 
 export function Sidebar({ open = false, onClose, collapsed = false }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
   const brand = useBranding();
   const [menuOpen, setMenuOpen] = React.useState(false);
+
+  // Section lock — some menus need a password to open (configured in Settings).
+  const [lock, setLock] = React.useState<{ lockedMenus: string[]; hasPassword: boolean }>({ lockedMenus: [], hasPassword: false });
+  const [gate, setGate] = React.useState<string | null>(null); // nav id being unlocked
+  const [gatePw, setGatePw] = React.useState('');
+  const [gateErr, setGateErr] = React.useState('');
+  const [gateBusy, setGateBusy] = React.useState(false);
+  React.useEffect(() => {
+    fetch('/api/settings/section-lock').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setLock({ lockedMenus: d.lockedMenus || [], hasPassword: !!d.hasPassword }); }).catch(() => {});
+  }, []);
+  const isLocked = (id: string) => lock.hasPassword && lock.lockedMenus.includes(id);
 
   // Collapsible nav groups — open by default, preference remembered per device.
   const [closedGroups, setClosedGroups] = React.useState<Record<string, boolean>>({});
@@ -64,6 +76,18 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
   const isActive = (id: string) => {
     const href = hrefFor(id);
     return pathname === href || pathname.startsWith(href + '/');
+  };
+
+  const submitGate = async () => {
+    if (!gate) return;
+    setGateBusy(true); setGateErr('');
+    try {
+      const r = await fetch('/api/settings/section-lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: gatePw }) });
+      const d = await r.json();
+      if (d.ok) { const target = gate; setGate(null); setGatePw(''); onClose?.(); router.push(hrefFor(target)); }
+      else setGateErr('Incorrect password.');
+    } catch { setGateErr('Could not verify — try again.'); }
+    finally { setGateBusy(false); }
   };
 
   const handleSignOut = async () => {
@@ -109,18 +133,25 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = isActive(item.id);
-                return (
-                  <Link
-                    key={item.id}
-                    href={hrefFor(item.id)}
-                    onClick={onClose}
-                    title={item.label}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${collapsed ? 'lg:justify-center lg:px-2' : ''} ${
-                      active ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
+                const locked = isLocked(item.id) && !active;
+                const cls = `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${collapsed ? 'lg:justify-center lg:px-2' : ''} ${active ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-slate-700 hover:bg-slate-100'}`;
+                const inner = (
+                  <>
                     <Icon name={item.icon as any} size={18} className="flex-shrink-0" />
                     <span className={`flex-1 text-left ${collapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                    {isLocked(item.id) && <Icon name="Lock" size={13} className={`text-slate-400 flex-shrink-0 ${collapsed ? 'lg:hidden' : ''}`} />}
+                  </>
+                );
+                // Locked (and not already inside it): a plain button that opens the
+                // password prompt — never navigates, so nothing leaks before unlock.
+                return locked ? (
+                  <button key={item.id} type="button" title={`${item.label} — password required`}
+                    onClick={() => { setGate(item.id); setGatePw(''); setGateErr(''); }} className={cls}>
+                    {inner}
+                  </button>
+                ) : (
+                  <Link key={item.id} href={hrefFor(item.id)} onClick={onClose} title={item.label} className={cls}>
+                    {inner}
                   </Link>
                 );
               })}
@@ -210,6 +241,33 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
         </button>
       </div>
       </aside>
+
+      {/* Section-lock password prompt */}
+      {gate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { if (!gateBusy) setGate(null); }}>
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-purple-700"><Icon name="Lock" size={18} /></div>
+              <div>
+                <div className="font-semibold text-slate-900 leading-tight">Password required</div>
+                <div className="text-xs text-slate-500">{STAFF_NAV.flatMap((g) => g.items).find((i) => i.id === gate)?.label || 'This section'}</div>
+              </div>
+            </div>
+            <input
+              type="password" autoFocus value={gatePw} disabled={gateBusy}
+              onChange={(e) => { setGatePw(e.target.value); setGateErr(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitGate(); if (e.key === 'Escape') setGate(null); }}
+              placeholder="Enter section password"
+              className="mt-3 w-full px-3 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+            />
+            {gateErr && <div className="mt-1.5 text-sm text-red-600">{gateErr}</div>}
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setGate(null)} disabled={gateBusy} className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5">Cancel</button>
+              <button onClick={submitGate} disabled={gateBusy || !gatePw} className="text-sm font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 rounded-md px-4 py-1.5">{gateBusy ? 'Checking…' : 'Unlock'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

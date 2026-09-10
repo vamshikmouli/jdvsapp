@@ -234,3 +234,15 @@ a:hover {
   background-repeat: no-repeat;
   animation: skeleton-shimmer 1.3s ease-in-out infinite;
 }
+
+/* Number inputs (fees, amounts, payroll…) read better without the tiny up/down
+   spinner arrows — hide them in every browser. Users type the value directly. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

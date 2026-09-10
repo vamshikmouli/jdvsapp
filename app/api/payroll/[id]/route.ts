@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     await requirePermission('PAYROLL_VIEW');
     const run = await prisma.payrollRun.findUnique({
       where: { id: params.id },
-      include: { items: { orderBy: { staffName: 'asc' } } },
+      include: { items: { orderBy: [{ staff: { payOrder: 'asc' } }, { staffName: 'asc' }] } },
     });
     if (!run) return NextResponse.json({ error: 'Run not found' }, { status: 404 });
     return NextResponse.json(run);

@@ -107,6 +107,33 @@ export async function createTextTemplate(opts: {
   return { ok: true, status: t.status, id: t.id };
 }
 
+/**
+ * Send a FREE-FORM text message (no template). Only delivers inside an open
+ * 24-hour customer-service window — i.e. after the user has messaged us. We use
+ * this to reply-confirm a reverse login-verification the user just triggered.
+ */
+export async function sendWhatsAppText(opts: {
+  to: string; text: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!token || !phoneId) return { ok: false, error: 'WhatsApp not configured' };
+  const body = {
+    messaging_product: 'whatsapp',
+    to: opts.to,
+    type: 'text',
+    text: { preview_url: false, body: opts.text },
+  };
+  const res = await fetch(`${GRAPH}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j: any = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: `${res.status} ${JSON.stringify(j?.error || j)}` };
+  return { ok: true, id: j?.messages?.[0]?.id };
+}
+
 /** Send a TEXT-only template (no header) with N body variables. */
 export async function sendTextTemplate(opts: {
   to: string; templateName: string; lang?: string; bodyParams: string[];

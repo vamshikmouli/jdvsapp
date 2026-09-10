@@ -28,7 +28,13 @@ export async function GET(req: NextRequest) {
       where.OR = [
         { name: { contains: query, mode: 'insensitive' } },
         { id: { contains: query, mode: 'insensitive' } },
+        { admissionNo: { contains: query, mode: 'insensitive' } },
         { guardianName: { contains: query, mode: 'insensitive' } },
+        { fatherName: { contains: query, mode: 'insensitive' } },
+        { motherName: { contains: query, mode: 'insensitive' } },
+        { guardianPhone: { contains: query, mode: 'insensitive' } },
+        { fatherPhone: { contains: query, mode: 'insensitive' } },
+        { motherPhone: { contains: query, mode: 'insensitive' } },
       ];
     }
 

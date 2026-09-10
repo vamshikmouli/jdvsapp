@@ -7,7 +7,7 @@ import { Icon } from '@/components/Icon';
 
 interface RunSummary { id: string; periodMonth: string; status: string; creditOn: string; staffCount: number; netTotal: number; paidCount: number }
 interface Item {
-  id: string; staffName: string; designation: string | null; accountNo: string | null; ifsc: string | null; attendanceTracked: boolean;
+  id: string; staffId: string; staffName: string; designation: string | null; accountNo: string | null; ifsc: string | null; attendanceTracked: boolean;
   presentDays: number; halfDays: number; paidLeaveDays: number; unpaidLeaveDays: number; absentDays: number;
   holidayDays: number; weeklyOffDays: number; overBalanceDays: number; lopDays: number;
   grossSalary: number; lopAmount: number; pfAmount: number; esiAmount: number; esiApplicable?: boolean; otherDeductions: number; bonus: number; netSalary: number;
@@ -112,6 +112,27 @@ export default function PayrollPage() {
   const patchItem = async (id: string, body: any) => {
     const res = await fetch(`/api/payroll/item/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (res.ok) { const updated: Item = await res.json(); setDetail((d) => d ? { ...d, items: d.items.map((it) => it.id === id ? updated : it) } : d); loadRuns(); }
+  };
+
+  // Manual salary pay-order — move a staff up/down. Saves staff.payOrder = 1..N
+  // so this exact order sticks for every month's register and the Canara CSV.
+  const [savingOrder, setSavingOrder] = useState(false);
+  const moveRow = async (index: number, dir: -1 | 1) => {
+    if (!detail || savingOrder) return;
+    const j = index + dir;
+    if (j < 0 || j >= detail.items.length) return;
+    const items = [...detail.items];
+    [items[index], items[j]] = [items[j], items[index]];
+    setDetail({ ...detail, items });           // optimistic
+    setSavingOrder(true); setError('');
+    try {
+      const res = await fetch('/api/payroll/pay-order', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: items.map((it) => it.staffId) }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to save order'); }
+    } catch (e: any) { setError(e.message); if (detail) await loadDetail(detail.id); }
+    finally { setSavingOrder(false); }
   };
 
   if (!canView) return <EmptyState icon="Lock" title="Not available" body="You don't have permission to view payroll." />;
@@ -229,6 +250,15 @@ export default function PayrollPage() {
                         {/* Staff */}
                         <td className="px-5 py-3 sticky left-0 bg-inherit group-hover:bg-purple-50/40">
                           <div className="flex items-center gap-3">
+                            {canManage && (
+                              <div className="flex flex-col -my-1 mr-0.5 text-slate-300">
+                                <button type="button" onClick={() => moveRow(i, -1)} disabled={i === 0 || savingOrder}
+                                  className="hover:text-purple-600 disabled:opacity-30 disabled:hover:text-slate-300 leading-none" title="Move up (pay earlier)"><Icon name="ChevronUp" size={15} /></button>
+                                <button type="button" onClick={() => moveRow(i, 1)} disabled={i === detail.items.length - 1 || savingOrder}
+                                  className="hover:text-purple-600 disabled:opacity-30 disabled:hover:text-slate-300 leading-none" title="Move down (pay later)"><Icon name="ChevronDown" size={15} /></button>
+                              </div>
+                            )}
+                            <span className="text-xs font-semibold text-slate-400 tabular-nums w-5 text-right shrink-0">{i + 1}</span>
                             <div className={`h-9 w-9 rounded-full grid place-items-center text-xs font-bold shrink-0 ${avatarColor(it.staffName)}`}>{initials(it.staffName)}</div>
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-900 truncate">{it.staffName}</div>

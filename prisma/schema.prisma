@@ -230,6 +230,7 @@ model Staff {
   email       String?
   phone       String?
   designation String?   // "Assistant Teacher", "Admin", "Office Staff", "Driver", ...
+  payOrder    Int       @default(0)   // manual salary pay-order for payroll (1 = pay first; 0 = unset, sorts after)
   dob                   DateTime? @db.Date
   joiningDate           DateTime? @db.Date
   serviceJoiningDate    DateTime? @db.Date
@@ -721,6 +722,16 @@ model Settings {
   lateFeeEnabled   Boolean @default(false)
   lateGraceDays    Int     @default(0)
   lateFeeAmount    Int     @default(0)
+  // Section lock — a password gate for sensitive menus (Payroll, Roles…). The
+  // password is stored hashed; `lockedMenus` holds the nav ids that require it.
+  sectionPasswordHash String?
+  lockedMenus         String[] @default([])
+  // Fee collection preferences
+  // Date field default on Collect Payment: 'today' | 'empty' | 'fixed'
+  collectDateMode  String   @default("today")
+  collectDateFixed String?  // yyyy-mm-dd, used when collectDateMode = 'fixed'
+  // Auto-allocate priority: ordered fee-type keys, first = filled first. Empty = built-in default.
+  feeAllocPriority String[] @default([])
   updatedAt       DateTime @updatedAt
 }
 

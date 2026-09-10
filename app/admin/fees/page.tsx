@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptyState, Skeleton, TableRowSkeleton, Avatar, Chip, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type ChargeStatus, type AccountSummary } from '@/lib/fees';
-import { CLASSES, CLASS_ID_BY_KEY, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, type Gender as FeeGender } from '@/lib/feeStructure';
+import { CLASSES, CLASS_ID_BY_KEY, CLASS_KEY_BY_ID, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, TUITION, softwareFee, type Gender as FeeGender, type ClassKey } from '@/lib/feeStructure';
 import { UNIFORM_ITEM_DEFS, itemsForFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
-import { AccountView, CollectDrawer, AssignDrawer, type Account } from './account-ui';
+import { CollectDrawer, PaymentTimeline, type Account } from './account-ui';
+import { useBranding } from '@/components/useBranding';
+import { CollectionSettingsPanel } from './collection-settings';
 
 const VILLAGE_FEE_MAP: Record<string, number> = Object.fromEntries(VILLAGE_VAN_FEES.map((v) => [v.village, v.fee]));
 
@@ -67,16 +69,16 @@ export default function FeesPage() {
         ) : undefined}
       />
 
-      <div className="flex flex-wrap items-center gap-1 mt-6 border-b border-slate-200">
+      <div className="flex flex-nowrap items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.filter((t) => !t.perm || perms.includes(t.perm)).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap flex-shrink-0 transition-colors ${
               tab === t.id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            <Icon name={t.icon as any} size={16} />
+            <Icon name={t.icon as any} size={16} className="flex-shrink-0" />
             {t.label}
           </button>
         ))}
@@ -204,33 +206,136 @@ function ConcessionsTab() {
 
 /* ============================ Counter billing (walk-in) ============================ */
 
+type CounterAdmission = 'new' | 'old';
+type CounterChild = {
+  id: string;
+  name: string;
+  classKey: ClassKey;
+  gender: FeeGender;
+  admission: CounterAdmission;
+  qty: Record<string, number>;   // uniform item key → quantity (pre-ticked for new admission)
+  idCard: boolean;
+  newSet: boolean;
+  studentId?: string;            // set when linked to an existing enrolled student
+};
+type CounterCfg = {
+  matrix: UniformMatrix | null;
+  feeTypes: { id: string; key: string; name: string }[];
+  classFees: { classId: string; feeTypeId: string; amount: number }[];
+};
+
+let counterChildSeq = 0;
+const makeCounterChild = (): CounterChild => ({
+  id: `cc${Date.now()}_${counterChildSeq++}`,
+  name: '', classKey: CLASSES[0], gender: 'M', admission: 'new', qty: {}, idCard: true, newSet: true,
+});
+
+const ccInput = 'px-2.5 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20';
+
 function CounterTab() {
-  const [classKey, setClassKey] = useState(CLASSES[0]);
-  const [gender, setGender] = useState<FeeGender>('M');
-  const [qty, setQty] = useState<Record<string, number>>({});
-  const [idCard, setIdCard] = useState(false);
-  const [newAdm, setNewAdm] = useState(false);
+  const [parentName, setParentName] = useState('');
+  const [children, setChildren] = useState<CounterChild[]>([makeCounterChild()]);
+  const [cfg, setCfg] = useState<CounterCfg>({ matrix: null, feeTypes: [], classFees: [] });
+  const [search, setSearch] = useState<{ id: string; q: string; results: any[]; loading: boolean } | null>(null);
+  const seeded = useRef(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [matrix, setMatrix] = useState<UniformMatrix | null>(null);
-  useEffect(() => { fetch('/api/fees/config').then((r) => (r.ok ? r.json() : null)).then((d) => setMatrix(d?.uniformMatrix ?? null)).catch(() => {}); }, []);
+  useEffect(() => {
+    fetch('/api/fees/config').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) setCfg({ matrix: d.uniformMatrix ?? null, feeTypes: d.feeTypes ?? [], classFees: d.classFees ?? [] });
+    }).catch(() => {});
+  }, []);
 
-  const classId = CLASS_ID_BY_KEY[classKey];
-  const items = useMemo(() => itemsForFromMatrix(matrix, classId, gender), [matrix, classId, gender]);
-  // reset quantities when the applicable item set changes
-  useEffect(() => { setQty({}); }, [classId, gender]);
+  // Resolve a fee head by concept (tuition / software / idcard / newadmission),
+  // tolerant of admin-named keys/slugs — mirrors the server's resolveHeadId.
+  const feeTypeId = useCallback((concept: string): string | undefined => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const h = norm(concept);
+    const t = cfg.feeTypes;
+    return t.find((x) => x.key === concept)?.id
+      ?? t.find((x) => norm(x.key) === h || norm(x.key).startsWith(h))?.id
+      ?? t.find((x) => norm(x.name).startsWith(h))?.id;
+  }, [cfg.feeTypes]);
+  const classFeeAmt = useCallback((classId: string, concept: string): number => {
+    const ftId = feeTypeId(concept);
+    if (!ftId) return 0;
+    return cfg.classFees.find((c) => c.classId === classId && c.feeTypeId === ftId)?.amount || 0;
+  }, [cfg.classFees, feeTypeId]);
 
-  const lines = useMemo(() => {
-    const out: { name: string; qty: number; price: number; amount: number }[] = [];
-    for (const it of items) {
-      const q = qty[it.key] || 0;
-      if (q > 0) out.push({ name: it.name, qty: q, price: it.price, amount: it.price * q });
+  const tuitionFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'tuition') || TUITION[ck] || 0, [classFeeAmt]);
+  const softwareFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'software') || softwareFee(CLASS_ID_BY_KEY[ck]) || 0, [classFeeAmt]);
+  const idCardFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'idcard') || ID_CARD_FEE, [classFeeAmt]);
+  const newSetFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'newadmission') || NEW_ADMISSION_FEE, [classFeeAmt]);
+  const uniformItemsFor = useCallback((ck: ClassKey, g: FeeGender) => itemsForFromMatrix(cfg.matrix, CLASS_ID_BY_KEY[ck], g), [cfg.matrix]);
+  const allQty = useCallback((ck: ClassKey, g: FeeGender): Record<string, number> =>
+    Object.fromEntries(uniformItemsFor(ck, g).map((it) => [it.key, 1])), [uniformItemsFor]);
+
+  // The first child is created before /api/fees/config resolves, so its uniform
+  // quantities are empty. Seed the uniform set for any new-admission child once
+  // the matrix arrives (runs once).
+  useEffect(() => {
+    if (seeded.current) return;
+    if (!cfg.feeTypes.length && !cfg.matrix) return;
+    seeded.current = true;
+    setChildren((cs) => cs.map((c) => (c.admission === 'new' && Object.keys(c.qty).length === 0
+      ? { ...c, qty: allQty(c.classKey, c.gender) } : c)));
+  }, [cfg, allQty]);
+
+  const patchChild = (id: string, p: Partial<CounterChild>) =>
+    setChildren((cs) => cs.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const setAdmission = (ch: CounterChild, a: CounterAdmission) =>
+    patchChild(ch.id, a === 'new'
+      // New admission: uniforms pre-ticked, ID card + new-admission set on.
+      ? { admission: 'new', idCard: true, newSet: true, qty: allQty(ch.classKey, ch.gender) }
+      // Old admission: only Tuition + Software auto; uniforms optional & unticked.
+      : { admission: 'old', idCard: false, newSet: false, qty: {} });
+  const setClassGender = (ch: CounterChild, p: Partial<Pick<CounterChild, 'classKey' | 'gender'>>) => {
+    const next = { ...ch, ...p };
+    // Item set changes with class/gender: re-seed for new admission, clear for old.
+    patchChild(ch.id, { ...p, qty: next.admission === 'new' ? allQty(next.classKey, next.gender) : {} });
+  };
+
+  // Attach an existing enrolled student to this child row (fills name/class/gender,
+  // marks it an old admission by default).
+  const pickStudent = (ch: CounterChild, stu: any) => {
+    const ck = (stu.classId && CLASS_KEY_BY_ID[stu.classId as string]) || ch.classKey;
+    const g: FeeGender = stu.gender === 'F' ? 'F' : 'M';
+    patchChild(ch.id, { name: stu.name || ch.name, classKey: ck, gender: g, studentId: stu.id, admission: 'old', idCard: false, newSet: false, qty: {} });
+    setSearch(null);
+  };
+  const runSearch = (id: string, q: string) => {
+    setSearch({ id, q, results: search?.id === id ? search.results : [], loading: q.trim().length >= 1 });
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (q.trim().length < 1) { setSearch({ id, q, results: [], loading: false }); return; }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/students?status=ACTIVE&q=${encodeURIComponent(q.trim())}`);
+        const data = r.ok ? await r.json() : [];
+        setSearch((s) => (s && s.id === id ? { ...s, results: Array.isArray(data) ? data.slice(0, 8) : [], loading: false } : s));
+      } catch { setSearch((s) => (s && s.id === id ? { ...s, results: [], loading: false } : s)); }
+    }, 250);
+  };
+
+  const childLines = useCallback((ch: CounterChild): { name: string; qty: number; amount: number }[] => {
+    const out: { name: string; qty: number; amount: number }[] = [];
+    out.push({ name: 'Tuition fee', qty: 1, amount: tuitionFor(ch.classKey) });
+    out.push({ name: 'Software', qty: 1, amount: softwareFor(ch.classKey) });
+    // Uniforms — available for both new and old admission (ticked lines only).
+    for (const it of uniformItemsFor(ch.classKey, ch.gender)) {
+      const q = ch.qty[it.key] || 0;
+      if (q > 0) out.push({ name: it.name, qty: q, amount: it.price * q });
     }
-    if (idCard) out.push({ name: 'ID Card', qty: 1, price: ID_CARD_FEE, amount: ID_CARD_FEE });
-    if (newAdm) out.push({ name: 'New Admission (tie + belt + socks)', qty: 1, price: NEW_ADMISSION_FEE, amount: NEW_ADMISSION_FEE });
+    // One-time new-admission charges.
+    if (ch.admission === 'new') {
+      if (ch.newSet) out.push({ name: 'New admission set (tie + belt + socks)', qty: 1, amount: newSetFor(ch.classKey) });
+      if (ch.idCard) out.push({ name: 'ID Card', qty: 1, amount: idCardFor(ch.classKey) });
+    }
     return out;
-  }, [items, qty, idCard, newAdm]);
+  }, [tuitionFor, softwareFor, uniformItemsFor, newSetFor, idCardFor]);
 
-  const total = lines.reduce((t, l) => t + l.amount, 0);
+  const childTotal = (ch: CounterChild) => childLines(ch).reduce((t, l) => t + l.amount, 0);
+  const grandTotal = children.reduce((t, ch) => t + childTotal(ch), 0);
+  const clabel = (ch: CounterChild) => `${ch.name.trim() || 'Child'} · ${ch.classKey} · ${ch.gender === 'M' ? 'Boy' : 'Girl'} · ${ch.admission === 'new' ? 'New' : 'Old'}${ch.studentId ? ` · ${ch.studentId}` : ''}`;
 
   return (
     <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -238,49 +343,134 @@ function CounterTab() {
 
       {/* picker */}
       <div className="lg:col-span-2 space-y-4">
-        <Card title="Build a walk-in bill">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span className="text-xs text-slate-500 w-full sm:w-auto">Class</span>
-            {CLASSES.map((c) => (
-              <button key={c} onClick={() => setClassKey(c)}
-                className={`px-2.5 py-1 rounded-pill text-xs font-medium transition-colors ${classKey === c ? 'bg-purple-500 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>{c}</button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-xs text-slate-500">Gender</span>
-            {(['M', 'F'] as FeeGender[]).map((g) => (
-              <button key={g} onClick={() => setGender(g)}
-                className={`px-3 py-1 rounded-pill text-xs font-medium transition-colors ${gender === g ? 'bg-purple-500 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>{g === 'M' ? 'Boy' : 'Girl'}</button>
-            ))}
+        <Card title="Walk-in bill (per parent)">
+          <p className="text-xs text-slate-400 -mt-1 mb-4">Add each child, pick new or old admission — fees fill in automatically.</p>
+          <div className="mb-4">
+            <label className="text-xs text-slate-500 block mb-1">Parent / guardian name <span className="text-slate-400">(optional)</span></label>
+            <input value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="e.g. Ramesh Kumar" className={ccInput + ' w-full sm:w-72'} />
           </div>
 
-          <div className="space-y-1.5">
-            {items.map((it) => {
-              const q = qty[it.key] || 0;
+          <div className="space-y-4">
+            {children.map((ch, idx) => {
+              const uniforms = uniformItemsFor(ch.classKey, ch.gender);
               return (
-                <div key={it.key} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
-                  <label className="flex items-center gap-2 flex-1 text-sm text-slate-700 cursor-pointer">
-                    <input type="checkbox" checked={q > 0} onChange={(e) => setQty((s) => ({ ...s, [it.key]: e.target.checked ? 1 : 0 }))} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" />
-                    {it.name}
-                  </label>
-                  <span className="text-xs text-slate-400 tabular-nums w-16 text-right">{feeMoney(it.price)}</span>
-                  {q > 0 && (
-                    <input type="number" min={1} value={String(q)} onChange={(e) => setQty((s) => ({ ...s, [it.key]: Math.max(0, Math.round(Number(e.target.value) || 0)) }))} className="w-16 py-1 text-right tabular-nums rounded-md border border-slate-200 text-sm" />
-                  )}
+                <div key={ch.id} className="rounded-xl border border-slate-200 p-3 sm:p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold flex-shrink-0">{idx + 1}</span>
+                    <input value={ch.name} onChange={(e) => patchChild(ch.id, { name: e.target.value })} placeholder={`Child ${idx + 1} name`} className={ccInput + ' flex-1 min-w-0'} />
+                    {children.length > 1 && (
+                      <button onClick={() => setChildren((cs) => cs.filter((c) => c.id !== ch.id))} className="p-1.5 rounded-lg text-slate-400 hover:text-danger hover:bg-red-50 flex-shrink-0" title="Remove child">
+                        <Icon name="Trash2" size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Existing-student lookup */}
+                  <div className="relative mb-3">
+                    {ch.studentId ? (
+                      <div className="inline-flex items-center gap-2 rounded-lg bg-purple-50 border border-purple-200 px-2.5 py-1.5 text-xs text-purple-700">
+                        <Icon name="UserCheck" size={14} />
+                        <span className="font-medium">Existing student · {ch.studentId}</span>
+                        <button onClick={() => patchChild(ch.id, { studentId: undefined })} className="text-purple-400 hover:text-purple-700" title="Unlink">
+                          <Icon name="X" size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          value={search?.id === ch.id ? search.q : ''}
+                          onChange={(e) => runSearch(ch.id, e.target.value)}
+                          onFocus={(e) => runSearch(ch.id, e.target.value)}
+                          placeholder="Add existing student — search name or ID"
+                          className={ccInput + ' w-full sm:w-80'} />
+                        {search?.id === ch.id && (search.q.trim().length >= 1) && (
+                          <div className="absolute z-20 mt-1 w-full sm:w-80 max-h-60 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                            {search.loading ? (
+                              <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
+                            ) : search.results.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-slate-400">No matches.</div>
+                            ) : search.results.map((stu) => (
+                              <button key={stu.id} onClick={() => pickStudent(ch, stu)}
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50">
+                                <span className="text-slate-700 truncate">{stu.name}</span>
+                                <span className="text-xs text-slate-400 flex-shrink-0">{stu.class?.name ? shortClass(stu.class.name) : '—'} · {stu.id}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <select value={ch.classKey} onChange={(e) => setClassGender(ch, { classKey: e.target.value as ClassKey })} className={ccInput}>
+                      {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                      {(['M', 'F'] as FeeGender[]).map((g) => (
+                        <button key={g} onClick={() => setClassGender(ch, { gender: g })}
+                          className={`px-3 py-2 text-xs font-medium transition-colors ${ch.gender === g ? 'bg-purple-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{g === 'M' ? 'Boy' : 'Girl'}</button>
+                      ))}
+                    </div>
+                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                      {(['new', 'old'] as CounterAdmission[]).map((a) => (
+                        <button key={a} onClick={() => setAdmission(ch, a)}
+                          className={`px-3 py-2 text-xs font-medium transition-colors ${ch.admission === a ? 'bg-purple-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{a === 'new' ? 'New admission' : 'Old admission'}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* auto fees */}
+                  <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">Tuition fee</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(tuitionFor(ch.classKey))}</span></div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">Software</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(softwareFor(ch.classKey))}</span></div>
+                  </div>
+
+                  <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
+                    <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">
+                      Uniform{ch.admission === 'new' ? ' & one-time' : ''}
+                      {ch.admission === 'old' && <span className="ml-1 normal-case text-slate-400">(optional — tick what they take)</span>}
+                    </div>
+                    {uniforms.map((it) => {
+                      const q = ch.qty[it.key] || 0;
+                      return (
+                        <div key={it.key} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-1.5">
+                          <label className="flex items-center gap-2 flex-1 text-sm text-slate-700 cursor-pointer">
+                            <input type="checkbox" checked={q > 0} onChange={(e) => patchChild(ch.id, { qty: { ...ch.qty, [it.key]: e.target.checked ? 1 : 0 } })} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" />
+                            {it.name}
+                          </label>
+                          <span className="text-xs text-slate-400 tabular-nums w-16 text-right">{feeMoney(it.price)}</span>
+                          {q > 0 && (
+                            <input type="number" min={1} value={String(q)} onChange={(e) => patchChild(ch.id, { qty: { ...ch.qty, [it.key]: Math.max(0, Math.round(Number(e.target.value) || 0)) } })} className="w-14 py-1 text-right tabular-nums rounded-md border border-slate-200 text-sm" />
+                          )}
+                        </div>
+                      );
+                    })}
+                    {ch.admission === 'new' && (
+                      <>
+                        <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer rounded-lg border border-slate-200 px-3 py-1.5">
+                          <span className="flex items-center gap-2"><input type="checkbox" checked={ch.newSet} onChange={(e) => patchChild(ch.id, { newSet: e.target.checked })} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" /> New admission set <span className="text-xs text-slate-400">tie + belt + socks</span></span>
+                          <span className="text-slate-500 tabular-nums">{feeMoney(newSetFor(ch.classKey))}</span>
+                        </label>
+                        <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer rounded-lg border border-slate-200 px-3 py-1.5">
+                          <span className="flex items-center gap-2"><input type="checkbox" checked={ch.idCard} onChange={(e) => patchChild(ch.id, { idCard: e.target.checked })} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" /> ID Card</span>
+                          <span className="text-slate-500 tabular-nums">{feeMoney(idCardFor(ch.classKey))}</span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-100 mt-2.5 pt-2.5">
+                    <span className="text-xs text-slate-500">Subtotal</span>
+                    <span className="font-semibold tabular-nums text-slate-900">{feeMoney(childTotal(ch))}</span>
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-            <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer">
-              <span className="flex items-center gap-2"><input type="checkbox" checked={idCard} onChange={(e) => setIdCard(e.target.checked)} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" /> ID Card</span>
-              <span className="text-slate-500 tabular-nums">{feeMoney(ID_CARD_FEE)}</span>
-            </label>
-            <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer">
-              <span className="flex items-center gap-2"><input type="checkbox" checked={newAdm} onChange={(e) => setNewAdm(e.target.checked)} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" /> New Admission set <span className="text-xs text-slate-400">tie + belt + socks</span></span>
-              <span className="text-slate-500 tabular-nums">{feeMoney(NEW_ADMISSION_FEE)}</span>
-            </label>
+          <div className="mt-4">
+            <Button icon="Plus" onClick={() => setChildren((cs) => [...cs, makeCounterChild()])}>Add child</Button>
           </div>
         </Card>
       </div>
@@ -290,29 +480,44 @@ function CounterTab() {
         <div id="counterbill" className="bg-white border border-slate-200 rounded-lg shadow-xs p-5 sticky top-4">
           <div className="text-center pb-3 border-b border-slate-200">
             <div className="font-bold text-slate-900">Jnana Deepika</div>
-            <div className="text-xs text-slate-500">Counter bill · {classKey} · {gender === 'M' ? 'Boy' : 'Girl'}</div>
+            <div className="text-xs text-slate-500">Counter bill{parentName.trim() ? ` · ${parentName.trim()}` : ''}</div>
             <div className="text-[11px] text-slate-400">{new Date().toLocaleDateString('en-IN')}</div>
           </div>
-          {lines.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-6">Tick items to build the bill.</p>
+          {grandTotal === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">Add children and pick items to build the bill.</p>
           ) : (
-            <table className="w-full text-sm my-3">
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-1.5 text-slate-700">{l.name}{l.qty > 1 ? ` ×${l.qty}` : ''}</td>
-                    <td className="py-1.5 text-right tabular-nums text-slate-900">{feeMoney(l.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="my-3 space-y-3">
+              {children.map((ch) => {
+                const lines = childLines(ch);
+                if (!lines.length) return null;
+                return (
+                  <div key={ch.id}>
+                    <div className="text-xs font-semibold text-purple-700">{clabel(ch)}</div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {lines.map((l, i) => (
+                          <tr key={i} className="border-b border-slate-100">
+                            <td className="py-1 text-slate-700">{l.name}{l.qty > 1 ? ` ×${l.qty}` : ''}</td>
+                            <td className="py-1 text-right tabular-nums text-slate-900">{feeMoney(l.amount)}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td className="py-1 text-right text-xs text-slate-500">Subtotal</td>
+                          <td className="py-1 text-right tabular-nums font-medium text-slate-700">{feeMoney(childTotal(ch))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
           )}
           <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-            <span className="font-semibold text-slate-900">Total</span>
-            <span className="font-bold text-lg tabular-nums text-slate-900">{feeMoney(total)}</span>
+            <span className="font-semibold text-slate-900">Grand total</span>
+            <span className="font-bold text-lg tabular-nums text-slate-900">{feeMoney(grandTotal)}</span>
           </div>
           <div className="mt-4 no-print">
-            <Button kind="primary" icon="Printer" className="w-full justify-center" onClick={() => window.print()} disabled={lines.length === 0}>Print bill</Button>
+            <Button kind="primary" icon="Printer" className="w-full justify-center" onClick={() => window.print()} disabled={grandTotal === 0}>Print bill</Button>
           </div>
         </div>
       </div>
@@ -325,6 +530,8 @@ function CounterTab() {
 interface AccountRow {
   id: string;
   name: string;
+  fatherName: string | null;
+  phone: string | null;
   classId: string | null;
   className: string | null;
   village: string | null;
@@ -332,6 +539,10 @@ interface AccountRow {
   totalPaid: number;
   totalBalance: number;
   status: ChargeStatus;
+  hasVan?: boolean;
+  lastPaidAt?: string | null;
+  lastSeq?: number;
+  heads?: { name: string; balance: number }[];
 }
 
 function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }: { refreshKey?: number; canCollect: boolean; canVoid?: boolean; canNotify?: boolean; canManage?: boolean }) {
@@ -340,12 +551,20 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [classId, setClassId] = useState('all');
+  const [classList, setClassList] = useState<{ id: string; name: string }[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortState>({ key: 'status', dir: 'asc' }); // paid → top
+  const [timeline, setTimeline] = useState<{ id: string; name: string } | null>(null);
+  const [sort, setSort] = useState<SortState>({ key: 'recent', dir: 'desc' }); // most recent collection → top
   const onSort = (k: string) => setSort((s) => nextSort(s, k));
 
   // status order so "paid" sorts to the top in ascending order
   const STATUS_RANK: Record<string, number> = { paid: 0, partial: 1, due: 2, overdue: 3 };
+
+  // Unpaid uniform / ID-card / item heads — flags students who took items on credit.
+  const itemsDue = (r: AccountRow) =>
+    (r.heads || []).filter((h) => h.balance > 0 && /uniform|tie|belt|sock|id\s*card|track\s*suit/i.test(h.name));
+  const itemsDueTotal = (r: AccountRow) => itemsDue(r).reduce((t, h) => t + h.balance, 0);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -354,6 +573,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
       const params = new URLSearchParams();
       if (search) params.set('q', search);
       if (filter !== 'all') params.set('filter', filter);
+      if (classId !== 'all') params.set('classId', classId);
       const res = await fetch(`/api/fees/accounts?${params}`);
       if (!res.ok) throw new Error(`Failed (${res.status})`);
       const data = await res.json();
@@ -363,20 +583,18 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
     } finally {
       setLoading(false);
     }
-  }, [search, filter]);
+  }, [search, filter, classId]);
 
   useEffect(() => {
     const t = setTimeout(fetchRows, 250);
     return () => clearTimeout(t);
   }, [fetchRows, refreshKey]); // reload after a bulk import from the header
 
-  const kpis = useMemo(() => {
-    const billed = rows.reduce((t, r) => t + r.totalCharged, 0);
-    const collected = rows.reduce((t, r) => t + r.totalPaid, 0);
-    const outstanding = rows.reduce((t, r) => t + r.totalBalance, 0);
-    const withDues = rows.filter((r) => r.totalBalance > 0).length;
-    return { billed, collected, outstanding, withDues };
-  }, [rows]);
+  // Class list for the class-wise filter/print.
+  useEffect(() => {
+    fetch('/api/fees/grid').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.classes) setClassList(d.classes.map((c: any) => ({ id: c.id, name: c.name }))); }).catch(() => {});
+  }, []);
+
 
   const sorted = useMemo(
     () => sortRows(rows, sort, (r, k) =>
@@ -385,6 +603,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
       k === 'totalCharged' ? r.totalCharged :
       k === 'totalPaid' ? r.totalPaid :
       k === 'totalBalance' ? r.totalBalance :
+      k === 'recent' ? (r.lastSeq ?? 0) :
       k === 'status' ? STATUS_RANK[r.status] ?? 9 : r.name
     ),
     [rows, sort]
@@ -401,29 +620,130 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
   const selectedTotal = selectedRows.reduce((t, r) => t + r.totalBalance, 0);
   const colCount = canNotify ? 7 : 6;
 
+  // ---- Printable cut-out fee chits — one small slip per student, ~30 per A4 ----
+  const brand = useBranding();
+  const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
+  const printHtml = (title: string, inner: string) => {
+    const w = window.open('', '_blank');
+    if (!w) { alert('Please allow pop-ups to print.'); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${inner}<script>window.onload=function(){window.focus();window.print();};</script></head></html>`);
+    w.document.close();
+  };
+
+  // Individual slips the office cuts along the dashed lines and hands to students.
+  const printChits = () => {
+    const list = [...sorted].sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
+    if (!list.length) return;
+    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const chits = list
+      .map(
+        (r) => {
+          // Show fee heads only — exclude uniform (items) from the chit.
+          const heads = (r.heads || []).filter((h) => h.balance > 0 && !/uniform/i.test(h.name));
+          const lines = heads.length
+            ? heads.map((h) => `<div class="row"><span>${esc(h.name)}</span><span>₹${fmt(h.balance)}</span></div>`).join('')
+            : `<div class="row"><span>No dues</span><span>₹0</span></div>`;
+          return `<div class="chit">
+          <div class="nm">${esc(r.name)}</div>
+          <div class="cl">Class: <b>${esc(shortClass(r.className) || '—')}</b></div>
+          ${lines}
+          <div class="dt">${now}</div>
+        </div>`;
+        }
+      )
+      .join('');
+    printHtml(
+      'Fee Chits',
+      `<style>
+        @page { size: A4 portrait; margin: 8mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+        .sheet { font-size: 0; }
+        .chit { display: inline-block; vertical-align: top; width: 48.5%; margin: 0 0.6% 9px; padding: 12px 14px 9px;
+                border: 1.5px dashed #888; border-radius: 6px; page-break-inside: avoid; }
+        .nm { font-size: 16px; font-weight: 700; line-height: 1.2; }
+        .cl { font-size: 12.5px; color: #333; margin: 3px 0 6px; }
+        .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; padding: 1px 0; }
+        .row.bal { font-weight: 700; border-top: 1px solid #ddd; margin-top: 3px; padding-top: 6px; }
+        .row.bal span:first-child { font-size: 13px; }
+        .row.bal span:last-child { color: #b00; font-size: 18px; }
+        .dt { font-size: 10px; color: #999; text-align: right; margin-top: 6px; }
+      </style></head><body><div class="sheet">${chits}</div></body>`
+    );
+  };
+
+  // Plain office list (Name / Class / Paid / Balance), 40+ per A4.
+  const printList = () => {
+    const list = [...sorted].sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
+    if (!list.length) return;
+    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const filterLabel: Record<string, string> = { all: 'All students', due: 'With balance', paid: 'Fully paid', overdue: 'Overdue', van: 'Van students' };
+    const clsName = classId === 'all' ? 'All classes' : (classList.find((c) => c.id === classId)?.name || 'Class');
+    const sub = `${clsName} · ${filterLabel[filter] || 'All students'}${search ? ` · "${esc(search)}"` : ''} · ${list.length} students · ${now}`;
+    const totPaid = list.reduce((t, r) => t + r.totalPaid, 0);
+    const totBal = list.reduce((t, r) => t + r.totalBalance, 0);
+    const body = list
+      .map((r, i) => `<tr><td class="c">${i + 1}</td><td>${esc(r.name)}</td><td class="c">${esc(shortClass(r.className) || '—')}</td><td class="r">${fmt(r.totalPaid)}</td><td class="r b">${fmt(r.totalBalance)}</td></tr>`)
+      .join('');
+    printHtml(
+      'Balance Fee List',
+      `<style>
+        @page { size: A4 portrait; margin: 12mm 10mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+        h1 { font-size: 15px; margin: 0; }
+        .sub { font-size: 10px; color: #555; margin: 2px 0 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { display: table-header-group; }
+        th, td { border: 1px solid #999; padding: 2px 6px; font-size: 11px; line-height: 1.35; }
+        th { background: #eee; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+        td.c, th.c { text-align: center; }
+        td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+        td.b { font-weight: 700; }
+        tr { page-break-inside: avoid; }
+        tfoot td { font-weight: 700; background: #f4f4f4; }
+        .sl { width: 34px; } .cl { width: 60px; } .amt { width: 90px; }
+      </style></head><body>
+        <h1>${esc(brand.schoolName)} — Balance Fee List</h1>
+        <div class="sub">${sub}</div>
+        <table>
+          <thead><tr><th class="c sl">#</th><th>Student name</th><th class="c cl">Class</th><th class="r amt">Paid (₹)</th><th class="r amt">Balance (₹)</th></tr></thead>
+          <tbody>${body}</tbody>
+          <tfoot><tr><td></td><td colspan="2">Total (${list.length})</td><td class="r">${fmt(totPaid)}</td><td class="r">${fmt(totBal)}</td></tr></tfoot>
+        </table>
+      </body>`
+    );
+  };
+
   return (
     <>
-      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 mt-4">
-        {[
-          { label: 'Total billed', value: feeMoney(kpis.billed), icon: 'ReceiptText', badge: 'bg-purple-100 text-purple-700' },
-          { label: 'Collected', value: feeMoney(kpis.collected), icon: 'CheckCircle2', badge: 'bg-success-100 text-success-700' },
-          { label: 'Outstanding', value: feeMoney(kpis.outstanding), icon: 'AlertCircle', badge: 'bg-danger-100 text-danger-700' },
-          { label: 'Students with dues', value: kpis.withDues, icon: 'Users', badge: 'bg-marigold-100 text-marigold-700' },
-        ].map((s) =>
-          loading ? (
-            <Skeleton key={s.label} height={52} rounded="lg" />
-          ) : (
-            <div key={s.label} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl shadow-xs px-4 py-2.5">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${s.badge}`}>
-                <Icon name={s.icon as any} size={18} />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-slate-900 leading-none tabular-nums">{s.value}</div>
-                <div className="text-[11px] text-slate-500 mt-1">{s.label}</div>
-              </div>
-            </div>
-          )
-        )}
+      {/* Prominent search bar */}
+      <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
+        <div className="flex items-center gap-2 flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-500/20 shadow-xs">
+          <Icon name="Search" size={18} className="text-slate-400 flex-shrink-0" />
+          <input
+            type="text"
+            placeholder="Search by name, admission no, father / mother name or phone…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-transparent border-0 outline-none text-sm placeholder:text-slate-400"
+          />
+          {search && <button onClick={() => setSearch('')} className="text-slate-300 hover:text-slate-500" title="Clear"><Icon name="X" size={16} /></button>}
+        </div>
+        <Select value={classId} onChange={(e) => setClassId(e.target.value)} className="w-full sm:w-40">
+          <option value="all">All classes</option>
+          {classList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+        <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full sm:w-40">
+          <option value="all">All students</option>
+          <option value="due">Has balance</option>
+          <option value="paid">Fully paid</option>
+          <option value="overdue">Overdue</option>
+          <option value="van">Van students</option>
+        </Select>
+        <Button kind="secondary" icon="Scissors" onClick={printChits} disabled={loading || sorted.length === 0} className="w-full sm:w-auto">Print chits</Button>
+        <Button kind="secondary" icon="Printer" onClick={printList} disabled={loading || sorted.length === 0} className="w-full sm:w-auto">Print list</Button>
       </div>
 
       {canNotify && selected.size > 0 && (
@@ -442,26 +762,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
       <Card
         className="mt-4"
         padded={false}
-        title={
-          <div className="flex items-center gap-2 w-full sm:w-96">
-            <Icon name="Search" size={18} className="text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search name, student ID, father/mother name or phone…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-transparent border-0 outline-none text-sm"
-            />
-          </div>
-        }
-        action={
-          <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-40">
-            <option value="all">All students</option>
-            <option value="due">Has balance</option>
-            <option value="overdue">Overdue</option>
-            <option value="paid">Fully paid</option>
-          </Select>
-        }
+        title={<span className="text-sm font-medium text-slate-500">{loading ? 'Loading…' : `${rows.length} student${rows.length === 1 ? '' : 's'}`}</span>}
       >
         <div className="hidden sm:block overflow-x-auto">
           <table className="w-full">
@@ -503,18 +804,17 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
                     <div className="flex items-center gap-3">
                       <Avatar name={r.name} size="sm" />
                       <div>
-                        <a
-                          href={`/admin/fees/student/${r.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-medium text-slate-900 hover:text-purple-700 hover:underline inline-flex items-center gap-1"
-                          title="Open fee account in a new tab"
-                        >
-                          {r.name}
-                          <Icon name="ExternalLink" size={13} className="text-slate-300" />
-                        </a>
-                        <div className="text-xs text-slate-500 font-mono">{r.id}</div>
+                        <div className="font-medium text-slate-900">{r.name}</div>
+                        {r.fatherName && <div className="text-xs text-slate-500">S/o {r.fatherName}</div>}
+                        {r.village && <div className="text-xs text-slate-500 inline-flex items-center gap-1"><Icon name="MapPin" size={11} className="text-slate-400" /> {r.village}</div>}
+                        <div className="text-xs text-slate-500 font-mono flex items-center gap-2">
+                          <span>{r.id}</span>
+                          {r.phone && (
+                            <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-slate-500 hover:text-purple-700" title="Call">
+                              <Icon name="Phone" size={11} /> {r.phone}
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -522,9 +822,24 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
                     <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">{shortClass(r.className)}</span>
                   </td>
                   <td className="py-3 px-6 text-right tabular-nums text-slate-700">{feeMoney(r.totalCharged)}</td>
-                  <td className="py-3 px-6 text-right tabular-nums text-success-700">{feeMoney(r.totalPaid)}</td>
+                  <td className="py-3 px-6 text-right tabular-nums text-success-700">
+                    <div>{feeMoney(r.totalPaid)}</div>
+                    {r.lastPaidAt && <div className="text-[11px] font-normal text-slate-400 mt-0.5">Last {new Date(r.lastPaidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</div>}
+                  </td>
                   <td className="py-3 px-6 text-right tabular-nums font-semibold text-slate-900">{feeMoney(r.totalBalance)}</td>
-                  <td className="py-3 px-6"><Chip tone={statusTone(r.status)}>{statusLabel(r.status)}</Chip></td>
+                  <td className="py-3 px-6">
+                    <div className="flex items-center gap-2">
+                      <Chip tone={statusTone(r.status)}>{statusLabel(r.status)}</Chip>
+                      {itemsDueTotal(r) > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-marigold-50 text-marigold-700 text-[11px] font-semibold whitespace-nowrap"
+                          title={itemsDue(r).map((h) => `${h.name}: ${feeMoney(h.balance)}`).join('\n')}>
+                          <Icon name="Shirt" size={11} /> Uniform/items due {feeMoney(itemsDueTotal(r))}
+                        </span>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); setTimeline({ id: r.id, name: r.name }); }}
+                        className="inline-flex items-center justify-center rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 p-1.5" title="Payment history"><Icon name="Eye" size={16} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -548,12 +863,18 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
                   <Avatar name={r.name} size="sm" />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-slate-900 truncate">{r.name}</div>
-                    <div className="text-[11px] text-slate-500">{shortClass(r.className)} · {r.id}</div>
+                    {r.fatherName && <div className="text-[11px] text-slate-500 truncate">S/o {r.fatherName}</div>}
+                    <div className="text-[11px] text-slate-500">{shortClass(r.className)} · {r.id}{r.village ? ` · ${r.village}` : ''}</div>
+                    {r.phone && <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-[11px] text-purple-700 inline-flex items-center gap-1"><Icon name="Phone" size={10} /> {r.phone}</a>}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="font-semibold tabular-nums text-slate-900">{feeMoney(r.totalBalance)}</div>
                     <div className="mt-0.5"><Chip tone={statusTone(r.status)}>{statusLabel(r.status)}</Chip></div>
+                    {r.lastPaidAt && <div className="mt-0.5 text-[10px] text-slate-400">Last paid {new Date(r.lastPaidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>}
+                    {itemsDueTotal(r) > 0 && <div className="mt-0.5 text-[10px] font-semibold text-marigold-700 inline-flex items-center gap-0.5"><Icon name="Shirt" size={10} /> Uniform/items due</div>}
                   </div>
+                  <button onClick={(e) => { e.stopPropagation(); setTimeline({ id: r.id, name: r.name }); }}
+                    className="flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-purple-50 text-purple-600 p-1.5" title="Payment history"><Icon name="Eye" size={18} /></button>
                 </div>
               ))}
             </div>
@@ -561,7 +882,8 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
         </div>
       </Card>
 
-      {openId && <LedgerDrawer studentId={openId} canCollect={canCollect} canVoid={canVoid} canNotify={canNotify} onClose={() => setOpenId(null)} onChanged={fetchRows} />}
+      {openId && <CollectDrawer studentId={openId} onClose={() => setOpenId(null)} onDone={async () => { setOpenId(null); await fetchRows(); }} />}
+      {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)} />}
       {bulkOpen && (
         <BulkNotifyModal
           students={selectedRows.map((r) => ({ id: r.id, name: r.name, className: r.className, balance: r.totalBalance }))}
@@ -572,6 +894,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
     </>
   );
 }
+
 
 /* ---------- Bulk fee import (Excel) ---------- */
 function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -729,7 +1052,7 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
 
 const DEFAULT_BULK_TEMPLATE = `Dear {guardian},
 
-This is a gentle reminder that the pending fee for {name} (Class {class}) is {balance}.
+Pending fees for {name} (Class {class}):
 
 {breakup}
 
@@ -740,7 +1063,7 @@ function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string
   const [body, setBody] = useState(DEFAULT_BULK_TEMPLATE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ created: number; skippedZero: number; pushSent: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; skippedZero: number; pushSent: number; waSent?: number; waFailed?: number } | null>(null);
 
   const total = students.reduce((t, s) => t + s.balance, 0);
   const insertToken = (tok: string) => setBody((b) => b + tok);
@@ -771,7 +1094,7 @@ function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string
         <div className="text-center py-2">
           <div className="w-12 h-12 rounded-full bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-3"><Icon name="Check" size={26} /></div>
           <p className="text-sm text-slate-700"><span className="font-semibold">{result.created}</span> personalized reminder{result.created === 1 ? '' : 's'} sent — each parent got their own balance.</p>
-          <p className="text-xs text-slate-500 mt-1">{result.pushSent} phone notification{result.pushSent === 1 ? '' : 's'} delivered{result.skippedZero ? ` · ${result.skippedZero} skipped (no balance)` : ''}.</p>
+          <p className="text-xs text-slate-500 mt-1">{result.waSent ? `${result.waSent} WhatsApp sent · ` : ''}{result.pushSent} phone notification{result.pushSent === 1 ? '' : 's'} delivered{result.skippedZero ? ` · ${result.skippedZero} skipped (no balance)` : ''}{result.waFailed ? ` · ${result.waFailed} WhatsApp failed (no number/blocked)` : ''}.</p>
         </div>
       </Modal>
     );
@@ -831,73 +1154,6 @@ function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string
 
 /* ---------- Ledger drawer (per-student account) ---------- */
 
-function LedgerDrawer({ studentId, canCollect, canVoid, canNotify, onClose, onChanged }: { studentId: string; canCollect: boolean; canVoid?: boolean; canNotify?: boolean; onClose: () => void; onChanged: () => void }) {
-  const [account, setAccount] = useState<Account | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [collecting, setCollecting] = useState(false);
-  const [editing, setEditing] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch(`/api/fees/accounts/${studentId}`);
-    if (res.ok) setAccount(await res.json());
-    setLoading(false);
-  }, [studentId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const s = account?.summary;
-
-  return (
-    <>
-      <Drawer
-        open
-        onClose={onClose}
-        title={account?.student.name || 'Fee account'}
-        subtitle={account ? `${account.student.id} · ${shortClass(account.student.className)}${account.student.section ? ' ' + account.student.section : ''}` : ''}
-        width={560}
-        footer={
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm">
-              <span className="text-slate-500">Balance </span>
-              <span className="font-bold text-slate-900 tabular-nums">{s ? feeMoney(s.totalBalance) : '—'}</span>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={onClose}>Close</Button>
-              {canCollect && <Button icon="SlidersHorizontal" onClick={() => setEditing(true)}>Edit plan</Button>}
-              {canCollect && s && s.totalBalance > 0 && (
-                <Button kind="primary" icon="IndianRupee" onClick={() => setCollecting(true)}>Collect payment</Button>
-              )}
-            </div>
-          </div>
-        }
-      >
-        {loading || !account ? (
-          <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>
-        ) : (
-          <AccountView account={account} canRequestConcession={canCollect} canVoid={canVoid} canNotify={canNotify} onChanged={load} />
-        )}
-      </Drawer>
-
-      {collecting && account && (
-        <CollectDrawer
-          account={account}
-          onClose={() => setCollecting(false)}
-          onDone={async () => { setCollecting(false); await load(); onChanged(); }}
-        />
-      )}
-
-      {editing && (
-        <AssignDrawer
-          studentId={studentId}
-          onClose={() => setEditing(false)}
-          onDone={async () => { setEditing(false); await load(); onChanged(); }}
-        />
-      )}
-    </>
-  );
-}
-
 /* ============================ Fee setup ============================ */
 
 interface ConfigData {
@@ -913,7 +1169,7 @@ interface ConfigData {
 function SetupTab({ canManage }: { canManage: boolean }) {
   const [cfg, setCfg] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState<'class' | 'van' | 'uniform' | 'types'>('class');
+  const [section, setSection] = useState<'class' | 'van' | 'uniform' | 'types' | 'settings'>('class');
   const [classId, setClassId] = useState<string>('');
 
   const load = useCallback(async () => {
@@ -965,6 +1221,7 @@ function SetupTab({ canManage }: { canManage: boolean }) {
   const [matrix, setMatrix] = useState<NonNullable<ConfigData['uniformMatrix']>>({});
   const [matrixDirty, setMatrixDirty] = useState(false);
   const [expandedItem, setExpandedItem] = useState('');
+  const [expandedInst, setExpandedInst] = useState(''); // feeTypeId whose installment editor is open
   useEffect(() => { setMatrix(cfg?.uniformMatrix || {}); setMatrixDirty(false); }, [cfg]);
   const setMatrixCell = (key: string, cid: string, g: 'M' | 'F' | 'ANY', val: string) => {
     setMatrix((m) => {
@@ -991,28 +1248,31 @@ function SetupTab({ canManage }: { canManage: boolean }) {
       const r = await fetch('/api/fees/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'assignAllClassFees' }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || 'Failed');
-      setAssignMsg(`Done — class fees assigned across ${d.assigned}/${d.total} students.`);
+      setAssignMsg(d.charged > 0
+        ? `Done — added ${d.charged} fee${d.charged === 1 ? '' : 's'} across ${d.assigned} of ${d.total} students. (Already-billed heads were left as-is.)`
+        : `All ${d.total} students already have every class fee — nothing to add.`);
     } catch (e) { setAssignMsg(''); setSetupErr(e instanceof Error ? e.message : 'Failed to assign'); }
   };
 
   if (loading || !cfg) return <div className="mt-6 space-y-3 max-w-3xl">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
 
+  // Show every class-amount fee type for the class — including a class added
+  // after the fee type (which has no ClassFee row yet); its amount starts at 0.
   const classFeesFor = (cid: string) =>
     cfg.feeTypes
       .filter((ft) => ft.billingMode === 'CLASS_AMOUNT')
-      .map((ft) => ({ ft, cf: cfg.classFees.find((c) => c.classId === cid && c.feeTypeId === ft.id) }))
-      .filter((x) => x.cf);
+      .map((ft) => ({ ft, cf: cfg.classFees.find((c) => c.classId === cid && c.feeTypeId === ft.id) }));
 
   return (
     <div className="mt-6">
-      <div className="flex items-center gap-2 mb-4">
-        {([['class', 'Class fees', 'GraduationCap'], ['van', 'Van fees', 'Bus'], ['uniform', 'Uniform items', 'Shirt'], ['types', 'Fee types', 'ListPlus']] as const).map(([id, label, icon]) => (
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {([['class', 'Class fees', 'GraduationCap'], ['van', 'Van fees', 'Bus'], ['uniform', 'Uniform items', 'Shirt'], ['types', 'Fee types', 'ListPlus'], ['settings', 'Fee settings', 'Settings2']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setSection(id)}
-            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-pill text-sm font-medium transition-colors ${section === id ? 'bg-purple-500 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-            <Icon name={icon as any} size={15} />{label}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${section === id ? 'bg-purple-500 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+            <Icon name={icon as any} size={15} className="flex-shrink-0" />{label}
           </button>
         ))}
-        <span className="ml-auto text-xs text-slate-500">Year {cfg.year.label}</span>
+        <span className="ml-auto pl-2 text-xs text-slate-500 whitespace-nowrap flex-shrink-0">Year {cfg.year.label}</span>
       </div>
 
       {!canManage && (
@@ -1038,12 +1298,31 @@ function SetupTab({ canManage }: { canManage: boolean }) {
             </tr></thead>
             <tbody>
               {classFeesFor(classId).map(({ ft, cf }) => (
-                <tr key={ft.id} className="border-t border-slate-100">
-                  <td className="px-6 py-2.5 font-medium text-slate-900">{ft.name}{ft.installmentable && cf!.installments.length > 0 && <span className="ml-2 text-xs text-slate-400">{cf!.installments.length} installments</span>}</td>
-                  <td className="px-6 py-2 text-right">
-                    <InlineAmount value={cf!.amount} disabled={!canManage} onSave={(v) => patch({ kind: 'classFee', id: cf!.id, amount: v }).then(load)} />
-                  </td>
-                </tr>
+                <React.Fragment key={ft.id}>
+                  <tr className="border-t border-slate-100">
+                    <td className="px-6 py-2.5 font-medium text-slate-900">
+                      {ft.name}
+                      {ft.installmentable && (cf?.installments.length ?? 0) > 0 && <span className="ml-2 text-xs text-slate-400">{cf!.installments.length} installments</span>}
+                      {ft.installmentable && canManage && (
+                        <button onClick={() => setExpandedInst(expandedInst === ft.id ? '' : ft.id)} className="ml-3 text-xs font-medium text-purple-600 hover:text-purple-700 inline-flex items-center gap-1">
+                          <Icon name="CalendarClock" size={13} /> {(cf?.installments.length ?? 0) > 0 ? 'Edit installments' : 'Add installments'}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-6 py-2 text-right">
+                      <InlineAmount value={cf?.amount ?? 0} disabled={!canManage} onSave={(v) => patch({ kind: 'classFee', classId, feeTypeId: ft.id, amount: v }).then(load)} />
+                    </td>
+                  </tr>
+                  {ft.installmentable && canManage && expandedInst === ft.id && (
+                    <tr className="border-t border-slate-100 bg-slate-50/50">
+                      <td colSpan={2} className="px-6 py-4">
+                        <InstallmentEditor classId={classId} feeType={ft} amount={cf?.amount ?? 0}
+                          current={(cf?.installments || []).map((i) => ({ n: i.n, amount: i.amount, dueDate: (i.dueDate || '').slice(0, 10) }))}
+                          onSaved={async () => { setExpandedInst(''); await load(); }} />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -1094,13 +1373,17 @@ function SetupTab({ canManage }: { canManage: boolean }) {
       )}
 
       {section === 'uniform' && (
+        <>
         <Card padded={false} title="Uniform prices (class × gender)">
           <div className="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>Set each item&apos;s price per class. Gendered items (School / White) have separate Boy &amp; Girl prices.</span>
             {canManage && <Button size="sm" icon="Download" className="ml-auto" onClick={seedMatrix}>Load standard matrix</Button>}
           </div>
           <div className="divide-y divide-slate-100">
-            {UNIFORM_ITEM_DEFS.map((it) => {
+            {[
+              ...UNIFORM_ITEM_DEFS.map((d) => ({ key: d.key, name: d.name, gendered: d.gendered })),
+              ...cfg.uniformItems.filter((u) => !UNIFORM_ITEM_DEFS.some((d) => d.name.toLowerCase() === u.name.toLowerCase())).map((u) => ({ key: u.id, name: u.name, gendered: false })),
+            ].map((it) => {
               const open = expandedItem === it.key;
               return (
                 <div key={it.key}>
@@ -1147,10 +1430,38 @@ function SetupTab({ canManage }: { canManage: boolean }) {
               <Button kind="primary" icon="Check" onClick={saveMatrix} disabled={!matrixDirty}>Save prices</Button>
             </div>
           )}
-        </Card>
+          </Card>
+
+          {/* Extra uniform items beyond the standard set (e.g. Dupatta, Track Suit) */}
+          <Card padded={false} className="mt-4" title="Extra uniform items">
+            <div className="px-6 py-2.5 text-xs text-slate-500 border-b border-slate-100">Add items beyond the standard set with a <b>default price</b> (used in Collect Payment). Optionally set <b>class-wise prices in the grid above</b> to override the default for specific classes.</div>
+            <div className="divide-y divide-slate-100">
+              {cfg.uniformItems.filter((it) => !UNIFORM_ITEM_DEFS.some((d) => d.name.toLowerCase() === it.name.toLowerCase())).map((it) => (
+                <div key={it.id} className="flex items-center justify-between px-6 py-2.5">
+                  <span className="font-medium text-slate-900">{it.name}</span>
+                  <div className="flex items-center gap-3">
+                    <InlineAmount value={it.price} disabled={!canManage} onSave={(v) => patch({ kind: 'uniformItem', id: it.id, price: v }).then(load)} />
+                    {canManage && <button onClick={async () => { if (!confirm(`Remove "${it.name}"?`)) return; await fetch(`/api/fees/config?kind=uniformItem&id=${it.id}`, { method: 'DELETE' }); await load(); }} className="text-slate-300 hover:text-danger-600" title="Remove item"><Icon name="Trash2" size={15} /></button>}
+                  </div>
+                </div>
+              ))}
+              {cfg.uniformItems.filter((it) => !UNIFORM_ITEM_DEFS.some((d) => d.name.toLowerCase() === it.name.toLowerCase())).length === 0 && (
+                <div className="px-6 py-4 text-sm text-slate-400">No extra items yet.</div>
+              )}
+            </div>
+            {canManage && (
+              <div className="flex items-end gap-2 px-6 py-3 border-t border-slate-100">
+                <div className="flex-1"><Field label="New item name"><Input value={newUniform.name} onChange={(e) => setNewUniform({ ...newUniform, name: e.target.value })} placeholder="e.g. Dupatta" /></Field></div>
+                <div className="w-28"><Field label="Default price (₹)"><Input type="number" value={newUniform.price} onChange={(e) => setNewUniform({ ...newUniform, price: e.target.value })} placeholder="0" className="text-right tabular-nums" /></Field></div>
+                <Button icon="Plus" onClick={addUniform} disabled={!newUniform.name.trim()}>Add</Button>
+              </div>
+            )}
+          </Card>
+        </>
       )}
 
       {section === 'types' && <FeeTypesSection cfg={cfg} canManage={canManage} reload={load} />}
+      {section === 'settings' && <CollectionSettingsPanel canEdit={canManage} />}
     </div>
   );
 }
@@ -1159,8 +1470,88 @@ const BILLING_LABEL: Record<string, { label: string; tone: 'info' | 'success' | 
   CLASS_AMOUNT: { label: 'Per class', tone: 'info' },
   VILLAGE: { label: 'Per village (van)', tone: 'success' },
   ITEMIZED: { label: 'Itemized (uniform)', tone: 'warn' },
-  MANUAL: { label: 'Manual (old due)', tone: 'neutral' },
+  MANUAL: { label: 'Manual (per student)', tone: 'neutral' },
 };
+
+/** Edit a class fee's installment plan (count, amount, due date per installment). */
+function InstallmentEditor({ classId, feeType, amount, current, onSaved }: {
+  classId: string; feeType: { id: string; name: string }; amount: number;
+  current: { n: number; amount: number; dueDate: string }[];
+  onSaved: () => void | Promise<void>;
+}) {
+  type Row = { amount: string; dueDate: string };
+  const seed: Row[] = current.length
+    ? current.map((i) => ({ amount: String(i.amount), dueDate: i.dueDate }))
+    : [{ amount: String(amount || 0), dueDate: '' }];
+  const [rows, setRows] = useState<Row[]>(seed);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const total = rows.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+  const setRow = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { amount: '', dueDate: '' }]);
+  const delRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+  const splitEqually = () => {
+    const n = rows.length || 1;
+    const base = Math.floor((amount || 0) / n);
+    const rem = (amount || 0) - base * n;
+    setRows((rs) => rs.map((r, i) => ({ ...r, amount: String(base + (i === 0 ? rem : 0)) })));
+  };
+
+  const save = async (clear = false) => {
+    setBusy(true); setMsg('');
+    try {
+      const installments = clear ? [] : rows
+        .map((r, i) => ({ n: i + 1, amount: Number(r.amount) || 0, dueDate: r.dueDate }))
+        .filter((r) => r.amount > 0 && r.dueDate);
+      if (!clear && installments.length === 0) throw new Error('Enter an amount and due date for each installment.');
+      const res = await fetch('/api/fees/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setInstallments', classId, feeTypeId: feeType.id, installments, resplitExisting: true }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Failed to save');
+      setMsg(clear ? 'Installments cleared.' : `Saved ${d.installments} installments · re-split ${d.resplit} student${d.resplit === 1 ? '' : 's'}${d.skippedPaid ? ` · ${d.skippedPaid} left (already paid)` : ''}.`);
+      setTimeout(() => onSaved(), 700);
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Failed to save'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-3 max-w-xl">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-slate-800">{feeType.name} — installments</div>
+        <button onClick={splitEqually} className="text-xs font-medium text-purple-600 hover:text-purple-700">Split ₹{amount.toLocaleString('en-IN')} equally</button>
+      </div>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-400 w-10">#{i + 1}</span>
+            <div className="flex-1">
+              <input type="number" value={r.amount} onChange={(e) => setRow(i, { amount: e.target.value })} placeholder="Amount ₹"
+                className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm text-right tabular-nums outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20" />
+            </div>
+            <div className="flex-1">
+              <input type="date" value={r.dueDate} onChange={(e) => setRow(i, { dueDate: e.target.value })}
+                className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20" />
+            </div>
+            <button onClick={() => delRow(i)} disabled={rows.length === 1} className="text-slate-300 hover:text-danger-600 disabled:opacity-30" title="Remove installment"><Icon name="X" size={15} /></button>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <button onClick={addRow} className="font-medium text-purple-600 hover:text-purple-700 inline-flex items-center gap-1"><Icon name="Plus" size={13} /> Add installment</button>
+        <span className={`tabular-nums ${total === amount ? 'text-slate-500' : 'text-marigold-700 font-medium'}`}>Total ₹{total.toLocaleString('en-IN')}{total !== amount ? ` (fee is ₹${amount.toLocaleString('en-IN')})` : ''}</span>
+      </div>
+      {msg && <div className="text-xs text-slate-600 bg-white border border-slate-200 rounded-md px-3 py-2">{msg}</div>}
+      <div className="flex items-center gap-2 pt-1">
+        <Button size="sm" kind="primary" icon="Check" onClick={() => save(false)} disabled={busy}>{busy ? 'Saving…' : 'Save installments'}</Button>
+        {current.length > 0 && <Button size="sm" onClick={() => save(true)} disabled={busy}>Clear</Button>}
+      </div>
+      <p className="text-[11px] text-slate-400">Saving also splits students who have this fee unpaid. Students with a payment on it are left unchanged.</p>
+    </div>
+  );
+}
 
 function MiniToggle({ on, disabled, onChange }: { on: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -1331,6 +1722,11 @@ interface ReportData {
   byDay: { day: string; amount: number }[];
   outstanding: { id: string; name: string; className: string | null; balance: number }[];
   outstandingTotal: number;
+  billedTotal: number;
+  collectedAllTotal: number;
+  withDues: number;
+  oldFeeCollected: number;
+  oldFeePending: number;
   oldDue: { id: string; name: string; className: string | null; amount: number; balance: number }[];
   installmentDue: { id: string; name: string; className: string | null; label: string; dueDate: string | null; balance: number; status: ChargeStatus }[];
 }
@@ -1363,7 +1759,27 @@ function ReportsTab() {
 
   return (
     <div className="mt-6 space-y-5">
-      {/* range filter */}
+      {/* KPIs — whole year */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        {[
+          { label: 'Total billed', value: feeMoney(data.billedTotal), icon: 'ReceiptText', badge: 'bg-purple-100 text-purple-700' },
+          { label: 'Collected', value: feeMoney(data.collectedAllTotal), icon: 'CheckCircle2', badge: 'bg-success-100 text-success-700' },
+          { label: 'Outstanding', value: feeMoney(data.outstandingTotal), icon: 'AlertCircle', badge: 'bg-danger-100 text-danger-700' },
+          { label: 'Students with dues', value: String(data.withDues), icon: 'Users', badge: 'bg-marigold-100 text-marigold-700' },
+          { label: 'Old fee collected', value: feeMoney(data.oldFeeCollected), icon: 'History', badge: 'bg-success-100 text-success-700' },
+          { label: 'Old fee pending', value: feeMoney(data.oldFeePending), icon: 'History', badge: 'bg-danger-100 text-danger-700' },
+        ].map((k) => (
+          <div key={k.label} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl shadow-xs px-4 py-3">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${k.badge}`}><Icon name={k.icon as any} size={18} /></div>
+            <div>
+              <div className="text-lg font-bold text-slate-900 leading-none tabular-nums">{k.value}</div>
+              <div className="text-[11px] text-slate-500 mt-1">{k.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* range filter — collection within a date range */}
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>

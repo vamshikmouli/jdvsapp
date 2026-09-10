@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Skeleton, EmptyState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
-import { AccountView, CollectDrawer, AssignDrawer, shortClass, type Account } from '../../account-ui';
+import { AccountView, CollectDrawer, shortClass, type Account } from '../../account-ui';
 
 export default function StudentFeePage() {
   const { studentId } = useParams<{ studentId: string }>();
@@ -19,7 +19,6 @@ export default function StudentFeePage() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [collecting, setCollecting] = useState(false);
-  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,12 +52,7 @@ export default function StudentFeePage() {
         meta={`${account.student.id} · ${shortClass(account.student.className)}${account.student.section ? ' ' + account.student.section : ''} · Balance ${money(s.totalBalance)}`}
         actions={
           canCollect ? (
-            <>
-              <Button icon="SlidersHorizontal" onClick={() => setEditing(true)}>Edit plan</Button>
-              {s.totalBalance > 0 && (
-                <Button kind="primary" icon="IndianRupee" onClick={() => setCollecting(true)}>Collect payment</Button>
-              )}
-            </>
+            <Button kind="primary" icon="IndianRupee" onClick={() => setCollecting(true)}>Collect payment</Button>
           ) : undefined
         }
       />
@@ -68,10 +62,7 @@ export default function StudentFeePage() {
       </Card>
 
       {collecting && (
-        <CollectDrawer account={account} onClose={() => setCollecting(false)} onDone={async () => { setCollecting(false); await load(); }} />
-      )}
-      {editing && (
-        <AssignDrawer studentId={studentId} onClose={() => setEditing(false)} onDone={async () => { setEditing(false); await load(); }} />
+        <CollectDrawer studentId={studentId} onClose={() => setCollecting(false)} onDone={async () => { setCollecting(false); await load(); }} />
       )}
     </div>
   );

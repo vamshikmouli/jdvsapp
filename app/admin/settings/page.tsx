@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Field, Input, Select, Chip, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { STAFF_NAV } from '@/lib/navigation';
 
 interface SessionDef {
   key: string;
@@ -37,7 +38,7 @@ interface DeviceSession {
   isCurrent: boolean;
 }
 
-type Tab = 'school' | 'attendance' | 'backup' | 'account';
+type Tab = 'school' | 'attendance' | 'collection' | 'sectionlock' | 'backup' | 'account';
 
 // Small toggle switch
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -75,6 +76,8 @@ function deviceLabel(ua: string | null) {
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'school', label: 'School profile', icon: 'Building2' },
   { id: 'attendance', label: 'Attendance', icon: 'Calendar' },
+  { id: 'collection', label: 'Fee collection', icon: 'IndianRupee' },
+  { id: 'sectionlock', label: 'Section lock', icon: 'Lock' },
   { id: 'backup', label: 'Backup & restore', icon: 'Database' },
   { id: 'account', label: 'My account', icon: 'UserCircle' },
 ];
@@ -178,7 +181,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        {TABS.filter((t) => t.id !== 'backup' || canManage).map((t) => (
+        {TABS.filter((t) => ((t.id !== 'backup' && t.id !== 'sectionlock' && t.id !== 'collection') || canManage)).map((t) => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setNotice(''); setError(''); }}
@@ -403,6 +406,10 @@ export default function SettingsPage() {
       )}
 
       {tab === 'backup' && canManage && <BackupTab />}
+
+      {tab === 'collection' && canManage && <CollectionSettingsTab />}
+
+      {tab === 'sectionlock' && canManage && <SectionLockTab />}
 
       {tab === 'account' && <AccountTab session={session} />}
     </>
@@ -682,6 +689,179 @@ function AccountTab({ session }: { session: any }) {
             ))}
           </div>
         )}
+      </Card>
+    </div>
+  );
+}
+
+function CollectionSettingsTab() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [dateMode, setDateMode] = useState<'today' | 'empty' | 'fixed'>('today');
+  const [fixedDate, setFixedDate] = useState('');
+  const [heads, setHeads] = useState<{ key: string; name: string }[]>([]);
+  const [order, setOrder] = useState<string[]>([]); // ordered head keys (priority)
+
+  useEffect(() => {
+    fetch('/api/settings/collection').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) {
+        setDateMode((d.collectDateMode || 'today') as any);
+        setFixedDate(d.collectDateFixed || '');
+        const hs: { key: string; name: string }[] = d.heads || [];
+        setHeads(hs);
+        // Start from saved priority, then append any heads not yet listed.
+        const saved: string[] = Array.isArray(d.feeAllocPriority) ? d.feeAllocPriority : [];
+        const known = new Set(hs.map((h) => h.key));
+        const merged = [...saved.filter((k) => known.has(k)), ...hs.map((h) => h.key).filter((k) => !saved.includes(k))];
+        setOrder(merged);
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const nameOf = (key: string) => heads.find((h) => h.key === key)?.name || key;
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    setOrder((o) => { const n = [...o]; [n[i], n[j]] = [n[j], n[i]]; return n; });
+  };
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch('/api/settings/collection', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectDateMode: dateMode, collectDateFixed: dateMode === 'fixed' ? (fixedDate || null) : null, feeAllocPriority: order }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Failed to save'); }
+      setMsg({ tone: 'ok', text: 'Saved.' });
+    } catch (e) { setMsg({ tone: 'err', text: e instanceof Error ? e.message : 'Failed to save' }); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="mt-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
+
+  return (
+    <div className="mt-4 space-y-5 max-w-2xl">
+      {msg && <div className={`rounded-md px-3 py-2 text-sm ${msg.tone === 'ok' ? 'bg-success-50 text-success-700 border border-success-100' : 'bg-danger-50 text-danger-700 border border-danger-100'}`}>{msg.text}</div>}
+
+      {/* Payment date default */}
+      <Card title="Payment date on Collect screen">
+        <p className="text-sm text-slate-500 mb-3">What the date field shows when you open Collect Payment.</p>
+        <div className="space-y-2">
+          {([['today', "Today's date", 'Pre-filled with the current date.'], ['empty', 'Empty', 'Blank — the operator types the date (uses today if left blank).'], ['fixed', 'A specific date', 'Always starts on the date you set below.']] as const).map(([val, label, sub]) => (
+            <label key={val} className="flex items-start gap-2.5 cursor-pointer">
+              <input type="radio" name="datemode" className="mt-0.5 h-4 w-4 border-slate-300 text-purple-600 focus:ring-purple-500" checked={dateMode === val} onChange={() => setDateMode(val)} />
+              <span className="text-sm"><span className="font-medium text-slate-800">{label}</span><span className="block text-xs text-slate-500">{sub}</span></span>
+            </label>
+          ))}
+          {dateMode === 'fixed' && (
+            <div className="pl-6 pt-1"><Field label="Fixed date"><Input type="date" value={fixedDate} onChange={(e) => setFixedDate(e.target.value)} className="w-48" /></Field></div>
+          )}
+        </div>
+      </Card>
+
+      {/* Auto-allocate priority */}
+      <Card title="Auto-allocate priority">
+        <p className="text-sm text-slate-500 mb-3">When you enter an amount received and tap <b>Auto-allocate</b>, the money fills these fees top-to-bottom. Move the ones to clear first to the top.</p>
+        {order.length === 0 ? <p className="text-sm text-slate-400">No fee heads found.</p> : (
+          <div className="rounded-lg border border-slate-200 divide-y divide-slate-100">
+            {order.map((key, i) => (
+              <div key={key} className="flex items-center gap-3 px-3 py-2">
+                <span className="text-xs font-semibold text-slate-400 tabular-nums w-5 text-right">{i + 1}</span>
+                <span className="flex-1 text-sm text-slate-800">{nameOf(key)}</span>
+                <div className="flex flex-col text-slate-300">
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="hover:text-purple-600 disabled:opacity-30 leading-none"><Icon name="ChevronUp" size={15} /></button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === order.length - 1} className="hover:text-purple-600 disabled:opacity-30 leading-none"><Icon name="ChevronDown" size={15} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div className="flex justify-end"><Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save collection settings'}</Button></div>
+    </div>
+  );
+}
+
+function SectionLockTab() {
+  const lockable = STAFF_NAV.flatMap((g) => g.items).filter((i) => !['dashboard', 'settings'].includes(i.id));
+  const [locked, setLocked] = useState<string[]>([]);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [pwd, setPwd] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/settings/section-lock').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) { setLocked(d.lockedMenus || []); setHasPassword(!!d.hasPassword); }
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const toggle = (id: string) => setLocked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const body: any = { lockedMenus: locked };
+      if (pwd.trim()) body.password = pwd.trim();
+      const r = await fetch('/api/settings/section-lock', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to save');
+      setHasPassword(!!d.hasPassword); setLocked(d.lockedMenus || []); setPwd('');
+      setMsg({ tone: 'ok', text: 'Saved.' });
+    } catch (e) { setMsg({ tone: 'err', text: e instanceof Error ? e.message : 'Failed to save' }); }
+    finally { setSaving(false); }
+  };
+
+  const removePassword = async () => {
+    if (!window.confirm('Remove the section password? Locked menus will then open without a prompt.')) return;
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch('/api/settings/section-lock', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clearPassword: true }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setHasPassword(false); setMsg({ tone: 'ok', text: 'Password removed.' });
+    } catch (e) { setMsg({ tone: 'err', text: e instanceof Error ? e.message : 'Failed' }); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="mt-6 max-w-2xl"><Card><Skeleton height={16} width="30%" /><div className="mt-4 space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} height={34} />)}</div></Card></div>;
+
+  return (
+    <div className="mt-6 max-w-2xl space-y-4">
+      <Card title="Section password">
+        <p className="text-sm text-slate-500 mb-3">Set a password that must be entered to open the locked menus below. It&apos;s a shared password — anyone signed in who knows it can open those menus.</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label={hasPassword ? 'Change password' : 'Set password'}>
+            <Input type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} placeholder={hasPassword ? '•••••• (unchanged)' : 'Enter a password'} className="w-56" />
+          </Field>
+          <div className="flex items-center gap-2 pb-1.5">
+            <Chip tone={hasPassword ? 'success' : 'neutral'}>{hasPassword ? 'Password set' : 'No password'}</Chip>
+            {hasPassword && <button onClick={removePassword} disabled={saving} className="text-sm text-red-600 hover:text-red-700">Remove</button>}
+          </div>
+        </div>
+        {!hasPassword && locked.length > 0 && <p className="text-xs text-marigold-700 mt-2">Set a password for the lock to take effect — without one, these menus open normally.</p>}
+      </Card>
+
+      <Card title="Locked menus">
+        <p className="text-sm text-slate-500 mb-3">Tick the menus that should ask for the password each time they&apos;re opened.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {lockable.map((it) => (
+            <label key={it.id} className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${locked.includes(it.id) ? 'border-purple-400 bg-purple-50/60' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <input type="checkbox" checked={locked.includes(it.id)} onChange={() => toggle(it.id)} className="rounded border-slate-300 text-purple-500 focus:ring-purple-500/20" />
+              <Icon name={it.icon as any} size={16} className="text-slate-400" />
+              <span className="text-sm font-medium text-slate-800">{it.label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 mt-4">
+          <Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          {msg && <span className={`text-sm ${msg.tone === 'ok' ? 'text-success-700' : 'text-red-600'}`}>{msg.text}</span>}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-3">This is a screen-level guard for shared devices — it doesn&apos;t change what a role is actually allowed to do. The menu re-locks on every visit.</p>
       </Card>
     </div>
   );

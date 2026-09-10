@@ -52,7 +52,7 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'promotions', label: 'Promotions', icon: 'GraduationCap', perm: 'SETTINGS_MANAGE' },
       { id: 'users', label: 'Logins & PINs', icon: 'KeyRound', perm: 'USERS_MANAGE' },
       { id: 'roles', label: 'Roles & access', icon: 'Lock', perm: 'ROLES_MANAGE' },
-      { id: 'logos', label: 'School logos', icon: 'Images' }, // always — downloads for all staff
+      { id: 'logos', label: 'School logos', icon: 'Images', perm: 'SETTINGS_MANAGE' }, // admin-only downloads
       { id: 'settings', label: 'Settings', icon: 'Settings' }, // always (My Account)
     ],
   },

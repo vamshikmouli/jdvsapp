@@ -34,6 +34,9 @@ export async function PUT(req: NextRequest, { params }: { params: { studentId: s
       uniform: Array.isArray(body?.uniform) ? body.uniform.map((u: any) => ({ key: String(u.key), qty: Math.max(0, Math.round(Number(u.qty) || 0)) })) : [],
       idCard: !!body?.idCard,
       newAdmission: !!body?.newAdmission,
+      oldFee: body?.oldFee && body.oldFee.yearLabel
+        ? { yearLabel: String(body.oldFee.yearLabel), amount: Math.max(0, Math.round(Number(body.oldFee.amount) || 0)) }
+        : null,
     });
     return NextResponse.json(result);
   } catch (err) {

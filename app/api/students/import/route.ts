@@ -139,8 +139,8 @@ export async function POST(req: NextRequest) {
 
     const errors: { row: number; name: string; reason: string }[] = [];
     type Prepared =
-      | { op: 'create'; id: string; classId: string | null; primaryName: string; primaryPhone: string; data: any }
-      | { op: 'update'; id: string; data: any };
+      | { op: 'create'; rowNo: number; name: string; id: string; classId: string | null; primaryName: string; primaryPhone: string; data: any }
+      | { op: 'update'; rowNo: number; name: string; id: string; data: any };
     const prepared: Prepared[] = [];
     const seenIds = new Set<string>();
     let seq = 0;
@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        prepared.push({ op: 'update', id, data: updateData });
+        prepared.push({ op: 'update', rowNo, name: name || id, id, data: updateData });
         continue;
       }
 
@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
       const primaryPhone = (smsFor === 'MOTHER' ? motherPhone || fatherPhone : fatherPhone || motherPhone) || String(r.guardianPhone || '').trim();
 
       prepared.push({
-        op: 'create', id: newId, classId, primaryName, primaryPhone,
+        op: 'create', rowNo, name, id: newId, classId, primaryName, primaryPhone,
         data: {
           id: newId, name, classId, roll: String(r.roll || '').trim() || null, gender,
           admissionNo: String(r.admissionNo || '').trim() || null,
@@ -293,36 +293,65 @@ export async function POST(req: NextRequest) {
     }
 
     // ---- Phase 2: the whole file is valid → apply all ----
+    // Each write is guarded so one bad row (e.g. a duplicate SATS/Aadhaar/admission
+    // no. that only the database can catch) reports its own reason instead of
+    // aborting the batch with a generic 500.
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    const writeErrors: { row: number; name: string; reason: string }[] = [];
     for (const p of prepared) {
-      if (p.op === 'update') {
-        // Nothing to change (e.g. fill-blanks with every field already populated).
-        if (Object.keys(p.data).length === 0) { skipped++; continue; }
-        let guardianUserId: string | undefined;
-        if (p.data.guardianPhone) {
-          guardianUserId = await ensureParentUser(p.data.guardianName || 'PARENT', p.data.guardianPhone) || undefined;
+      try {
+        if (p.op === 'update') {
+          // Nothing to change (e.g. fill-blanks with every field already populated).
+          if (Object.keys(p.data).length === 0) { skipped++; continue; }
+          let guardianUserId: string | undefined;
+          if (p.data.guardianPhone) {
+            guardianUserId = await ensureParentUser(p.data.guardianName || 'PARENT', p.data.guardianPhone) || undefined;
+          }
+          await prisma.student.update({
+            where: { id: p.id },
+            data: { ...p.data, ...(guardianUserId ? { guardianUserId } : {}) },
+          });
+          updated++;
+          continue;
         }
-        await prisma.student.update({
-          where: { id: p.id },
-          data: { ...p.data, ...(guardianUserId ? { guardianUserId } : {}) },
-        });
-        updated++;
-        continue;
+        const guardianUserId = p.primaryPhone ? await ensureParentUser(p.primaryName, p.primaryPhone) : undefined;
+        await prisma.student.create({ data: { ...p.data, guardianUserId: guardianUserId || undefined } });
+        if (p.classId) {
+          try { await upsertEnrollment(p.id, activeYear.id, p.classId, null, p.data.roll); } catch (e) { console.error('enrollment failed for', p.id, e); }
+          try { await autoAssignClassFees(p.id, p.classId, activeYear.id); } catch (e) { console.error('auto-assign failed for', p.id, e); }
+        }
+        created++;
+      } catch (e) {
+        console.error('students/import write failed', p.id, e);
+        writeErrors.push({ row: p.rowNo, name: p.name || p.id, reason: writeReason(e) });
       }
-      const guardianUserId = p.primaryPhone ? await ensureParentUser(p.primaryName, p.primaryPhone) : undefined;
-      await prisma.student.create({ data: { ...p.data, guardianUserId: guardianUserId || undefined } });
-      if (p.classId) {
-        try { await upsertEnrollment(p.id, activeYear.id, p.classId, null, p.data.roll); } catch (e) { console.error('enrollment failed for', p.id, e); }
-        try { await autoAssignClassFees(p.id, p.classId, activeYear.id); } catch (e) { console.error('auto-assign failed for', p.id, e); }
-      }
-      created++;
     }
 
-    return NextResponse.json({ ok: true, total: rows.length, created, updated, skipped, failed: 0, errors: [] });
+    return NextResponse.json({
+      ok: writeErrors.length === 0,
+      total: rows.length,
+      created, updated, skipped,
+      failed: writeErrors.length,
+      errors: writeErrors.slice(0, 300),
+    });
   } catch (err) {
     console.error('students/import POST', err);
-    return NextResponse.json({ error: 'Import failed' }, { status: 500 });
+    // Surface the real reason (admin-only endpoint) instead of a blank "Import failed".
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Import failed' }, { status: 500 });
   }
+}
+
+// Turn a raw DB / Prisma error into something the office can act on.
+function writeReason(e: any): string {
+  const code = e?.code;
+  if (code === 'P2002') {
+    const t = Array.isArray(e?.meta?.target) ? e.meta.target.join(', ') : (e?.meta?.target || 'a unique field');
+    const label = String(t).replace(/_key$|Student_/g, '').replace(/aadharNumber/i, 'Aadhaar').replace(/satsId/i, 'SATS ID').replace(/admissionNo/i, 'Admission No');
+    return `Duplicate ${label} — already used by another student`;
+  }
+  if (code === 'P2003') return 'Linked record missing (foreign key) — check class / guardian';
+  if (code === 'P2000') return 'A value is too long for its column';
+  return e instanceof Error && e.message ? e.message : 'Database error while saving';
 }

@@ -6,6 +6,7 @@ import { can } from '@/lib/rbac/roles';
 import { getActiveYear, getStudentAccount } from '@/lib/services/fees';
 import { feeMoney } from '@/lib/fees';
 import { sendPushToUsers, parentUserIdsForStudents } from '@/lib/push';
+import { sendTextTemplate, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
 
 const cleanClass = (name: string | null) => (name ? name.replace(/\s?STD$/i, '') : '');
 
@@ -42,7 +43,10 @@ export async function POST(req: NextRequest) {
     const year = await getActiveYear();
     const createdById = (session.user as any)?.id || null;
 
-    let created = 0, skippedZero = 0, skippedMissing = 0, pushSent = 0;
+    let created = 0, skippedZero = 0, skippedMissing = 0, pushSent = 0, waSent = 0, waFailed = 0;
+    const waOn = whatsappConfigured();
+    const feeTemplate = process.env.WHATSAPP_FEE_TEMPLATE || 'school_fee_reminder';
+    const feeLang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 
     for (const sid of studentIds) {
       const acc = await getStudentAccount(sid, year.id);
@@ -50,10 +54,13 @@ export async function POST(req: NextRequest) {
       const balance = acc.summary.totalBalance;
       if (skipZero && balance <= 0) { skippedZero++; continue; }
 
+      // Address the parent by father's name (fall back to guardian, then mother).
+      const parentName = acc.student.fatherName || acc.student.guardianName || 'Parent';
+
       const body = render(template, {
         name: acc.student.name,
         className: acc.student.className,
-        guardian: acc.student.guardianName,
+        guardian: parentName,
         balance,
         heads: acc.summary.heads.map((h) => ({ name: h.name, balance: h.balance })),
       });
@@ -78,9 +85,28 @@ export async function POST(req: NextRequest) {
         });
         pushSent += r.sent;
       } catch (e) { console.error('bulk push', e); }
+
+      // WhatsApp — the approved "school_fee_reminder" template (father, student, class, balance).
+      // The template has one balance slot, so pack the head-wise break-up into it
+      // (one line, no newlines — WhatsApp template variables forbid them).
+      if (waOn) {
+        const to = toWaNumber(acc.student.guardianPhone);
+        if (to) {
+          const dueHeads = acc.summary.heads.filter((h) => h.balance > 0);
+          const breakup = dueHeads.map((h) => `${h.name} ${feeMoney(h.balance)}`).join(', ');
+          const balanceText = breakup ? `${feeMoney(balance)} (${breakup})` : feeMoney(balance);
+          try {
+            const wr = await sendTextTemplate({
+              to, templateName: feeTemplate, lang: feeLang,
+              bodyParams: [parentName, acc.student.name, cleanClass(acc.student.className) || '—', balanceText],
+            });
+            if (wr.ok) waSent++; else { waFailed++; console.error('wa fee reminder', to, wr.error); }
+          } catch (e) { waFailed++; console.error('wa fee reminder', e); }
+        } else { waFailed++; }
+      }
     }
 
-    return NextResponse.json({ created, skippedZero, skippedMissing, pushSent });
+    return NextResponse.json({ created, skippedZero, skippedMissing, pushSent, waSent, waFailed });
   } catch (err) {
     console.error('bulk-reminder POST', err);
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send' }, { status: 400 });

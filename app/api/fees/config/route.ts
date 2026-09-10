@@ -11,6 +11,7 @@ import {
   reorderFeeTypes,
   deleteFeeType,
   autoAssignClassFees,
+  setClassFeeInstallments,
 } from '@/lib/services/fees';
 import { FeeBillingMode } from '@prisma/client';
 import { VILLAGE_VAN_FEES, UNIFORM_ITEMS } from '@/lib/feeStructure';
@@ -45,10 +46,24 @@ export async function PATCH(req: NextRequest) {
     }
     const body = await req.json();
     const { kind, id } = body || {};
-    if (!kind || !id) return NextResponse.json({ error: 'kind and id are required' }, { status: 400 });
+    // classFee can be saved by (classId, feeTypeId) without an existing row id.
+    const classFeeUpsert = kind === 'classFee' && body.classId && body.feeTypeId;
+    if (!kind || (!id && !classFeeUpsert)) return NextResponse.json({ error: 'kind and id are required' }, { status: 400 });
 
     if (kind === 'classFee') {
-      await prisma.classFee.update({ where: { id }, data: { amount: Math.max(0, Math.round(Number(body.amount) || 0)) } });
+      const amount = Math.max(0, Math.round(Number(body.amount) || 0));
+      if (body.classId && body.feeTypeId) {
+        // Upsert by (year, class, fee type) — works even for classes added after
+        // the fee type (which have no ClassFee row yet, e.g. a new "7th B").
+        const year = await getActiveYear();
+        await prisma.classFee.upsert({
+          where: { yearId_classId_feeTypeId: { yearId: year.id, classId: String(body.classId), feeTypeId: String(body.feeTypeId) } },
+          update: { amount },
+          create: { yearId: year.id, classId: String(body.classId), feeTypeId: String(body.feeTypeId), amount },
+        });
+      } else if (id) {
+        await prisma.classFee.update({ where: { id }, data: { amount } });
+      }
     } else if (kind === 'vanFee') {
       const data: any = {};
       if (body.monthlyFee != null) data.monthlyFee = Math.max(0, Math.round(Number(body.monthlyFee)));
@@ -101,11 +116,22 @@ export async function POST(req: NextRequest) {
         where: { status: 'ACTIVE', classId: { not: null } },
         select: { id: true, classId: true },
       });
-      let assigned = 0;
+      let assigned = 0, charged = 0;
       for (const s of students) {
-        try { await autoAssignClassFees(s.id, s.classId!, year.id); assigned++; } catch (e) { console.error('assign failed', s.id, e); }
+        try { const n = await autoAssignClassFees(s.id, s.classId!, year.id); if (n > 0) assigned++; charged += n; } catch (e) { console.error('assign failed', s.id, e); }
       }
-      return NextResponse.json({ ok: true, assigned, total: students.length });
+      return NextResponse.json({ ok: true, assigned, charged, total: students.length });
+    }
+
+    // Define / clear a class fee's installment plan, and re-split unpaid students.
+    if (body.action === 'setInstallments' && body.classId && body.feeTypeId) {
+      const year = await getActiveYear();
+      const result = await setClassFeeInstallments(
+        year.id, String(body.classId), String(body.feeTypeId),
+        Array.isArray(body.installments) ? body.installments : [],
+        body.resplitExisting !== false,
+      );
+      return NextResponse.json({ ok: true, ...result });
     }
 
     // Save the uniform price matrix (class × gender) for the active year.

@@ -416,31 +416,30 @@ export default function StudentsPage() {
         ))}
       </div>
 
+      {/* Prominent search bar */}
+      <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
+        <div className="flex items-center gap-2 flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-500/20 shadow-xs">
+          <Icon name="Search" size={18} className="text-slate-400 flex-shrink-0" />
+          <input
+            type="text"
+            placeholder="Search by name, student ID or guardian…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-transparent border-0 outline-none text-sm placeholder:text-slate-400"
+          />
+          {search && <button onClick={() => setSearch('')} className="text-slate-300 hover:text-slate-500" title="Clear"><Icon name="X" size={16} /></button>}
+        </div>
+        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full sm:w-40">
+          <option value="all">All status</option>
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </Select>
+      </div>
+
       <Card
         className="mt-4"
         padded={false}
-        title={
-          <div className="flex items-center gap-2 w-full sm:w-80">
-            <Icon name="Search" size={18} className="text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search name, student ID, guardian..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-transparent border-0 outline-none text-sm"
-            />
-          </div>
-        }
-        action={
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{students.length} shown</span>
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-32">
-              <option value="all">All status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </Select>
-          </div>
-        }
+        title={<span className="text-sm font-medium text-slate-500">{loading ? 'Loading…' : `${students.length} student${students.length === 1 ? '' : 's'} shown`}</span>}
       >
         {/* Desktop / tablet: table */}
         <div className="hidden md:block overflow-x-auto">
@@ -1049,38 +1048,44 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
       }
     >
       {result ? (
-        (result.created + (result.updated || 0)) === 0 && result.failed > 0 ? (
-          <div className="space-y-4">
+        <div className="space-y-4">
+          {(result.created + (result.updated || 0)) === 0 && result.failed > 0 ? (
             <div className="rounded-xl border border-danger-100 bg-danger-50 p-4 text-center">
               <div className="w-12 h-12 rounded-full bg-white text-danger-600 flex items-center justify-center mx-auto mb-2"><Icon name="AlertTriangle" size={26} /></div>
               <div className="text-lg font-bold text-slate-900">Import blocked — nothing was saved</div>
               <div className="text-sm text-danger-700 mt-0.5">Fix the {result.failed} issue{result.failed > 1 ? 's' : ''} below in your Excel and upload again.</div>
             </div>
+          ) : (
+            <div className={`rounded-xl border p-6 text-center ${result.failed > 0 ? 'border-amber-200 bg-amber-50' : 'border-success-100 bg-success-50'}`}>
+              <div className={`w-12 h-12 rounded-full bg-white flex items-center justify-center mx-auto mb-2 ${result.failed > 0 ? 'text-amber-600' : 'text-success-600'}`}>
+                <Icon name={result.failed > 0 ? 'AlertTriangle' : 'CheckCircle2'} size={26} />
+              </div>
+              <div className="text-lg font-bold text-slate-900">
+                {[result.created ? `${result.created} added` : '', result.updated ? `${result.updated} updated` : '']
+                  .filter(Boolean).join(' · ') || 'Nothing changed'}
+                {result.failed > 0 ? ` · ${result.failed} failed` : ''}
+              </div>
+              <div className="text-sm text-slate-500 mt-0.5">
+                {result.created ? 'Fees and parent logins were created automatically for new students. ' : ''}
+                {result.skipped ? `${result.skipped} matched row${result.skipped > 1 ? 's' : ''} already complete — left unchanged.` : ''}
+                {result.failed > 0 ? ' The rows below could not be saved — fix them and re-import just those.' : ''}
+              </div>
+            </div>
+          )}
+          {result.failed > 0 && result.errors.length > 0 && (
             <div>
-              <div className="text-sm font-semibold text-slate-900 mb-2">Problems found</div>
+              <div className="text-sm font-semibold text-slate-900 mb-2">Problems found ({result.errors.length})</div>
               <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-72 overflow-y-auto">
                 {result.errors.map((e, i) => (
                   <div key={i} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
-                    <span className="text-slate-600">Row {e.row} · {e.name}</span>
+                    <span className="text-slate-600 flex-shrink-0">Row {e.row} · {e.name}</span>
                     <span className="text-danger-700 text-xs text-right">{e.reason}</span>
                   </div>
                 ))}
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-success-100 bg-success-50 p-6 text-center">
-            <div className="w-12 h-12 rounded-full bg-white text-success-600 flex items-center justify-center mx-auto mb-2"><Icon name="CheckCircle2" size={26} /></div>
-            <div className="text-lg font-bold text-slate-900">
-              {[result.created ? `${result.created} added` : '', result.updated ? `${result.updated} updated` : '']
-                .filter(Boolean).join(' · ') || 'Nothing changed'}
-            </div>
-            <div className="text-sm text-slate-500 mt-0.5">
-              {result.created ? 'Fees and parent logins were created automatically for new students. ' : ''}
-              {result.skipped ? `${result.skipped} matched row${result.skipped > 1 ? 's' : ''} already complete — left unchanged.` : ''}
-            </div>
-          </div>
-        )
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
           <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl py-8 cursor-pointer hover:border-purple-300 hover:bg-slate-50 transition-colors">

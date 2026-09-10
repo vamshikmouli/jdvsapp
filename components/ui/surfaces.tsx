@@ -33,6 +33,7 @@ export interface ModalProps {
   title: string;
   subtitle?: string;
   footer?: React.ReactNode;
+  headerRight?: React.ReactNode; // optional content in the header, left of the close button (Drawer only)
   children: React.ReactNode;
   width?: number;
 }
@@ -66,7 +67,7 @@ export function Modal({ open, onClose, title, subtitle, footer, children, width 
 
 // ========== Drawer (right-side slide-over) ==========
 // Use this for multi-field add/edit forms. Keep Modal for confirmations.
-export function Drawer({ open, onClose, title, subtitle, footer, children, width = 480 }: ModalProps) {
+export function Drawer({ open, onClose, title, subtitle, footer, headerRight, children, width = 480 }: ModalProps) {
   const [show, setShow] = React.useState(false);
 
   React.useEffect(() => {
@@ -103,14 +104,17 @@ export function Drawer({ open, onClose, title, subtitle, footer, children, width
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
-          <div>
+        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
             {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-            <Icon name="X" size={20} />
-          </button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {headerRight}
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <Icon name="X" size={20} />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
         {footer && <div className="border-t border-slate-100 px-6 py-4 flex-shrink-0">{footer}</div>}
