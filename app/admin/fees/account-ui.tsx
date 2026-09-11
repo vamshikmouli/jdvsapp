@@ -605,10 +605,9 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      // Auto-print THIS payment's receipt(s) (fee and/or uniform for this transaction only).
-      const fresh = await reloadAccount();
-      const paid = fresh?.payments?.find((x) => x.id === data.id);
-      try { if (paid) printReceipt(paid); } catch { /* pop-up blocked — the Print button still works */ }
+      // Reload so this new payment is in the account — the confirmation popup's
+      // "Print receipts" button prints it on demand (no auto-print).
+      await reloadAccount();
       setDone({ receiptNo: data.receiptNo, id: data.id });
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to record payment'); }
     finally { setBusy(false); }
@@ -718,12 +717,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       <Modal open onClose={onDone} title="Payment recorded" width={440}
         footer={<div className="flex justify-end gap-2">
           <Button onClick={onDone}>Done</Button>
-          <Button kind="primary" icon="Printer" onClick={() => { const p = account?.payments.find((x) => x.id === done.id); if (p) printReceipt(p); }}>Reprint receipt</Button>
+          <Button kind="primary" icon="Printer" onClick={() => { const p = account?.payments.find((x) => x.id === done.id); if (p) printReceipt(p); }}>Print receipts</Button>
         </div>}>
         <div className="text-center py-2">
           <div className="w-12 h-12 rounded-full bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-3"><Icon name="Check" size={26} /></div>
           <p className="text-sm text-slate-600">Collected <span className="font-semibold text-slate-900">{feeMoney(total)}</span> from {account?.student.name}.</p>
-          <p className="text-xs text-slate-500 mt-1">Receipt <span className="font-mono">{done.receiptNo}</span> printed (fee &amp; uniform as applicable).{sendWa ? ' Sent to parent on WhatsApp.' : ''}</p>
+          <p className="text-xs text-slate-500 mt-1">Receipt <span className="font-mono">{done.receiptNo}</span> recorded.{sendWa ? ' Sent to parent on WhatsApp.' : ''} Tap <b>Print receipts</b> to print the fee &amp; uniform slips.</p>
         </div>
       </Modal>
     );

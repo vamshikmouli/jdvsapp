@@ -227,8 +227,8 @@ export default function PayrollPage() {
               </div>
             </div>
 
-            {/* Register table */}
-            <div className="overflow-x-auto">
+            {/* Register table (desktop) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-sm min-w-[980px] border-separate border-spacing-0">
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 bg-white">
@@ -339,6 +339,71 @@ export default function PayrollPage() {
                   </tfoot>
                 )}
               </table>
+            </div>
+
+            {/* Register cards (mobile) */}
+            <div className="sm:hidden divide-y divide-slate-100">
+              {detail.items.map((it, i) => {
+                const paid = it.status === 'PAID';
+                return (
+                  <div key={it.id} className={`p-4 ${paid ? 'bg-success-50/30' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-semibold text-slate-400 tabular-nums w-4 text-right shrink-0">{i + 1}</span>
+                      <div className={`h-9 w-9 rounded-full grid place-items-center text-xs font-bold shrink-0 ${avatarColor(it.staffName)}`}>{initials(it.staffName)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-slate-900 truncate">{it.staffName}</div>
+                        <div className="text-xs text-slate-400 truncate tabular-nums">{it.accountNo || <span className="text-danger-500">no bank details</span>}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`tabular-nums font-bold ${paid ? 'text-success-600' : 'text-slate-900'}`}>{rupee(it.netSalary)}</div>
+                        <button onClick={() => setPayslip(it)} className="text-[11px] text-purple-600 inline-flex items-center gap-1"><Icon name="ReceiptText" size={12} /> Payslip</button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 tabular-nums">
+                      <span>Gross {rupee(it.grossSalary)} · net {rupee(netPre(it))}</span>
+                      {it.lopAmount ? <span className="text-danger-600">LOP −{rupee(it.lopAmount)}</span> : null}
+                      {it.pfAmount ? <span>PF −{rupee(it.pfAmount)}</span> : null}
+                      {it.esiAmount ? <span>ESI −{rupee(it.esiAmount)}</span> : null}
+                    </div>
+
+                    {!it.attendanceTracked ? (
+                      <div className="mt-2"><span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500"><Icon name="CarFront" size={12} /> Full pay</span></div>
+                    ) : (
+                      <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+                        <span className="px-1.5 py-0.5 rounded-md bg-success-50 text-success-700 font-medium" title="Present (incl. late)">P {it.presentDays}</span>
+                        {it.halfDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-marigold-50 text-marigold-700 font-medium" title="Half days">½ {it.halfDays}</span>}
+                        {it.paidLeaveDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 font-medium" title="Paid leave">PL {it.paidLeaveDays}</span>}
+                        {it.overBalanceDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Over balance → LOP">OB {it.overBalanceDays}</span>}
+                        {it.unpaidLeaveDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Unpaid leave">UL {it.unpaidLeaveDays}</span>}
+                        {it.absentDays > 0 && <span className="px-1.5 py-0.5 rounded-md bg-danger-50 text-danger-700 font-medium" title="Absent">A {it.absentDays}</span>}
+                      </div>
+                    )}
+
+                    <div className="mt-2.5 flex items-center justify-between gap-2">
+                      {paid ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 bg-success-50 px-2 py-1 rounded-full"><Icon name="CircleCheck" size={13} /> Paid{it.paidAt ? ` · ${fmtDateTime(it.paidAt)}` : ''}</span>
+                      ) : canManage && detail.status !== 'DRAFT' ? (
+                        <button onClick={() => patchItem(it.id, { paid: true })} className="text-xs font-semibold text-purple-700 border border-purple-200 px-2.5 py-1 rounded-full">Mark paid</button>
+                      ) : (
+                        <Chip tone={statusTone(it.status)}>{it.status}</Chip>
+                      )}
+                      {canManage && (
+                        <div className="flex items-center gap-1 text-slate-400">
+                          <button type="button" onClick={() => moveRow(i, -1)} disabled={i === 0 || savingOrder} className="p-1 rounded-lg border border-slate-200 disabled:opacity-30" title="Move up (pay earlier)"><Icon name="ChevronUp" size={16} /></button>
+                          <button type="button" onClick={() => moveRow(i, 1)} disabled={i === detail.items.length - 1 || savingOrder} className="p-1 rounded-lg border border-slate-200 disabled:opacity-30" title="Move down (pay later)"><Icon name="ChevronDown" size={16} /></button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {totals && (
+                <div className="p-4 bg-slate-50/70 flex items-center justify-between font-semibold text-slate-900">
+                  <span>Total · {totalCount} staff</span>
+                  <span className="tabular-nums text-purple-700">{rupee(totals.net)}</span>
+                </div>
+              )}
             </div>
           </div>
         </>
