@@ -33,11 +33,14 @@ export async function POST(req: NextRequest) {
     if (grantToken) {
       const verifiedPhone = await consumeSetPinGrant(String(phone || ''), String(grantToken));
       const accounts = await findAccountsByPhone(verifiedPhone);
-      const toSet = accounts.filter((a) => a.mustSetPin);
+      // WhatsApp verification proves the person controls the registered number,
+      // so it authorizes setting the PIN — first login OR a self-service reset of
+      // an existing PIN. (Applies to every account sharing this phone.)
+      const toSet = accounts;
       if (toSet.length === 0) {
         return NextResponse.json(
-          { error: 'You already have a PIN. Contact the office to reset it.' },
-          { status: 409 },
+          { error: 'No account is registered for this number. Contact the school office.' },
+          { status: 404 },
         );
       }
 
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
           data: { passwordHash, passwordChangedAt: new Date(), initialPin: null, loginAttempts: 0, lockedUntil: null },
         }),
         prisma.loginAudit.createMany({
-          data: toSet.map((a) => ({ userId: a.userId, type: 'PASSWORD_CHANGED' as const, detail: 'PIN set via OTP' })),
+          data: toSet.map((a) => ({ userId: a.userId, type: 'PASSWORD_CHANGED' as const, detail: 'PIN set/reset via WhatsApp verification' })),
         }),
       ]);
 
