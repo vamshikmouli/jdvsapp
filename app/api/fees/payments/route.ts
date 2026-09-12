@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { getActiveYear, recordPayment, getStudentAccount } from '@/lib/services/fees';
 import { sendPushToUsers, parentUserIdsForStudents } from '@/lib/push';
-import { sendTextTemplate, sendImageTemplate, uploadWhatsAppMedia, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
+import { sendTextTemplate, sendImageTemplate, uploadWhatsAppMedia, feeWaRecipients, whatsappConfigured } from '@/lib/services/whatsapp';
 import { renderReceiptImage, receiptImageAvailable } from '@/lib/services/receiptImage';
 import { prisma } from '@/lib/db';
 import { PAY_METHODS, feeMoney } from '@/lib/fees';
@@ -65,10 +65,9 @@ export async function POST(req: NextRequest) {
     try {
       if (body?.sendWhatsApp === true && whatsappConfigured()) {
         const acct = await getStudentAccount(studentId, year.id);
-        const to = acct ? toWaNumber(acct.student.guardianPhone) : null;
-        if (acct && to) {
-          const isUni = (h: { key: string; name: string }) => /uniform/i.test(h.name) || /uniform/i.test(h.key);
-          const parent = (acct.student as any).fatherName || acct.student.guardianName || 'Parent';
+        // Fee receipts go to father + mother + the extra fee-contact number (deduped).
+        const recipients = acct ? feeWaRecipients(acct.student as any) : [];
+        if (acct && recipients.length) {
           const cls = (acct.student.className || '—').replace(/\s?STD$/i, '');
           const short = (label: string) => { const t = label.replace(/^\s*uniform\s*[—\-:]\s*/i, '').trim(); const w = t.split(/\s+/).filter(Boolean); return w.length > 1 ? w.map((x) => x[0]).join('').toUpperCase() : t.slice(0, 4).toUpperCase(); };
           const brandName = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { schoolName: true } }))?.schoolName || 'Jnana Deepika Vidhya Samsthe';
@@ -90,7 +89,8 @@ export async function POST(req: NextRequest) {
           if (feeAllocs.length) {
             const feeTotal = feeAllocs.reduce((t, a) => t + a.amount, 0);
             const feeLine = feeAllocs.map((a) => `${a.label} ${feeMoney(a.amount)}`).join('; ') + ` | Paid ${feeMoney(feeTotal)}`;
-            let sent = false;
+            // Render + upload the image once, then send to every recipient.
+            let mediaId: string | null = null;
             if (imgOk) {
               try {
                 const png = renderReceiptImage({
@@ -98,21 +98,26 @@ export async function POST(req: NextRequest) {
                   rows: feeAllocs.map((a) => [a.label, rs(a.amount)] as [string, string]),
                   totalAmount: rs(feeTotal), note: `Receipt ${result.receiptNo}`,
                 });
-                const mediaId = await uploadWhatsAppMedia(png);
-                const r = await sendImageTemplate({ to, templateName: feeImgTpl, lang, mediaId, bodyParams: [parent, acct.student.name, cls, feeLine] });
-                if (r.ok) sent = true; else console.error('wa fee image', r.error);
+                mediaId = await uploadWhatsAppMedia(png);
               } catch (e) { console.error('wa fee image render', e); }
             }
-            if (!sent) {
-              const r = await sendTextTemplate({ to, templateName: process.env.WHATSAPP_FEE_RECEIPT_TEMPLATE || 'fee_receipt', lang, bodyParams: [parent, acct.student.name, cls, feeLine] });
-              if (!r.ok) console.error('wa fee receipt', r.error);
+            for (const rcp of recipients) {
+              let sent = false;
+              if (mediaId) {
+                const r = await sendImageTemplate({ to: rcp.to, templateName: feeImgTpl, lang, mediaId, bodyParams: [rcp.name, acct.student.name, cls, feeLine] });
+                if (r.ok) sent = true; else console.error('wa fee image', rcp.to, r.error);
+              }
+              if (!sent) {
+                const r = await sendTextTemplate({ to: rcp.to, templateName: process.env.WHATSAPP_FEE_RECEIPT_TEMPLATE || 'fee_receipt', lang, bodyParams: [rcp.name, acct.student.name, cls, feeLine] });
+                if (!r.ok) console.error('wa fee receipt', rcp.to, r.error);
+              }
             }
           }
 
           if (uniAllocs.length) {
             const uTotal = uniAllocs.reduce((t, a) => t + a.amount, 0);
             const uLine = uniAllocs.map((a) => `${short(a.label)} ${feeMoney(a.amount)}`).join(', ') + ` | Paid ${feeMoney(uTotal)}`;
-            let sent = false;
+            let mediaId: string | null = null;
             if (imgOk) {
               try {
                 const png = renderReceiptImage({
@@ -120,14 +125,19 @@ export async function POST(req: NextRequest) {
                   rows: uniAllocs.map((a) => [short(a.label), rs(a.amount)] as [string, string]),
                   totalAmount: rs(uTotal), note: `Receipt ${result.receiptNo}`,
                 });
-                const mediaId = await uploadWhatsAppMedia(png);
-                const r = await sendImageTemplate({ to, templateName: uniImgTpl, lang, mediaId, bodyParams: [acct.student.name, cls, uLine] });
-                if (r.ok) sent = true; else console.error('wa uniform image', r.error);
+                mediaId = await uploadWhatsAppMedia(png);
               } catch (e) { console.error('wa uniform image render', e); }
             }
-            if (!sent) {
-              const r = await sendTextTemplate({ to, templateName: process.env.WHATSAPP_UNIFORM_RECEIPT_TEMPLATE || 'uniform_receipt', lang, bodyParams: [acct.student.name, cls, uLine] });
-              if (!r.ok) console.error('wa uniform receipt', r.error);
+            for (const rcp of recipients) {
+              let sent = false;
+              if (mediaId) {
+                const r = await sendImageTemplate({ to: rcp.to, templateName: uniImgTpl, lang, mediaId, bodyParams: [acct.student.name, cls, uLine] });
+                if (r.ok) sent = true; else console.error('wa uniform image', rcp.to, r.error);
+              }
+              if (!sent) {
+                const r = await sendTextTemplate({ to: rcp.to, templateName: process.env.WHATSAPP_UNIFORM_RECEIPT_TEMPLATE || 'uniform_receipt', lang, bodyParams: [acct.student.name, cls, uLine] });
+                if (!r.ok) console.error('wa uniform receipt', rcp.to, r.error);
+              }
             }
           }
         }

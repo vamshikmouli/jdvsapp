@@ -15,6 +15,21 @@ const SCHOOL = 'Jnana Deepika Vidhya Samsthe';
 const TZ = 'Asia/Kolkata';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Nightly-backup health, surfaced on the daily board so a failed/stale/absent
+// backup is visible without anyone checking the VM. Never throws.
+function backupAlert(): string | undefined {
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = process.env.BACKUP_STATUS_PATH || '/home/ubuntu/db-backups/status.json';
+    if (!fs.existsSync(path)) return 'DB backup: no status found — check the nightly backup on the server.';
+    const s = JSON.parse(fs.readFileSync(path, 'utf8')) as { ts?: string; result?: string; detail?: string };
+    const ageH = s.ts ? (Date.now() - new Date(s.ts).getTime()) / 3.6e6 : Infinity;
+    if ((s.result || '').toUpperCase() !== 'OK') return `DB backup FAILED last night (${s.detail || 'error'}) — check the server.`;
+    if (ageH > 30) return `DB backup is stale — last success ${Math.round(ageH)}h ago. Check the nightly backup.`;
+    return undefined;
+  } catch { return undefined; }
+}
+
 // POST (or GET) /api/staff-attendance/cron/daily-admin-report
 // Renders the full daily staff-attendance board and WhatsApps it to the admin
 // recipients (env WHATSAPP_ADMIN_RECIPIENTS, comma-separated). Fired twice a day
@@ -92,7 +107,7 @@ async function handler(req: NextRequest) {
   const dateShort = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ });
   const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TZ });
 
-  const png = renderDailyBoardPng({ dateLabel, timeLabel, rows, schoolName: SCHOOL });
+  const png = renderDailyBoardPng({ dateLabel, timeLabel, rows, schoolName: SCHOOL, alert: backupAlert() });
 
   if (dry) {
     return NextResponse.json({ ok: true, date: dateShort, time: timeLabel, staff: rows.length, recipients: recipients.length, bytes: png.length, dry: true });

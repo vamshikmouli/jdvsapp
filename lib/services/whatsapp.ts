@@ -23,6 +23,28 @@ export function toWaNumber(phone: string | null | undefined): string | null {
   return d;
 }
 
+// Who should receive a student's fee reminders & receipts on WhatsApp:
+// the father, the mother, and the extra fee-contact number (all deduped).
+// Falls back to the guardian number when none of those produce a valid number.
+export function feeWaRecipients(s: {
+  fatherName?: string | null; fatherPhone?: string | null;
+  motherName?: string | null; motherPhone?: string | null;
+  guardianName?: string | null; guardianPhone?: string | null;
+  feeContactPhone?: string | null;
+}): { name: string; to: string }[] {
+  const out: { name: string; to: string }[] = [];
+  const seen = new Set<string>();
+  const add = (name: string | null | undefined, phone: string | null | undefined) => {
+    const to = toWaNumber(phone); if (!to || seen.has(to)) return; seen.add(to);
+    out.push({ name: name || 'Parent', to });
+  };
+  add(s.fatherName, s.fatherPhone);
+  add(s.motherName, s.motherPhone);
+  add(s.fatherName || s.guardianName, s.feeContactPhone);
+  if (out.length === 0) add(s.guardianName || s.fatherName, s.guardianPhone);
+  return out;
+}
+
 // ---- Template & account management (for the in-app WhatsApp admin page) ----
 
 /** List all message templates with their review status. */

@@ -3,10 +3,10 @@ import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
-import { getActiveYear, getStudentAccount } from '@/lib/services/fees';
+import { getActiveYear, getStudentAccount, studentsForFeeReminder } from '@/lib/services/fees';
 import { feeMoney } from '@/lib/fees';
 import { sendPushToUsers, parentUserIdsForStudents } from '@/lib/push';
-import { sendTextTemplate, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
+import { sendTextTemplate, feeWaRecipients, whatsappConfigured } from '@/lib/services/whatsapp';
 
 const cleanClass = (name: string | null) => (name ? name.replace(/\s?STD$/i, '') : '');
 
@@ -37,13 +37,26 @@ export async function POST(req: NextRequest) {
     const title = String(b.title || 'Fee payment reminder').trim();
     const template = String(b.body || '').trim();
     const skipZero = b.skipZero !== false; // default: skip students with no balance
-    if (studentIds.length === 0) return NextResponse.json({ error: 'Pick at least one student' }, { status: 400 });
     if (!template) return NextResponse.json({ error: 'Message template is required' }, { status: 400 });
 
     const year = await getActiveYear();
+
+    // Resolve recipients from a fee scope when explicit ids aren't given
+    // (Communications → Send fee reminder). 'school' = every class, anyone with dues.
+    if (studentIds.length === 0 && b.feeScope) {
+      const mode = b.feeScope === 'school' ? 'all' : (b.mode === 'overdue' || b.mode === 'above' ? b.mode : 'all');
+      const classId = b.feeScope === 'school' ? undefined : (b.classId || undefined);
+      const res = await studentsForFeeReminder(year.id, { mode, minBalance: Number(b.minBalance) || 0, classId });
+      studentIds.push(...res.studentIds);
+    }
+    if (studentIds.length === 0) return NextResponse.json({ error: 'No students match — nobody has a balance to remind.' }, { status: 400 });
     const createdById = (session.user as any)?.id || null;
+    const batchId = (globalThis.crypto?.randomUUID?.() || `b${Date.now()}${Math.random().toString(36).slice(2, 8)}`);
 
     let created = 0, skippedZero = 0, skippedMissing = 0, pushSent = 0, waSent = 0, waFailed = 0;
+    // Per-recipient WhatsApp outcome, so the caller can show exactly which number
+    // got it and which failed.
+    const waDetails: { student: string; className: string | null; name: string; to: string; ok: boolean; error?: string }[] = [];
     const waOn = whatsappConfigured();
     const feeTemplate = process.env.WHATSAPP_FEE_TEMPLATE || 'school_fee_reminder';
     const feeLang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
@@ -90,23 +103,39 @@ export async function POST(req: NextRequest) {
       // The template has one balance slot, so pack the head-wise break-up into it
       // (one line, no newlines — WhatsApp template variables forbid them).
       if (waOn) {
-        const to = toWaNumber(acc.student.guardianPhone);
-        if (to) {
+        // Send to father + mother + the extra fee-contact number (deduped).
+        const recipients = feeWaRecipients(acc.student as any);
+        if (recipients.length) {
           const dueHeads = acc.summary.heads.filter((h) => h.balance > 0);
           const breakup = dueHeads.map((h) => `${h.name} ${feeMoney(h.balance)}`).join(', ');
           const balanceText = breakup ? `${feeMoney(balance)} (${breakup})` : feeMoney(balance);
-          try {
-            const wr = await sendTextTemplate({
-              to, templateName: feeTemplate, lang: feeLang,
-              bodyParams: [parentName, acc.student.name, cleanClass(acc.student.className) || '—', balanceText],
-            });
-            if (wr.ok) waSent++; else { waFailed++; console.error('wa fee reminder', to, wr.error); }
-          } catch (e) { waFailed++; console.error('wa fee reminder', e); }
-        } else { waFailed++; }
+          for (const rcp of recipients) {
+            try {
+              const wr = await sendTextTemplate({
+                to: rcp.to, templateName: feeTemplate, lang: feeLang,
+                bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', balanceText],
+              });
+              if (wr.ok) { waSent++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: true }); }
+              else { waFailed++; console.error('wa fee reminder', rcp.to, wr.error); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: wr.error || 'send failed' }); }
+            } catch (e) { waFailed++; console.error('wa fee reminder', e); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: e instanceof Error ? e.message : 'send error' }); }
+          }
+        } else { waFailed++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: parentName, to: '', ok: false, error: 'No WhatsApp number on file' }); }
       }
     }
 
-    return NextResponse.json({ created, skippedZero, skippedMissing, pushSent, waSent, waFailed });
+    // Persist the per-number delivery log so it can be viewed later in Analytics.
+    if (waDetails.length) {
+      try {
+        await prisma.messageDelivery.createMany({
+          data: waDetails.map((d) => ({
+            batchId, kind: 'FEE_REMINDER', title, studentName: d.student, className: d.className,
+            recipient: d.name, phone: d.to || '—', status: d.ok ? 'SENT' : 'FAILED', error: d.error || null, sentById: createdById,
+          })),
+        });
+      } catch (e) { console.error('reminder log', e); }
+    }
+
+    return NextResponse.json({ batchId, created, skippedZero, skippedMissing, pushSent, waSent, waFailed, waDetails });
   } catch (err) {
     console.error('bulk-reminder POST', err);
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send' }, { status: 400 });

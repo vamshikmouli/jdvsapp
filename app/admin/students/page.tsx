@@ -51,6 +51,7 @@ interface Student {
   motherName?: string | null;
   motherPhone?: string | null;
   smsFor?: string | null;
+  feeContactPhone?: string | null;
   photoUrl?: string | null;
   guardianName: string;
   guardianPhone: string;
@@ -85,6 +86,7 @@ const emptyForm = {
   motherName: '',
   motherPhone: '',
   smsFor: 'FATHER',
+  feeContactPhone: '',
   photoUrl: '',
   village: '',
   taluk: '',
@@ -231,6 +233,7 @@ export default function StudentsPage() {
       motherName: s.motherName || '',
       motherPhone: s.motherPhone || '',
       smsFor: s.smsFor || 'FATHER',
+      feeContactPhone: s.feeContactPhone || '',
       photoUrl: s.photoUrl || '',
       village: s.village || '',
       taluk: s.taluk || '',
@@ -290,6 +293,7 @@ export default function StudentsPage() {
         motherName: form.motherName.trim() || null,
         motherPhone: form.motherPhone.trim() || null,
         smsFor: form.smsFor,
+        feeContactPhone: form.feeContactPhone.trim() || null,
         photoUrl: form.photoUrl || null,
         village: form.village.trim() || null,
         taluk: form.taluk.trim() || null,
@@ -747,6 +751,9 @@ export default function StudentsPage() {
               <option value="MOTHER">Mother</option>
               <option value="BOTH">Both</option>
             </Select>
+          </Field>
+          <Field label="Fee WhatsApp number" hint="Optional — if the parents don't use WhatsApp, fee reminders & receipts also go here. Father + mother numbers always get them too.">
+            <Input value={form.feeContactPhone} onChange={(e) => setForm({ ...form, feeContactPhone: e.target.value })} placeholder="98xxxxxxxx" />
           </Field>
           <Field label="Village">
             <Input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} placeholder="Village name" />

@@ -32,8 +32,11 @@ export function PaymentTimeline({ studentId, name, onClose }: { studentId: strin
     <Drawer open onClose={onClose} title="Payment history" subtitle={name} width={560}
       footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
       {s && (
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Total fee</div><div className="text-lg font-bold tabular-nums text-slate-900">{feeMoney(s.totalCharged - s.concession)}</div></div>
+        <div className={`grid gap-3 mb-5 ${s.concession > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Total fee</div><div className="text-lg font-bold tabular-nums text-slate-900">{feeMoney(s.totalCharged)}</div></div>
+          {s.concession > 0 && (
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Concession</div><div className="text-lg font-bold tabular-nums text-info-700">−{feeMoney(s.concession)}</div></div>
+          )}
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Paid</div><div className="text-lg font-bold tabular-nums text-success-700">{feeMoney(s.totalPaid)}</div></div>
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Balance</div><div className={`text-lg font-bold tabular-nums ${s.totalBalance > 0 ? 'text-danger-700' : 'text-success-700'}`}>{feeMoney(s.totalBalance)}</div></div>
         </div>
@@ -698,6 +701,25 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
     w.document.write(html); w.document.close();
   };
 
+  const editReceiptDate = async (p: any) => {
+    const cur = (p.paidAt || '').slice(0, 10);
+    const nd = window.prompt(`Change date for receipt ${p.receiptNo} (YYYY-MM-DD):`, cur);
+    if (nd == null) return;
+    const v = nd.trim();
+    if (!v || v === cur) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { setError('Enter the date as YYYY-MM-DD.'); return; }
+    setError(''); setMsg('');
+    try {
+      const r = await fetch(`/api/fees/payments/${p.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: v }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Could not change date');
+      await reloadAccount();
+      setMsg(`Receipt ${p.receiptNo} date updated to ${v}.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not change date'); }
+  };
+
   const voidReceipt = async (id: string, receiptNo: string) => {
     if (!window.confirm(`Cancel receipt ${receiptNo}? This reverses its payment.`)) return;
     setError(''); setMsg('');
@@ -1002,6 +1024,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                     </div>
                     <div className="flex items-center gap-2 ml-auto flex-shrink-0">
                       <span className="font-semibold tabular-nums text-slate-900">{feeMoney(p.total)}</span>
+                      {!p.voided && <button onClick={() => editReceiptDate(p)} className="text-slate-300 hover:text-purple-600 p-0.5" title="Change receipt date"><Icon name="Calendar" size={15} /></button>}
                       {!p.voided && <button onClick={() => printReceipt(p)} className="text-slate-300 hover:text-purple-600 p-0.5" title="Print this receipt"><Icon name="Printer" size={15} /></button>}
                       {!p.voided && <button onClick={() => voidReceipt(p.id, p.receiptNo)} className="text-slate-300 hover:text-danger-600 p-0.5" title="Cancel receipt"><Icon name="X" size={15} /></button>}
                     </div>

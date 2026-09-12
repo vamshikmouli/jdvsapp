@@ -7,7 +7,7 @@ import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptySta
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type ChargeStatus, type AccountSummary } from '@/lib/fees';
-import { CLASSES, CLASS_ID_BY_KEY, CLASS_KEY_BY_ID, ID_CARD_FEE, NEW_ADMISSION_FEE, VILLAGE_VAN_FEES, TUITION, softwareFee, type Gender as FeeGender, type ClassKey } from '@/lib/feeStructure';
+import { CLASSES, CLASS_ID_BY_KEY, CLASS_KEY_BY_ID, VILLAGE_VAN_FEES, type Gender as FeeGender, type ClassKey } from '@/lib/feeStructure';
 import { UNIFORM_ITEM_DEFS, itemsForFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
 import { CollectDrawer, PaymentTimeline, type Account } from './account-ui';
 import { useBranding } from '@/components/useBranding';
@@ -127,7 +127,8 @@ function ConcessionsTab() {
   }, [status]);
   useEffect(() => { load(); }, [load]);
 
-  const decide = async (id: string, action: 'approve' | 'reject') => {
+  const decide = async (id: string, action: 'approve' | 'reject' | 'cancel') => {
+    if (action === 'cancel' && !confirm('Cancel this approved concession? The waived amount becomes payable again for the student.')) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/fees/concessions/${id}`, {
@@ -191,7 +192,12 @@ function ConcessionsTab() {
                         <Button size="sm" kind="primary" onClick={() => decide(r.id, 'approve')} disabled={busyId === r.id}>Approve</Button>
                       </div>
                     ) : (
-                      <Chip tone={r.status === 'APPROVED' ? 'success' : 'danger'}>{r.status[0] + r.status.slice(1).toLowerCase()}{r.approvedBy ? ` · ${r.approvedBy}` : ''}</Chip>
+                      <div className="flex items-center justify-end gap-2">
+                        <Chip tone={r.status === 'APPROVED' ? 'success' : 'danger'}>{r.status[0] + r.status.slice(1).toLowerCase()}{r.approvedBy ? ` · ${r.approvedBy}` : ''}</Chip>
+                        {r.status === 'APPROVED' && (
+                          <Button size="sm" icon="X" onClick={() => decide(r.id, 'cancel')} disabled={busyId === r.id}>Cancel</Button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -262,10 +268,11 @@ function CounterTab() {
     return cfg.classFees.find((c) => c.classId === classId && c.feeTypeId === ftId)?.amount || 0;
   }, [cfg.classFees, feeTypeId]);
 
-  const tuitionFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'tuition') || TUITION[ck] || 0, [classFeeAmt]);
-  const softwareFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'software') || softwareFee(CLASS_ID_BY_KEY[ck]) || 0, [classFeeAmt]);
-  const idCardFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'idcard') || ID_CARD_FEE, [classFeeAmt]);
-  const newSetFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'newadmission') || NEW_ADMISSION_FEE, [classFeeAmt]);
+  // All amounts come from Fee Setup (class fees) — no static/file fallback.
+  const tuitionFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'tuition'), [classFeeAmt]);
+  const softwareFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'software'), [classFeeAmt]);
+  const idCardFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'idcard'), [classFeeAmt]);
+  const newSetFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'newadmission'), [classFeeAmt]);
   const uniformItemsFor = useCallback((ck: ClassKey, g: FeeGender) => itemsForFromMatrix(cfg.matrix, CLASS_ID_BY_KEY[ck], g), [cfg.matrix]);
   const allQty = useCallback((ck: ClassKey, g: FeeGender): Record<string, number> =>
     Object.fromEntries(uniformItemsFor(ck, g).map((it) => [it.key, 1])), [uniformItemsFor]);
@@ -905,15 +912,40 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [fmt, setFmt] = useState<'long' | 'wide'>('wide');
 
+  // Wide fee-sheet template (matches Export): three columns (Assigned / Paid /
+  // Date) per fee head. Two example rows show one student paying tuition in two
+  // installments — a second row (blank Assigned) records the later payment.
   const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      { 'Student ID': 'JD1781200142909001', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Tuition Fee', 'Assigned': 16500, 'Concession': 0, 'Paid': 5000, 'Date': '01/06/2026', 'Payment Mode': 'Cash' },
-      { 'Student ID': '', 'Student Name': 'Aarav Sharma', 'Phone': '9876543210', 'Class': '1st STD', 'Academic Year': '2026-27', 'Fee Head': 'Van / Transport', 'Assigned': 6000, 'Concession': 0, 'Paid': 0, 'Date': '', 'Payment Mode': '' },
-    ]);
+    const cols = ['Name', 'Father Name', 'Student ID', 'Class',
+      'Tuition Fee — Assigned', 'Tuition Fee — Paid', 'Tuition Fee — Date',
+      'ID Card — Assigned', 'ID Card — Paid', 'ID Card — Date',
+      'School Uniform — Assigned', 'School Uniform — Paid', 'School Uniform — Date',
+      'Socks — Assigned', 'Socks — Paid', 'Socks — Date'];
+    const blank = Object.fromEntries(cols.map((c) => [c, '']));
+    const rows = [
+      { ...blank, 'Name': 'Aarav Sharma', 'Father Name': 'Ramesh Sharma', 'Student ID': 'JD1781200142909001', 'Class': '1st STD',
+        'Tuition Fee — Assigned': 12000, 'Tuition Fee — Paid': 5000, 'Tuition Fee — Date': '2026-06-01',
+        'ID Card — Assigned': 120, 'ID Card — Paid': 120, 'ID Card — Date': '2026-06-01',
+        'School Uniform — Assigned': 900, 'School Uniform — Paid': 900, 'School Uniform — Date': '2026-06-05',
+        'Socks — Assigned': 60, 'Socks — Paid': 60, 'Socks — Date': '2026-06-05' },
+      { ...blank, 'Name': 'Aarav Sharma', 'Student ID': 'JD1781200142909001', 'Class': '1st STD',
+        'Tuition Fee — Paid': 7000, 'Tuition Fee — Date': '2026-07-01' },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows, { header: cols });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Fees');
-    XLSX.writeFile(wb, 'fee-import-template.xlsx');
+    XLSX.writeFile(wb, 'fee-sheet-template.xlsx');
+  };
+
+  // Detect the wide fee sheet (from Export) vs the classic long format: the wide
+  // sheet has "<Head> — Assigned/Paid/Date" columns and no "Fee Head" column.
+  const detectWide = (raw: any[]) => {
+    const keys = raw.length ? Object.keys(raw[0]).map((k) => String(k).trim().toLowerCase()) : [];
+    const hasHead = keys.includes('fee head') || keys.includes('feehead');
+    const hasGroups = keys.some((k) => /[—-]\s*(assigned|paid|date)$/.test(k));
+    return hasGroups && !hasHead;
   };
 
   const onFile = async (file: File) => {
@@ -923,7 +955,10 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      const mapped = raw.map((r) => ({
+      const wide = detectWide(raw);
+      setFmt(wide ? 'wide' : 'long');
+      // Wide → send raw header-keyed rows (dynamic uniform columns). Long → map.
+      const payloadRows = wide ? raw : raw.map((r) => ({
         admissionNo: r['Student ID'] ?? r['StudentID'] ?? r['Admission No'] ?? r['admissionNo'] ?? '',
         name: r['Student Name'] ?? r['Name'] ?? r['name'] ?? '',
         phone: r['Phone'] ?? r['phone'] ?? '',
@@ -936,9 +971,9 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
         date: r['Date'] ?? r['date'] ?? '',
         mode: r['Payment Mode'] ?? r['Mode'] ?? r['mode'] ?? '',
       }));
-      setRows(mapped);
+      setRows(payloadRows);
       setBusy(true);
-      const res = await fetch('/api/fees/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: mapped, dryRun: true }) });
+      const res = await fetch('/api/fees/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: payloadRows, format: wide ? 'wide' : 'long', dryRun: true }) });
       const d = await res.json();
       setBusy(false);
       if (!res.ok) { setError(d.error || 'Failed to read file'); return; }
@@ -949,7 +984,7 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
   const apply = async () => {
     if (!confirm('Apply the import? This adds the fees/payments to the matched students. Existing fees are kept and duplicate payments are skipped.')) return;
     setBusy(true); setError('');
-    const res = await fetch('/api/fees/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows, dryRun: false }) });
+    const res = await fetch('/api/fees/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows, format: fmt, dryRun: false }) });
     const d = await res.json();
     setBusy(false);
     if (!res.ok) { setError(d.error || 'Import failed'); return; }
@@ -972,14 +1007,14 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
       {step === 'upload' && (
         <div className="space-y-4">
           <div className="rounded-lg bg-purple-50 border border-purple-100 p-3 text-sm text-purple-800">
-            One row per student per fee head. Columns: <b>Student ID</b>, <b>Student Name</b>, <b>Phone</b>, <b>Class</b>, <b>Academic Year</b>, <b>Fee Head</b>, <b>Assigned</b>, <b>Concession</b>, <b>Paid</b>, <b>Date</b>, <b>Payment Mode</b>. Due is calculated for you.
+            One row per student — the same layout <b>Export</b> produces, so you can export, edit and re-upload. After <b>Name</b>, <b>Father Name</b>, <b>Student ID</b>, <b>Class</b>, each fee head has three columns: <b>“Head — Assigned”</b>, <b>“Head — Paid”</b>, <b>“Head — Date”</b> — one group per fee head, and one per uniform item.
           </div>
           <ul className="text-xs text-slate-500 list-disc pl-5 space-y-1">
-            <li>Match is by <b>Student ID</b> if given, otherwise <b>Name + Phone</b> (<b>Class</b> helps when names repeat).</li>
-            <li><b>Fee Head</b> must match a fee type from the Setup tab (e.g. Tuition Fee, Van / Transport).</li>
-            <li><b>Academic Year</b> (e.g. 2026-27) lets you import past years — blank uses the current year.</li>
-            <li><b>Date</b> (dd/mm/yyyy) and <b>Payment Mode</b> (Cash/UPI/Card/Bank/Cheque) apply to the Paid amount — blank = today / Cash.</li>
-            <li>Applying <b>adds</b> to each student's fees — existing charges & payments are kept, and duplicate payments are skipped (safe to re-upload).</li>
+            <li>Match is by <b>Student ID</b> (best); otherwise <b>Name</b> (<b>Class</b> helps when names repeat).</li>
+            <li><b>Assigned</b> sets that head's charge (blank = use the configured class/uniform fee). <b>Paid</b> is what was collected.</li>
+            <li>Heads paid on the <b>same Date</b> become one receipt; different dates = separate receipts. Dates as <b>yyyy-mm-dd</b> or dd/mm/yyyy; blank = today.</li>
+            <li>Applying <b>adds/updates</b> each student — existing receipts are kept and duplicates skipped (safe to re-upload the same file).</li>
+            <li>The classic long format (with a <b>Fee Head</b> column) is still accepted too.</li>
           </ul>
           <Button icon="Download" onClick={downloadTemplate}>Download template</Button>
           <div>
@@ -1050,20 +1085,21 @@ function FeeImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () 
 
 /* ---------- Bulk personalized fee reminder ---------- */
 
+// Mirrors the approved WhatsApp template "school_fee_reminder" so the in-app /
+// push message matches what parents receive on WhatsApp.
 const DEFAULT_BULK_TEMPLATE = `Dear {guardian},
-
-Pending fees for {name} (Class {class}):
-
+Fee reminder from Jnana Deepika Vidhya Samsthe.
+Student: {name} — Class {class}
+Outstanding balance: {balance}
 {breakup}
-
-Kindly clear the dues at the school office at your earliest convenience. Thank you.`;
+Please pay at the school office. Thank you.`;
 
 function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string; name: string; className: string | null; balance: number }[]; onClose: () => void; onDone: () => void }) {
   const [title, setTitle] = useState('Fee payment reminder');
   const [body, setBody] = useState(DEFAULT_BULK_TEMPLATE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ created: number; skippedZero: number; pushSent: number; waSent?: number; waFailed?: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; skippedZero: number; pushSent: number; waSent?: number; waFailed?: number; waDetails?: { student: string; className: string | null; name: string; to: string; ok: boolean; error?: string }[] } | null>(null);
 
   const total = students.reduce((t, s) => t + s.balance, 0);
   const insertToken = (tok: string) => setBody((b) => b + tok);
@@ -1089,13 +1125,31 @@ function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string
 
   if (result) {
     return (
-      <Modal open onClose={onDone} title="Reminders sent" width={460}
+      <Modal open onClose={onDone} title="Reminders sent" width={480}
         footer={<div className="flex justify-end"><Button kind="primary" onClick={onDone}>Done</Button></div>}>
         <div className="text-center py-2">
           <div className="w-12 h-12 rounded-full bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-3"><Icon name="Check" size={26} /></div>
           <p className="text-sm text-slate-700"><span className="font-semibold">{result.created}</span> personalized reminder{result.created === 1 ? '' : 's'} sent — each parent got their own balance.</p>
           <p className="text-xs text-slate-500 mt-1">{result.waSent ? `${result.waSent} WhatsApp sent · ` : ''}{result.pushSent} phone notification{result.pushSent === 1 ? '' : 's'} delivered{result.skippedZero ? ` · ${result.skippedZero} skipped (no balance)` : ''}{result.waFailed ? ` · ${result.waFailed} WhatsApp failed (no number/blocked)` : ''}.</p>
         </div>
+        {result.waDetails && result.waDetails.length > 0 && (
+          <div className="mt-3 text-left">
+            <div className="text-xs font-semibold text-slate-600 mb-1.5">Per-number delivery ({result.waDetails.length})</div>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+              {[...result.waDetails].sort((a, b) => Number(a.ok) - Number(b.ok)).map((d, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-800 truncate">{d.student} <span className="text-slate-400">· {shortClass(d.className)}</span></div>
+                    <div className="text-slate-500 truncate">{d.name}{d.to ? ` · ${d.to}` : ''}</div>
+                  </div>
+                  {d.ok
+                    ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-success-700 font-medium"><Icon name="Check" size={13} /> Sent</span>
+                    : <span className="flex-shrink-0 text-danger-700 font-medium text-right max-w-[45%] truncate" title={d.error}>Failed{d.error ? `: ${d.error}` : ''}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
     );
   }
@@ -1110,7 +1164,7 @@ function BulkNotifyModal({ students, onClose, onDone }: { students: { id: string
         {error && <div className="bg-danger-50 border border-danger-100 rounded-md p-3 text-sm text-danger-700">{error}</div>}
 
         <div className="rounded-lg bg-purple-50 border border-purple-100 px-3 py-2.5 text-xs text-purple-800">
-          Each parent receives their <b>own child’s balance</b>. Write one message using the tags below — they’re filled in per student automatically.
+          Each parent receives their <b>own child’s balance</b>. This text is the in-app &amp; phone notification. On <b>WhatsApp</b> the approved <span className="font-mono">school_fee_reminder</span> template is sent (same details — parent, student, class, balance) to the father, mother and fee-contact numbers.
         </div>
 
         <Field label="Title">

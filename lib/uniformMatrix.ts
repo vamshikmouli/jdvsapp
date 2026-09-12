@@ -29,7 +29,9 @@ export function buildDefaultMatrix(classIds: string[]): UniformMatrix {
   return m;
 }
 
-// Resolve one price: DB matrix first, then the static file as a fallback.
+// Resolve one price from the configured Fee Setup matrix ONLY (no static
+// fallback) — prices everywhere come from Fee settings. Returns null when the
+// item/class isn't priced in Fee Setup.
 export function priceFromMatrix(
   matrix: UniformMatrix | null | undefined,
   key: string,
@@ -45,7 +47,7 @@ export function priceFromMatrix(
     }
     if (cell.ANY != null) return cell.ANY;
   }
-  return staticPrice(key, classId, gender);
+  return null;
 }
 
 // Applicable items for a student, priced for their class + gender.

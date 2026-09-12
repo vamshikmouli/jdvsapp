@@ -147,8 +147,12 @@ export async function getStudentAccount(studentId: string, yearId: string) {
       roll: enrollment?.roll ?? student.roll,
       gender: student.gender,
       fatherName: student.fatherName,
+      fatherPhone: student.fatherPhone,
+      motherName: student.motherName,
+      motherPhone: student.motherPhone,
       guardianName: student.guardianName,
       guardianPhone: student.guardianPhone,
+      feeContactPhone: student.feeContactPhone,
       village: student.village,
     },
     assignment: assignment
@@ -407,6 +411,17 @@ export async function voidPayment(paymentId: string, voidedById: string | null, 
       select: { id: true, voided: true },
     });
   });
+}
+
+// Change a receipt's date (YYYY-MM-DD). Allocations/amounts are unaffected.
+export async function updatePaymentDate(paymentId: string, dateStr: string) {
+  const pay = await prisma.payment.findUnique({ where: { id: paymentId }, select: { id: true, voided: true } });
+  if (!pay) throw new Error('Receipt not found');
+  if (pay.voided) throw new Error('Cannot change the date of a cancelled receipt');
+  const d = new Date(dateStr + 'T00:00:00.000Z');
+  if (isNaN(d.getTime())) throw new Error('Invalid date');
+  await prisma.payment.update({ where: { id: paymentId }, data: { paidAt: d } });
+  return { id: paymentId, paidAt: d.toISOString() };
 }
 
 /** Receipt data for a single payment. */
@@ -1349,8 +1364,26 @@ export async function decideConcession(id: string, approve: boolean, approvedByI
 export async function deleteConcession(id: string) {
   const existing = await prisma.concession.findUnique({ where: { id } });
   if (!existing) throw new Error('Concession not found');
-  if (existing.status === 'APPROVED') throw new Error('Approved concessions cannot be deleted — reject is not available after approval.');
+  if (existing.status === 'APPROVED') throw new Error('Approved concessions cannot be deleted — cancel it instead.');
   await prisma.concession.delete({ where: { id } });
+}
+
+// Cancel an already-APPROVED concession: it stops being applied, so the waived
+// amount becomes payable again. Kept (as REJECTED with a note) for the audit trail.
+export async function cancelConcession(id: string, byId?: string | null, note?: string | null) {
+  const existing = await prisma.concession.findUnique({ where: { id } });
+  if (!existing) throw new Error('Concession not found');
+  if (existing.status !== 'APPROVED') throw new Error('Only an approved concession can be cancelled');
+  return prisma.concession.update({
+    where: { id },
+    data: {
+      status: 'REJECTED',
+      approvedById: byId || existing.approvedById || null,
+      decisionNote: note || 'Cancelled after approval',
+      decidedAt: new Date(),
+    },
+    select: { id: true, status: true },
+  });
 }
 
 export async function listConcessions(opts: { status?: string; yearId?: string }) {

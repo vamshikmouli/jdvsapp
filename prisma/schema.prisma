@@ -360,6 +360,9 @@ model Student {
   motherName    String?
   motherPhone   String?
   smsFor        String?       @default("FATHER") // FATHER | MOTHER | BOTH — which number receives SMS / is the login
+  // Extra WhatsApp number for fee reminders & receipts — used when the parents
+  // don't use WhatsApp. Fee messages go to father + mother + this number.
+  feeContactPhone String?
   photoUrl      String?
   // Primary contact (auto-derived from smsFor) — used for the parent login + display.
   guardianName  String
@@ -985,6 +988,27 @@ model Circular {
   publishedAt DateTime         @default(now())
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+}
+
+// Per-recipient WhatsApp delivery log for fee reminders — one row per number
+// messaged, so the Analytics tab can show who got it and who failed, later.
+model MessageDelivery {
+  id          String   @id @default(cuid())
+  batchId     String   // groups one "Send fee reminder" action
+  kind        String   @default("FEE_REMINDER")
+  title       String?
+  studentId   String?
+  studentName String
+  className   String?
+  recipient   String   // parent/contact name
+  phone       String   // WhatsApp number the message was sent to
+  status      String   // "SENT" | "FAILED"
+  error       String?
+  sentById    String?
+  createdAt   DateTime @default(now())
+
+  @@index([batchId])
+  @@index([createdAt])
 }
 
 // School photo (event gallery). `url` may be a remote/static image.

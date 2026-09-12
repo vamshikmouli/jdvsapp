@@ -12,7 +12,7 @@ interface CircularItem {
 interface ClassOpt { id: string; name: string }
 
 export default function CommunicationsPage() {
-  const [tab, setTab] = useState<'circulars' | 'reminders' | 'devices'>('circulars');
+  const [tab, setTab] = useState<'circulars' | 'reminders' | 'devices' | 'analytics'>('circulars');
   const [items, setItems] = useState<CircularItem[] | null>(null);
   const [classes, setClasses] = useState<ClassOpt[]>([]);
   const [composeCircular, setComposeCircular] = useState(false);
@@ -49,7 +49,7 @@ export default function CommunicationsPage() {
       />
 
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200">
-        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
+        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             <Icon name={icon as any} size={16} />{label}
@@ -58,8 +58,9 @@ export default function CommunicationsPage() {
       </div>
 
       {tab === 'devices' && <DevicesPanel />}
+      {tab === 'analytics' && <AnalyticsPanel />}
 
-      {tab !== 'devices' && (
+      {tab !== 'devices' && tab !== 'analytics' && (
       <div className="mt-5 space-y-3 max-w-3xl">
         <label className="flex items-center justify-end gap-2 text-xs text-slate-500 cursor-pointer">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
@@ -102,6 +103,69 @@ export default function CommunicationsPage() {
       {composeReminder && <ReminderDrawer classes={classes} onClose={() => setComposeReminder(false)} onSent={() => { setComposeReminder(false); load(); }} />}
       {editing && <EditDrawer item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </>
+  );
+}
+
+/* ---------- Analytics: fee-reminder WhatsApp delivery (persisted) ---------- */
+interface DeliveryRow { student: string; className: string | null; recipient: string; phone: string; status: 'SENT' | 'FAILED'; error: string | null }
+interface DeliveryBatch { batchId: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[] }
+
+function AnalyticsPanel() {
+  const [batches, setBatches] = useState<DeliveryBatch[] | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/circulars/reminder-log')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Failed (${r.status})`))))
+      .then((d) => setBatches(d.batches || []))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+  }, []);
+
+  const toggle = (id: string) => setOpen((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const shortCls = (c: string | null) => (c || '—').replace(/\s?STD$/i, '');
+
+  return (
+    <div className="mt-5 max-w-3xl space-y-3">
+      <p className="text-sm text-slate-500">WhatsApp delivery of past fee reminders — which parent number got it and which failed. Saved, so you can review any time.</p>
+      {batches === null && !error && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={72} rounded="lg" />)}
+      {error && <Card><EmptyState icon="AlertCircle" title="Couldn't load" body={error} /></Card>}
+      {batches && batches.length === 0 && <Card><EmptyState icon="BarChart3" title="No reminders sent yet" body="Send a fee reminder — its delivery report will appear here." /></Card>}
+      {batches && batches.map((b) => {
+        const total = b.sent + b.failed;
+        const isOpen = open.has(b.batchId);
+        return (
+          <div key={b.batchId} className="bg-white rounded-xl border border-slate-200 shadow-xs">
+            <button onClick={() => toggle(b.batchId)} className="w-full flex items-center justify-between gap-3 p-4 text-left">
+              <div className="min-w-0">
+                <div className="font-semibold text-slate-900 truncate">{b.title || 'Fee payment reminder'}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {total} number{total === 1 ? '' : 's'}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Chip tone="success">{b.sent} sent</Chip>
+                {b.failed > 0 && <Chip tone="danger">{b.failed} failed</Chip>}
+                <Icon name={isOpen ? 'ChevronUp' : 'ChevronDown'} size={16} className="text-slate-400" />
+              </div>
+            </button>
+            {isOpen && (
+              <div className="border-t border-slate-100 max-h-80 overflow-y-auto divide-y divide-slate-100">
+                {[...b.rows].sort((x, y) => Number(x.status === 'SENT') - Number(y.status === 'SENT')).map((r, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-800 truncate">{r.student} <span className="text-slate-400">· {shortCls(r.className)}</span></div>
+                      <div className="text-slate-500 truncate">{r.recipient}{r.phone && r.phone !== '—' ? ` · ${r.phone}` : ''}</div>
+                    </div>
+                    {r.status === 'SENT'
+                      ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-success-700 font-medium"><Icon name="Check" size={13} /> Sent</span>
+                      : <span className="flex-shrink-0 text-danger-700 font-medium text-right max-w-[45%] truncate" title={r.error || ''}>Failed{r.error ? `: ${r.error}` : ''}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -298,10 +362,18 @@ function ReminderDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
   const [minBalance, setMinBalance] = useState('');
   const [classId, setClassId] = useState('');
   const [title, setTitle] = useState('Fee payment reminder');
-  const [body, setBody] = useState('This is a reminder that fees are pending for your child. Kindly clear the dues at the school office. You can see the balance in the Fees tab.');
+  // Same personalized template as Fees → Notify parents (mirrors the approved
+  // WhatsApp "school_fee_reminder"). Tokens are filled per student.
+  const [body, setBody] = useState(`Dear {guardian},
+Fee reminder from Jnana Deepika Vidhya Samsthe.
+Student: {name} — Class {class}
+Outstanding balance: {balance}
+{breakup}
+Please pay at the school office. Thank you.`);
   const [preview, setPreview] = useState<{ count: number; totalDue: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [result, setResult] = useState<{ created: number; waSent?: number; waFailed?: number; pushSent: number; skippedZero?: number; waDetails?: { student: string; className: string | null; name: string; to: string; ok: boolean; error?: string }[] } | null>(null);
 
   useEffect(() => {
     if (recipients !== 'dues') { setPreview(null); return; }
@@ -316,18 +388,58 @@ function ReminderDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
   const send = async () => {
     setBusy(true); setError('');
     try {
-      const res = await fetch('/api/circulars', {
+      // Personalized per student + WhatsApp to both parents (same flow as Fees → Notify parents).
+      const res = await fetch('/api/circulars/bulk-reminder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'FEE_REMINDER', title, body, pinned: true, feeScope: recipients === 'school' ? 'school' : mode, minBalance: Number(minBalance) || 0, classId: classId || undefined }),
+        body: JSON.stringify({ title, body, feeScope: recipients === 'school' ? 'school' : 'dues', mode, minBalance: Number(minBalance) || 0, classId: classId || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
-      onSent();
+      setResult(data);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); } finally { setBusy(false); }
   };
 
+  if (result) {
+    return (
+      <Drawer open onClose={onSent} title="Fee reminders sent" subtitle="Delivery summary" width={560}
+        footer={<div className="flex justify-end"><Button kind="primary" onClick={onSent}>Done</Button></div>}>
+        <div className="text-center py-4">
+          <div className="w-12 h-12 rounded-full bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-3"><Icon name="Check" size={26} /></div>
+          <p className="text-sm text-slate-700"><span className="font-semibold">{result.created}</span> personalized reminder{result.created === 1 ? '' : 's'} created.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="rounded-lg border border-slate-200 px-3 py-2.5 text-center"><div className="text-base font-bold tabular-nums text-success-700">{result.waSent ?? 0}</div><div className="text-[11px] text-slate-500 mt-0.5">WhatsApp sent</div></div>
+          <div className="rounded-lg border border-slate-200 px-3 py-2.5 text-center"><div className={`text-base font-bold tabular-nums ${(result.waFailed ?? 0) > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{result.waFailed ?? 0}</div><div className="text-[11px] text-slate-500 mt-0.5">WhatsApp failed</div></div>
+          <div className="rounded-lg border border-slate-200 px-3 py-2.5 text-center"><div className="text-base font-bold tabular-nums text-slate-900">{result.pushSent ?? 0}</div><div className="text-[11px] text-slate-500 mt-0.5">Phone alerts</div></div>
+        </div>
+        {(result.waFailed ?? 0) > 0 && (
+          <p className="text-xs text-slate-500 mt-3">WhatsApp failures usually mean no valid number, or the parent hasn’t used WhatsApp / has blocked business messages. The in-app reminder still reaches them in the Parent app.</p>
+        )}
+
+        {result.waDetails && result.waDetails.length > 0 && (
+          <div className="mt-4">
+            <div className="text-xs font-semibold text-slate-600 mb-1.5">Per-number delivery ({result.waDetails.length})</div>
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+              {[...result.waDetails].sort((a, b) => Number(a.ok) - Number(b.ok)).map((d, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-800 truncate">{d.student} <span className="text-slate-400">· {(d.className || '—').replace(/\s?STD$/i, '')}</span></div>
+                    <div className="text-slate-500 truncate">{d.name}{d.to ? ` · ${d.to}` : ''}</div>
+                  </div>
+                  {d.ok
+                    ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-success-700 font-medium"><Icon name="Check" size={13} /> Sent</span>
+                    : <span className="flex-shrink-0 text-danger-700 font-medium text-right max-w-[45%] truncate" title={d.error}>Failed{d.error ? `: ${d.error}` : ''}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Drawer>
+    );
+  }
+
   return (
-    <Drawer open onClose={onClose} title="Send fee reminder" subtitle="Shown in the Parent app" width={560}
+    <Drawer open onClose={onClose} title="Send fee reminder" subtitle="Personalized per student · Parent app, phone & WhatsApp" width={560}
       footer={<div className="flex items-center justify-between gap-2">
         <span className="text-xs text-slate-500">{recipients === 'school' ? 'Whole school' : preview ? `${preview.count} students · ${feeMoney(preview.totalDue)} due` : '…'}</span>
         <div className="flex gap-2"><Button onClick={onClose}>Cancel</Button><Button kind="primary" icon="Send" onClick={send} disabled={busy || !title.trim() || (recipients === 'dues' && preview?.count === 0)}>{busy ? 'Sending…' : 'Send'}</Button></div>
@@ -360,7 +472,9 @@ function ReminderDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
         )}
 
         <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <Field label="Message"><textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" /></Field>
+        <Field label="Message" hint="Filled per student: {name} {firstname} {class} {guardian} {balance} {breakup}. On WhatsApp the approved template goes to the father, mother & fee-contact numbers.">
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-mono focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
+        </Field>
       </div>
     </Drawer>
   );

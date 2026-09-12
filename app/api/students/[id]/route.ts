@@ -63,6 +63,7 @@ export async function PATCH(
         motherName: body.motherName || null,
         motherPhone: body.motherPhone || null,
         smsFor: body.smsFor || 'FATHER',
+        feeContactPhone: body.feeContactPhone || null,
         photoUrl: body.photoUrl || null,
         guardianName: primary.name || '—',
         guardianPhone: primary.phone || '',
