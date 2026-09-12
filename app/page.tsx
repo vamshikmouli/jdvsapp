@@ -65,6 +65,9 @@ export default function LoginPage() {
         const d = await r.json();
         if (d.grantToken) {
           if (pollRef.current) clearInterval(pollRef.current);
+          // Use the server's normalized phone (WA form, e.g. 91XXXXXXXXXX) for set-pin
+          // so the grant lookup matches the phone the grant was minted under.
+          if (d.phone) setOtpPhone(d.phone);
           setGrantToken(d.grantToken); setOtpStep('setpin');
         } else if (d.verified) {
           if (pollRef.current) clearInterval(pollRef.current);
@@ -297,9 +300,12 @@ export default function LoginPage() {
                     <div className="text-xs text-slate-500">Your one-time code</div>
                     <div className="text-2xl font-bold tracking-[0.25em] text-slate-900 mt-0.5">{waCode}</div>
                   </div>
-                  <a href={waLink} target="_blank" rel="noopener noreferrer" className={primaryBtn + ' !bg-[#25D366] hover:!bg-[#1da851]'}>
+                  <a href={waLink} target="_blank" rel="noopener noreferrer"
+                    style={{ backgroundColor: '#25D366', backgroundImage: 'none' }}
+                    className="w-full h-12 rounded-xl text-white font-semibold text-[15px] shadow-md shadow-green-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2">
                     <Icon name="MessageCircle" size={18} /> Open WhatsApp &amp; send
                   </a>
+                  <p className="text-xs text-slate-400 text-center">If your phone asks which app to use (WhatsApp or WhatsApp Business), pick the one that has the number the school has on file.</p>
                   <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
                     <Icon name="Loader2" size={16} className="animate-spin" /> Waiting for your message…
                   </div>
