@@ -1212,7 +1212,7 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     collectedTotal,
     paymentCount: payments.length,
     byDay: [...byDay.entries()].map(([day, amount]) => ({ day, amount })).sort((a, b) => (a.day < b.day ? 1 : -1)),
-    byHead: [...byHead.values()].sort((a, b) => b.amount - a.amount),
+    byHead: [...byHead.entries()].map(([key, v]) => ({ key, name: v.name, amount: v.amount })).sort((a, b) => b.amount - a.amount),
     byClass: [...byClass.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     byVillage: [...byVillage.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     outstanding: outstanding.slice(0, 200),
@@ -1225,6 +1225,41 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     oldFeePending,
     installmentDue,
   };
+}
+
+// Drill-down for a fee head: every student payment allocated to that head within
+// the range, newest first — powers the "who paid, by date" list in Reports.
+export async function getHeadPayments(yearId: string, headKey: string, opts: { from?: string; to?: string }) {
+  const where: any = { yearId, voided: false, allocations: { some: { feeCharge: { feeType: { key: headKey } } } } };
+  if (opts.from || opts.to) {
+    where.paidAt = {};
+    if (opts.from) where.paidAt.gte = new Date(opts.from);
+    if (opts.to) { const t = new Date(opts.to); t.setHours(23, 59, 59, 999); where.paidAt.lte = t; }
+  }
+  const payments = await prisma.payment.findMany({
+    where,
+    include: {
+      student: { include: { class: { select: { name: true } } } },
+      allocations: { include: { feeCharge: { select: { label: true, feeType: { select: { key: true, name: true } } } } } },
+    },
+    orderBy: { paidAt: 'desc' },
+  });
+
+  let headName = '';
+  let total = 0;
+  const rows: { studentId: string; student: string; className: string | null; date: string; amount: number; receiptNo: string; method: string; label: string }[] = [];
+  for (const p of payments) {
+    for (const a of p.allocations) {
+      if (a.feeCharge.feeType.key !== headKey) continue;
+      headName = a.feeCharge.feeType.name;
+      total += a.amount;
+      rows.push({
+        studentId: p.studentId, student: p.student.name, className: p.student.class?.name ?? null,
+        date: p.paidAt.toISOString(), amount: a.amount, receiptNo: p.receiptNo, method: String(p.method), label: a.feeCharge.label,
+      });
+    }
+  }
+  return { headKey, headName, total, count: rows.length, rows };
 }
 
 /**

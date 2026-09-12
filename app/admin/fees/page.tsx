@@ -1770,7 +1770,7 @@ interface ReportData {
   year: { id: string; label: string };
   collectedTotal: number;
   paymentCount: number;
-  byHead: { name: string; amount: number }[];
+  byHead: { key: string; name: string; amount: number }[];
   byClass: { name: string; amount: number }[];
   byVillage: { name: string; amount: number }[];
   byDay: { day: string; amount: number }[];
@@ -1790,6 +1790,7 @@ function ReportsTab() {
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [headDrill, setHeadDrill] = useState<{ key: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1848,7 +1849,23 @@ function ReportsTab() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ReportTable title="Collection by fee head" rows={data.byHead.map((r) => [r.name, feeMoney(r.amount)])} empty="No collection yet" />
+        <Card padded={false} title="Collection by fee head">
+          {data.byHead.length === 0 ? (
+            <div className="px-6 py-8 text-center text-sm text-slate-400">No collection yet</div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody>
+                {data.byHead.map((r) => (
+                  <tr key={r.key} onClick={() => setHeadDrill({ key: r.key, name: r.name })}
+                    className="border-b border-slate-100 last:border-0 hover:bg-purple-50/40 cursor-pointer" title="Show who paid, by date">
+                    <td className="px-6 py-2.5 text-slate-700">{r.name}</td>
+                    <td className="px-6 py-2.5 text-right tabular-nums text-slate-900 whitespace-nowrap">{feeMoney(r.amount)}<Icon name="ChevronRight" size={14} className="inline align-middle text-slate-300 ml-1" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
         <ReportTable title="Collection by class" rows={data.byClass.map((r) => [r.name, feeMoney(r.amount)])} empty="No collection yet" />
         <ReportTable title="Collection by village" rows={data.byVillage.map((r) => [r.name, feeMoney(r.amount)])} empty="No collection yet" />
         <ReportTable title="Daily collection" rows={data.byDay.map((r) => [new Date(r.day).toLocaleDateString('en-IN'), feeMoney(r.amount)])} empty="No collection yet" />
@@ -1870,7 +1887,71 @@ function ReportsTab() {
           <ReportRows head={['Student', 'Installment', 'Balance']} rows={data.installmentDue.map((r) => [r.name, `${r.label}${r.dueDate ? ' · ' + r.dueDate : ''}`, feeMoney(r.balance)])} empty="No pending installments" />
         </Card>
       </div>
+
+      {headDrill && <HeadPaymentsDrawer headKey={headDrill.key} headName={headDrill.name} from={from} to={to} onClose={() => setHeadDrill(null)} />}
     </div>
+  );
+}
+
+// Drill-down: students who paid toward a fee head, by date.
+function HeadPaymentsDrawer({ headKey, headName, from, to, onClose }: { headKey: string; headName: string; from: string; to: string; onClose: () => void }) {
+  const [data, setData] = useState<{ headName: string; total: number; count: number; rows: { studentId: string; student: string; className: string | null; date: string; amount: number; receiptNo: string; method: string; label: string }[] } | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const p = new URLSearchParams({ headKey });
+    if (from) p.set('from', from);
+    if (to) p.set('to', to);
+    fetch(`/api/fees/reports/head-payments?${p}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Failed (${r.status})`))))
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+  }, [headKey, from, to]);
+
+  const rangeLabel = from || to ? `${from || '…'} → ${to || '…'}` : 'Whole year';
+
+  return (
+    <Drawer open onClose={onClose} title={headName} subtitle={`Who paid · ${rangeLabel}`} width={620}
+      footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
+      {!data && !error && <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={40} />)}</div>}
+      {error && <EmptyState icon="AlertCircle" title="Couldn't load" body={error} />}
+      {data && (
+        <>
+          <div className="flex items-center justify-between mb-3 text-sm">
+            <span className="text-slate-500">{data.count} payment{data.count === 1 ? '' : 's'}</span>
+            <span className="font-bold tabular-nums text-slate-900">{feeMoney(data.total)}</span>
+          </div>
+          {data.rows.length === 0 ? (
+            <EmptyState icon="ReceiptText" title="No payments to this head" body="Nothing was collected for this fee head in the selected range." />
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="text-left font-semibold px-3 py-2">Date</th>
+                    <th className="text-left font-semibold px-3 py-2">Student</th>
+                    <th className="text-left font-semibold px-3 py-2">Class</th>
+                    <th className="text-right font-semibold px-3 py-2">Amount</th>
+                    <th className="text-left font-semibold px-3 py-2">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-700">{new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                      <td className="px-3 py-2"><div className="text-slate-900">{r.student}</div>{r.label && !/^tuition|software|id\s*card/i.test(r.label) && <div className="text-[11px] text-slate-400">{r.label}</div>}</td>
+                      <td className="px-3 py-2 text-slate-600">{shortClass(r.className)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-900">{feeMoney(r.amount)}</td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{r.receiptNo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </Drawer>
   );
 }
 

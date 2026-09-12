@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
       newItems: itemList.map((i: any) => ({ feeTypeId: String(i.feeTypeId), label: String(i.label || 'Item'), amount: Math.round(Number(i.amount) || 0) })),
     });
 
+    // Fire-and-forget: collecting a payment must never wait on WhatsApp/Meta.
+    // The VM runs a persistent Node process, so this finishes after the response.
+    void (async () => {
     // Notify the parent on their phone (best-effort — never blocks the receipt).
     try {
       const total = [...allocList, ...itemList].reduce((t: number, a: any) => t + Math.round(Number(a.amount) || 0), 0);
@@ -145,6 +148,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       console.error('payment whatsapp', e);
     }
+    })().catch((e) => console.error('post-payment notify', e));
 
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
