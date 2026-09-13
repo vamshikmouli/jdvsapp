@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/auth/password';
 import { normalizePhone, syntheticEmail } from '@/lib/auth/provision';
+import { parseContactTargets } from '@/lib/contactTargets';
 
 /**
  * Pick the primary contact (name + phone) from father/mother based on `smsFor`.
@@ -8,13 +9,23 @@ import { normalizePhone, syntheticEmail } from '@/lib/auth/provision';
  */
 export function pickPrimaryContact(b: {
   smsFor?: string; fatherName?: string; fatherPhone?: string;
-  motherName?: string; motherPhone?: string; guardianName?: string; guardianPhone?: string;
+  motherName?: string; motherPhone?: string;
+  altGuardianName?: string; altGuardianPhone?: string;
+  guardianName?: string; guardianPhone?: string;
 }): { name: string; phone: string } {
-  const sms = String(b.smsFor || 'FATHER').toUpperCase();
-  const fN = String(b.fatherName || '').trim(), fP = String(b.fatherPhone || '').trim();
-  const mN = String(b.motherName || '').trim(), mP = String(b.motherPhone || '').trim();
-  const name = (sms === 'MOTHER' ? mN || fN : fN || mN) || String(b.guardianName || '').trim();
-  const phone = (sms === 'MOTHER' ? mP || fP : fP || mP) || String(b.guardianPhone || '').trim();
+  const targets = parseContactTargets(b.smsFor);
+  const contacts: Record<string, { name: string; phone: string }> = {
+    FATHER: { name: String(b.fatherName || '').trim(), phone: String(b.fatherPhone || '').trim() },
+    MOTHER: { name: String(b.motherName || '').trim(), phone: String(b.motherPhone || '').trim() },
+    GUARDIAN: { name: String(b.altGuardianName || '').trim(), phone: String(b.altGuardianPhone || '').trim() },
+  };
+  // The login is one phone: the first selected target that has a number, then any
+  // selected target with a name, then any contact at all, then the legacy guardian.
+  const withPhone = targets.map((t) => contacts[t]).find((c) => c.phone);
+  const withName = targets.map((t) => contacts[t]).find((c) => c.name);
+  const anyPhone = Object.values(contacts).find((c) => c.phone);
+  const name = (withPhone?.name || withName?.name || anyPhone?.name || '') || String(b.guardianName || '').trim();
+  const phone = (withPhone?.phone || anyPhone?.phone || '') || String(b.guardianPhone || '').trim();
   return { name, phone };
 }
 

@@ -5,6 +5,7 @@
 //   WHATSAPP_PHONE_NUMBER_ID  — the sending number's Phone Number ID
 //   WHATSAPP_TEMPLATE_NAME    — approved template (default: weekly_attendance_report)
 //   WHATSAPP_TEMPLATE_LANG    — template language code (default: en)
+import { parseContactTargets } from '@/lib/contactTargets';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 
@@ -29,18 +30,27 @@ export function toWaNumber(phone: string | null | undefined): string | null {
 export function feeWaRecipients(s: {
   fatherName?: string | null; fatherPhone?: string | null;
   motherName?: string | null; motherPhone?: string | null;
+  altGuardianName?: string | null; altGuardianPhone?: string | null;
   guardianName?: string | null; guardianPhone?: string | null;
-  feeContactPhone?: string | null;
+  smsFor?: string | null;
+  whatsappEnabled?: boolean | null;
 }): { name: string; to: string }[] {
+  // Legacy opt-out flag still honoured if some old record has it off.
+  if (s.whatsappEnabled === false) return [];
   const out: { name: string; to: string }[] = [];
   const seen = new Set<string>();
   const add = (name: string | null | undefined, phone: string | null | undefined) => {
     const to = toWaNumber(phone); if (!to || seen.has(to)) return; seen.add(to);
     out.push({ name: name || 'Parent', to });
   };
-  add(s.fatherName, s.fatherPhone);
-  add(s.motherName, s.motherPhone);
-  add(s.fatherName || s.guardianName, s.feeContactPhone);
+  // The student's contact setting is a set (any of Father / Mother / Guardian) —
+  // send to each selected party that has a number.
+  for (const t of parseContactTargets(s.smsFor)) {
+    if (t === 'FATHER') add(s.fatherName, s.fatherPhone);
+    else if (t === 'MOTHER') add(s.motherName, s.motherPhone);
+    else if (t === 'GUARDIAN') add(s.altGuardianName, s.altGuardianPhone);
+  }
+  // No chosen number on file — fall back to the resolved primary/guardian number.
   if (out.length === 0) add(s.guardianName || s.fatherName, s.guardianPhone);
   return out;
 }

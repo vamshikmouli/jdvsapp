@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can, getClassScope } from '@/lib/rbac/roles';
 import { normalizePhone } from '@/lib/auth/provision';
 import { ensureParentUser, pickPrimaryContact } from '@/lib/services/parents';
+import { normalizeContactTargets } from '@/lib/contactTargets';
 import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
@@ -99,7 +100,9 @@ export async function POST(req: NextRequest) {
     body.name = String(body.name || '').trim().toUpperCase();
     if (body.fatherName) body.fatherName = String(body.fatherName).trim().toUpperCase();
     if (body.motherName) body.motherName = String(body.motherName).trim().toUpperCase();
+    if (body.altGuardianName) body.altGuardianName = String(body.altGuardianName).trim().toUpperCase();
     if (body.guardianName) body.guardianName = String(body.guardianName).trim().toUpperCase();
+    body.smsFor = normalizeContactTargets(body.smsFor);
 
     // Primary contact (from SMS-for) drives the Parent login (keyed by phone → siblings share it)
     const primary = pickPrimaryContact(body);
@@ -122,8 +125,9 @@ export async function POST(req: NextRequest) {
         fatherPhone: body.fatherPhone || null,
         motherName: body.motherName || null,
         motherPhone: body.motherPhone || null,
-        smsFor: body.smsFor || 'FATHER',
-        feeContactPhone: body.feeContactPhone || null,
+        smsFor: body.smsFor,
+        altGuardianName: body.altGuardianName || null,
+        altGuardianPhone: body.altGuardianPhone || null,
         photoUrl: body.photoUrl || null,
         guardianName: primary.name || '—',
         guardianPhone: primary.phone || '',

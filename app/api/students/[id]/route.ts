@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { pickPrimaryContact } from '@/lib/services/parents';
+import { normalizeContactTargets } from '@/lib/contactTargets';
 import { getActiveYear } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 
@@ -43,7 +44,9 @@ export async function PATCH(
     body.name = String(body.name || '').trim().toUpperCase();
     if (body.fatherName) body.fatherName = String(body.fatherName).trim().toUpperCase();
     if (body.motherName) body.motherName = String(body.motherName).trim().toUpperCase();
+    if (body.altGuardianName) body.altGuardianName = String(body.altGuardianName).trim().toUpperCase();
     if (body.guardianName) body.guardianName = String(body.guardianName).trim().toUpperCase();
+    body.smsFor = normalizeContactTargets(body.smsFor);
     const primary = pickPrimaryContact(body);
     const updated = await prisma.student.update({
       where: { id: params.id },
@@ -62,8 +65,9 @@ export async function PATCH(
         fatherPhone: body.fatherPhone || null,
         motherName: body.motherName || null,
         motherPhone: body.motherPhone || null,
-        smsFor: body.smsFor || 'FATHER',
-        feeContactPhone: body.feeContactPhone || null,
+        smsFor: body.smsFor,
+        altGuardianName: body.altGuardianName || null,
+        altGuardianPhone: body.altGuardianPhone || null,
         photoUrl: body.photoUrl || null,
         guardianName: primary.name || '—',
         guardianPhone: primary.phone || '',

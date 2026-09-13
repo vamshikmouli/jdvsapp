@@ -359,10 +359,18 @@ model Student {
   fatherPhone   String?
   motherName    String?
   motherPhone   String?
-  smsFor        String?       @default("FATHER") // FATHER | MOTHER | BOTH — which number receives SMS / is the login
-  // Extra WhatsApp number for fee reminders & receipts — used when the parents
-  // don't use WhatsApp. Fee messages go to father + mother + this number.
+  // The single contact setting for the student — decides BOTH the parent login and
+  // who gets fee reminders/receipts on WhatsApp:
+  // FATHER = father only, MOTHER = mother only, BOTH = father + mother, GUARDIAN = guardian only.
+  smsFor        String?       @default("FATHER")
+  // Explicit guardian contact — used when neither parent is the point of contact
+  // (e.g. the child lives with a relative). Only relevant when smsFor = GUARDIAN.
+  altGuardianName  String?
+  altGuardianPhone String?
+  // Legacy — retained for old data; no longer set from the student form.
   feeContactPhone String?
+  whatsappEnabled Boolean       @default(true)
+  feeWaTo         String        @default("ALL")
   photoUrl      String?
   // Primary contact (auto-derived from smsFor) — used for the parent login + display.
   guardianName  String
@@ -912,7 +920,10 @@ model Payment {
   yearId        String
   year          AcademicYear        @relation(fields: [yearId], references: [id], onDelete: Cascade)
   receiptNo     String              @unique
-  method        PayMethod
+  method        PayMethod           // single mode, or the largest tender when split
+  // Split tender: [{ method, amount }] when one receipt mixes modes (e.g. UPI + Cash).
+  // Null for a single-mode payment. Sum equals `total`.
+  tenders       Json?
   total         Int
   note          String?
   collectedById String?

@@ -25,6 +25,7 @@ import {
 } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
+import { parseContactTargets, normalizeContactTargets, contactTargetsLabel, type ContactTarget } from '@/lib/contactTargets';
 import * as XLSX from 'xlsx';
 
 interface SchoolClass {
@@ -50,8 +51,9 @@ interface Student {
   fatherPhone?: string | null;
   motherName?: string | null;
   motherPhone?: string | null;
+  altGuardianName?: string | null;
+  altGuardianPhone?: string | null;
   smsFor?: string | null;
-  feeContactPhone?: string | null;
   photoUrl?: string | null;
   guardianName: string;
   guardianPhone: string;
@@ -85,8 +87,9 @@ const emptyForm = {
   fatherPhone: '',
   motherName: '',
   motherPhone: '',
+  altGuardianName: '',
+  altGuardianPhone: '',
   smsFor: 'FATHER',
-  feeContactPhone: '',
   photoUrl: '',
   village: '',
   taluk: '',
@@ -232,8 +235,9 @@ export default function StudentsPage() {
       fatherPhone: s.fatherPhone || '',
       motherName: s.motherName || '',
       motherPhone: s.motherPhone || '',
-      smsFor: s.smsFor || 'FATHER',
-      feeContactPhone: s.feeContactPhone || '',
+      altGuardianName: s.altGuardianName || '',
+      altGuardianPhone: s.altGuardianPhone || '',
+      smsFor: normalizeContactTargets(s.smsFor),
       photoUrl: s.photoUrl || '',
       village: s.village || '',
       taluk: s.taluk || '',
@@ -292,8 +296,9 @@ export default function StudentsPage() {
         fatherPhone: form.fatherPhone.trim() || null,
         motherName: form.motherName.trim() || null,
         motherPhone: form.motherPhone.trim() || null,
+        altGuardianName: form.altGuardianName.trim() || null,
+        altGuardianPhone: form.altGuardianPhone.trim() || null,
         smsFor: form.smsFor,
-        feeContactPhone: form.feeContactPhone.trim() || null,
         photoUrl: form.photoUrl || null,
         village: form.village.trim() || null,
         taluk: form.taluk.trim() || null,
@@ -745,16 +750,42 @@ export default function StudentsPage() {
           <Field label="Mother phone">
             <Input value={form.motherPhone} onChange={(e) => setForm({ ...form, motherPhone: e.target.value })} placeholder="98xxxxxxxx" />
           </Field>
-          <Field label="Send SMS / login to" hint="This number becomes the parent login">
-            <Select value={form.smsFor} onChange={(e) => setForm({ ...form, smsFor: e.target.value })}>
-              <option value="FATHER">Father</option>
-              <option value="MOTHER">Mother</option>
-              <option value="BOTH">Both</option>
-            </Select>
+          <Field label="Guardian name" hint="Only if the contact isn't a parent">
+            <Input value={form.altGuardianName} onChange={(e) => setForm({ ...form, altGuardianName: e.target.value })} placeholder="Guardian's name" />
           </Field>
-          <Field label="Fee WhatsApp number" hint="Optional — if the parents don't use WhatsApp, fee reminders & receipts also go here. Father + mother numbers always get them too.">
-            <Input value={form.feeContactPhone} onChange={(e) => setForm({ ...form, feeContactPhone: e.target.value })} placeholder="98xxxxxxxx" />
+          <Field label="Guardian phone">
+            <Input value={form.altGuardianPhone} onChange={(e) => setForm({ ...form, altGuardianPhone: e.target.value })} placeholder="98xxxxxxxx" />
           </Field>
+          <div className="sm:col-span-2">
+            <Field label="Send to" hint="Tick anyone who should get the parent login and fee reminders & receipts on WhatsApp. Pick one or more.">
+              {(() => {
+                const sel = parseContactTargets(form.smsFor);
+                const toggle = (t: ContactTarget) => {
+                  const has = sel.includes(t);
+                  const next = has ? sel.filter((x) => x !== t) : [...sel, t];
+                  // Keep at least one selected; store the canonical CSV.
+                  setForm({ ...form, smsFor: normalizeContactTargets((next.length ? next : [t]).join(',')) });
+                };
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {(['FATHER', 'MOTHER', 'GUARDIAN'] as ContactTarget[]).map((t) => {
+                      const on = sel.includes(t);
+                      const label = { FATHER: 'Father', MOTHER: 'Mother', GUARDIAN: 'Guardian' }[t];
+                      return (
+                        <button key={t} type="button" onClick={() => toggle(t)}
+                          className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${on ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                          <span className={`grid place-items-center h-4 w-4 rounded ${on ? 'bg-purple-600 text-white' : 'border border-slate-300'}`}>
+                            {on && <Icon name="Check" size={12} />}
+                          </span>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </Field>
+          </div>
           <Field label="Village">
             <Input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} placeholder="Village name" />
           </Field>
@@ -834,7 +865,8 @@ export default function StudentsPage() {
             <DetailRow label="Previous school" value={viewing.previousSchool} />
             <DetailRow label="Father" value={viewing.fatherName ? `${viewing.fatherName}${viewing.fatherPhone ? ` · ${viewing.fatherPhone}` : ''}` : null} />
             <DetailRow label="Mother" value={viewing.motherName ? `${viewing.motherName}${viewing.motherPhone ? ` · ${viewing.motherPhone}` : ''}` : null} />
-            <DetailRow label="SMS / login to" value={viewing.smsFor ? viewing.smsFor[0] + viewing.smsFor.slice(1).toLowerCase() : null} />
+            <DetailRow label="Guardian" value={viewing.altGuardianName ? `${viewing.altGuardianName}${viewing.altGuardianPhone ? ` · ${viewing.altGuardianPhone}` : ''}` : null} />
+            <DetailRow label="Send to" value={contactTargetsLabel(viewing.smsFor)} />
             <DetailRow label="Village" value={viewing.village} />
             <DetailRow label="Taluk" value={viewing.taluk} />
             <DetailRow label="District" value={viewing.district} />

@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       // WhatsApp — the approved "school_fee_reminder" template (father, student, class, balance).
       // The template has one balance slot, so pack the head-wise break-up into it
       // (one line, no newlines — WhatsApp template variables forbid them).
-      if (waOn) {
+      if (waOn && acc.student.whatsappEnabled !== false) {
         // Send to father + mother + the extra fee-contact number (deduped).
         const recipients = feeWaRecipients(acc.student as any);
         if (recipients.length) {

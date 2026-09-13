@@ -24,15 +24,24 @@ export async function POST(req: NextRequest) {
     if (!studentId || (allocList.length === 0 && itemList.length === 0)) {
       return NextResponse.json({ error: 'studentId and at least one charge or item are required' }, { status: 400 });
     }
-    if (!PAY_METHODS.includes(method)) {
+
+    // Split tender (e.g. UPI + Cash in one receipt): validate each mode.
+    const tenders = (Array.isArray(body?.tenders) ? body.tenders : [])
+      .map((t: any) => ({ method: String(t.method) as PayMethod, amount: Math.round(Number(t.amount) || 0) }))
+      .filter((t: any) => PAY_METHODS.includes(t.method) && t.amount > 0);
+
+    // A single mode still needs a valid method; a split provides its modes via `tenders`.
+    if (tenders.length === 0 && !PAY_METHODS.includes(method)) {
       return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 });
     }
+    const primaryMethod = (PAY_METHODS.includes(method) ? method : tenders[0]?.method) as PayMethod;
 
     const year = await getActiveYear();
     const result = await recordPayment({
       studentId,
       yearId: year.id,
-      method: method as PayMethod,
+      method: primaryMethod,
+      tenders: tenders.length ? tenders : undefined,
       note: note || null,
       date: date ? String(date) : null,
       collectedById: (session.user as any)?.staffId || (session.user as any)?.id || null,
@@ -72,21 +81,20 @@ export async function POST(req: NextRequest) {
         const recipients = acct ? feeWaRecipients(acct.student as any) : [];
         if (acct && recipients.length) {
           const cls = (acct.student.className || '—').replace(/\s?STD$/i, '');
-          const short = (label: string) => { const t = label.replace(/^\s*uniform\s*[—\-:]\s*/i, '').trim(); const w = t.split(/\s+/).filter(Boolean); return w.length > 1 ? w.map((x) => x[0]).join('').toUpperCase() : t.slice(0, 4).toUpperCase(); };
           const brandName = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { schoolName: true } }))?.schoolName || 'Jnana Deepika Vidhya Samsthe';
 
           const rs = (n: number) => 'Rs. ' + feeMoney(n).slice(1);
           const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
           const feeImgTpl = process.env.WHATSAPP_FEE_RECEIPT_IMAGE_TEMPLATE || 'fee_receipt_image';
-          const uniImgTpl = process.env.WHATSAPP_UNIFORM_RECEIPT_IMAGE_TEMPLATE || 'uniform_receipt_image';
           const date = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           const imgOk = receiptImageAvailable();
 
           // THIS transaction only — the payment just recorded (never the cumulative statement).
+          // Only the FEE receipt goes on WhatsApp; the uniform receipt is print-only
+          // (the office prints it — parents don't need it on WhatsApp).
           const pay = acct.payments.find((p: any) => p.id === result.id);
           const allocs = (pay?.allocations || []) as { amount: number; label: string }[];
           const feeAllocs = allocs.filter((a) => !/uniform/i.test(a.label) && a.amount > 0);
-          const uniAllocs = allocs.filter((a) => /uniform/i.test(a.label) && a.amount > 0);
           const sub = `${result.receiptNo} · ${date} · ${method}`;
 
           if (feeAllocs.length) {
@@ -117,32 +125,6 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if (uniAllocs.length) {
-            const uTotal = uniAllocs.reduce((t, a) => t + a.amount, 0);
-            const uLine = uniAllocs.map((a) => `${short(a.label)} ${feeMoney(a.amount)}`).join(', ') + ` | Paid ${feeMoney(uTotal)}`;
-            let mediaId: string | null = null;
-            if (imgOk) {
-              try {
-                const png = renderReceiptImage({
-                  title: 'Uniform Receipt', studentName: acct.student.name, klass: cls, sub,
-                  rows: uniAllocs.map((a) => [short(a.label), rs(a.amount)] as [string, string]),
-                  totalAmount: rs(uTotal), note: `Receipt ${result.receiptNo}`,
-                });
-                mediaId = await uploadWhatsAppMedia(png);
-              } catch (e) { console.error('wa uniform image render', e); }
-            }
-            for (const rcp of recipients) {
-              let sent = false;
-              if (mediaId) {
-                const r = await sendImageTemplate({ to: rcp.to, templateName: uniImgTpl, lang, mediaId, bodyParams: [acct.student.name, cls, uLine] });
-                if (r.ok) sent = true; else console.error('wa uniform image', rcp.to, r.error);
-              }
-              if (!sent) {
-                const r = await sendTextTemplate({ to: rcp.to, templateName: process.env.WHATSAPP_UNIFORM_RECEIPT_TEMPLATE || 'uniform_receipt', lang, bodyParams: [acct.student.name, cls, uLine] });
-                if (!r.ok) console.error('wa uniform receipt', rcp.to, r.error);
-              }
-            }
-          }
         }
       }
     } catch (e) {

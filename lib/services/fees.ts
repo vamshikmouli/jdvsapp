@@ -11,6 +11,8 @@ import {
   autoAllocate,
   chargeStatus,
   formatReceiptNo,
+  feeMoney,
+  PAY_METHODS,
 } from '@/lib/fees';
 import { slugify } from '@/lib/utils';
 import type { FeeBillingMode, Gender } from '@prisma/client';
@@ -152,7 +154,12 @@ export async function getStudentAccount(studentId: string, yearId: string) {
       motherPhone: student.motherPhone,
       guardianName: student.guardianName,
       guardianPhone: student.guardianPhone,
+      altGuardianName: student.altGuardianName,
+      altGuardianPhone: student.altGuardianPhone,
+      smsFor: student.smsFor,
       feeContactPhone: student.feeContactPhone,
+      whatsappEnabled: student.whatsappEnabled,
+      feeWaTo: student.feeWaTo,
       village: student.village,
     },
     assignment: assignment
@@ -174,6 +181,7 @@ export async function getStudentAccount(studentId: string, yearId: string) {
       id: p.id,
       receiptNo: p.receiptNo,
       method: p.method,
+      tenders: (p.tenders as { method: string; amount: number }[] | null) ?? null,
       total: p.total,
       note: p.note,
       paidAt: p.paidAt.toISOString(),
@@ -316,6 +324,10 @@ export async function recordPayment(input: {
   collectedById?: string | null;
   date?: string | null; // payment date (yyyy-mm-dd); defaults to now
   allocations: { chargeId: string; amount: number }[];
+  // Split tender: one receipt paid partly by different modes (e.g. UPI + Cash).
+  // When given, its amounts must sum to the receipt total; `method` becomes the
+  // largest tender. Omit for a single-mode payment.
+  tenders?: { method: PayMethod; amount: number }[];
   // Items sold at the counter (e.g. a Uniform item) — a charge is created for each
   // and paid in full by this same receipt. Lets Collect payment sell repeatables.
   newItems?: { feeTypeId: string; label: string; amount: number }[];
@@ -326,6 +338,24 @@ export async function recordPayment(input: {
     .filter((i) => i.feeTypeId && i.amount > 0);
   if (allocs.length === 0 && items.length === 0) throw new Error('Nothing to allocate');
   const total = allocs.reduce((t, a) => t + a.amount, 0) + items.reduce((t, i) => t + i.amount, 0);
+
+  // Split tender: validate + normalize. Sum must equal the receipt total.
+  const tenders = (input.tenders || [])
+    .map((t) => ({ method: t.method, amount: Math.max(0, Math.round(Number(t.amount) || 0)) }))
+    .filter((t) => PAY_METHODS.includes(t.method as any) && t.amount > 0);
+  let method = input.method;
+  let tendersJson: { method: PayMethod; amount: number }[] | null = null;
+  if (tenders.length > 0) {
+    const tsum = tenders.reduce((s, t) => s + t.amount, 0);
+    if (tsum !== total) throw new Error(`Split amounts (${feeMoney(tsum)}) must equal the amount collected (${feeMoney(total)}).`);
+    if (tenders.length > 1) {
+      tendersJson = tenders;
+      method = tenders.slice().sort((a, b) => b.amount - a.amount)[0].method; // dominant mode
+    } else {
+      method = tenders[0].method; // one mode entered via the split UI — no need to store a split
+    }
+  }
+
   const parsed = input.date ? new Date(input.date) : null;
   const paidAt = parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
 
@@ -385,7 +415,8 @@ export async function recordPayment(input: {
         studentId: input.studentId,
         yearId: input.yearId,
         receiptNo,
-        method: input.method,
+        method,
+        tenders: tendersJson === null ? undefined : (tendersJson as any),
         total,
         note: input.note || null,
         collectedById: input.collectedById || null,

@@ -16,6 +16,17 @@ export function shortClass(name: string | null) {
   return name ? name.replace(/\s?STD$/, '') : '—';
 }
 
+// How to label a payment's mode: the single method, OR — for a split receipt
+// (e.g. UPI + Cash in one payment) — each tender with its amount.
+// e.g. "UPI ₹3,000 · Cash ₹2,000".
+function payMethodText(p: { method: string; tenders?: { method: string; amount: number }[] | null }) {
+  const label = (m: string) => PAY_METHOD_LABEL[m as keyof typeof PAY_METHOD_LABEL] || m;
+  if (p.tenders && p.tenders.length > 1) {
+    return p.tenders.map((t) => `${label(t.method)} ₹${feeMoney(t.amount).slice(1)}`).join(' · ');
+  }
+  return label(p.method);
+}
+
 // Read-only payment-history drawer (the "Eye" drawer) — used by the Collection
 // list and the top-bar universal search.
 export function PaymentTimeline({ studentId, name, onClose }: { studentId: string; name: string; onClose: () => void }) {
@@ -61,7 +72,7 @@ export function PaymentTimeline({ studentId, name, onClose }: { studentId: strin
                   <div>
                     <div className={`text-lg font-bold tabular-nums leading-none ${p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{feeMoney(p.total)}</div>
                     <div className="mt-1 text-xs text-slate-500 flex items-center gap-1.5">
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">{PAY_METHOD_LABEL[p.method as keyof typeof PAY_METHOD_LABEL] || p.method}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">{payMethodText(p)}</span>
                       <span className="font-mono text-slate-500">{p.receiptNo}</span>
                       {p.voided && <span className="text-danger-600 font-medium">· cancelled</span>}
                     </div>
@@ -97,10 +108,10 @@ export function MiniToggle({ on, disabled, onChange }: { on: boolean; disabled?:
 }
 
 export interface Account {
-  student: { id: string; name: string; className: string | null; section: string | null; guardianName: string; guardianPhone: string; village: string | null };
+  student: { id: string; name: string; className: string | null; section: string | null; guardianName: string; guardianPhone: string; village: string | null; whatsappEnabled?: boolean };
   assignment: { oldDue: number; concession: number; concessionReason: string | null } | null;
   summary: AccountSummary;
-  payments: { id: string; receiptNo: string; method: string; total: number; note: string | null; paidAt: string; voided?: boolean; voidReason?: string | null; allocations: { amount: number; label: string }[] }[];
+  payments: { id: string; receiptNo: string; method: string; tenders?: { method: string; amount: number }[] | null; total: number; note: string | null; paidAt: string; voided?: boolean; voidReason?: string | null; allocations: { amount: number; label: string }[] }[];
   concessions: { id: string; feeTypeId: string; feeTypeName: string; amount: number; reason: string; status: string; decisionNote: string | null; decidedAt: string | null; createdAt: string }[];
 }
 
@@ -202,7 +213,7 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
                     <span className={p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}>{p.receiptNo}</span>
                     {p.voided && <span className="text-[10px] font-semibold text-danger-700 bg-danger-50 rounded px-1.5 py-0.5">CANCELLED</span>}
                   </div>
-                  <div className="text-xs text-slate-500">{new Date(p.paidAt).toLocaleDateString('en-IN')} · {PAY_METHOD_LABEL[p.method as keyof typeof PAY_METHOD_LABEL] || p.method} · {p.voided ? (p.voidReason || 'Reversed') : p.allocations.map((a) => a.label).join(', ')}</div>
+                  <div className="text-xs text-slate-500">{new Date(p.paidAt).toLocaleDateString('en-IN')} · {payMethodText(p)} · {p.voided ? (p.voidReason || 'Reversed') : p.allocations.map((a) => a.label).join(', ')}</div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`text-sm font-semibold tabular-nums ${p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{feeMoney(p.total)}</span>
@@ -314,27 +325,37 @@ export function NotifyParentModal({ account, onClose }: { account: Account; onCl
 function ConcessionSection({ account, canRequest, onChanged }: { account: Account; canRequest: boolean; onChanged?: () => void }) {
   const heads = account.summary.heads;
   const [open, setOpen] = useState(false);
-  const [feeTypeKey, setFeeTypeKey] = useState(heads[0]?.key || '');
-  const [amount, setAmount] = useState('');
+  // One or more heads waived in a single request (e.g. Tuition 2000 + Old fee 3000 + Van 1000),
+  // all sharing one reason.
+  const [rows, setRows] = useState<{ key: string; amount: string }[]>([{ key: heads[0]?.key || '', amount: '' }]);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  const setRow = (i: number, patch: Partial<{ key: string; amount: string }>) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { key: heads[0]?.key || '', amount: '' }]);
+  const removeRow = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
+  const resetForm = () => { setRows([{ key: heads[0]?.key || '', amount: '' }]); setReason(''); };
+  const rowsTotal = rows.reduce((t, r) => t + (Math.round(Number(r.amount)) || 0), 0);
 
   const submit = async () => {
     setBusy(true);
     setError('');
     try {
-      if (!feeTypeKey) throw new Error('Pick a fee head');
-      if (!(Number(amount) > 0)) throw new Error('Enter an amount');
-      if (!reason.trim()) throw new Error('Enter a reason');
+      const items = rows
+        .filter((r) => r.key && Number(r.amount) > 0)
+        .map((r) => ({ feeTypeKey: r.key, amount: Math.round(Number(r.amount)) }));
+      if (items.length === 0) throw new Error('Add at least one fee head with an amount.');
+      if (!reason.trim()) throw new Error('Enter a reason.');
       const res = await fetch('/api/fees/concessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: account.student.id, feeTypeKey, amount: Math.round(Number(amount)), reason: reason.trim() }),
+        body: JSON.stringify({ studentId: account.student.id, items, reason: reason.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      setOpen(false); setAmount(''); setReason('');
+      setOpen(false); resetForm();
       onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to request');
@@ -358,21 +379,32 @@ function ConcessionSection({ account, canRequest, onChanged }: { account: Accoun
       {open && (
         <div className="rounded-lg border border-slate-200 p-3 mb-3 space-y-3">
           {error && <div className="bg-danger-50 border border-danger-100 rounded-md p-2 text-xs text-danger-700">{error}</div>}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Fee head">
-              <Select value={feeTypeKey} onChange={(e) => setFeeTypeKey(e.target.value)}>
-                {heads.map((h) => <option key={h.key} value={h.key}>{h.name} · bal {feeMoney(h.balance)}</option>)}
-              </Select>
-            </Field>
-            <Field label="Concession amount (₹)">
-              <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="text-right tabular-nums" />
-            </Field>
+          <div className="space-y-2">
+            <div className="grid grid-cols-[1fr_120px_32px] gap-2 text-[10.5px] uppercase tracking-wide text-slate-400 font-semibold px-0.5">
+              <span>Fee head</span><span className="text-right">Amount (₹)</span><span />
+            </div>
+            {rows.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_120px_32px] gap-2 items-center">
+                <Select value={r.key} onChange={(e) => setRow(i, { key: e.target.value })}>
+                  {heads.map((h) => <option key={h.key} value={h.key}>{h.name} · bal {feeMoney(h.balance)}</option>)}
+                </Select>
+                <Input type="number" value={r.amount} onChange={(e) => setRow(i, { amount: e.target.value })} placeholder="0" className="text-right tabular-nums" />
+                <button onClick={() => removeRow(i)} disabled={rows.length === 1}
+                  className="text-slate-300 hover:text-danger-600 disabled:opacity-30 disabled:hover:text-slate-300 p-1 justify-self-center" title="Remove this head">
+                  <Icon name="X" size={16} />
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between">
+              <button onClick={addRow} className="text-xs font-medium text-purple-600 hover:text-purple-700 inline-flex items-center gap-1"><Icon name="Plus" size={14} /> Add another fee head</button>
+              {rowsTotal > 0 && <span className="text-xs font-semibold text-slate-600 tabular-nums">Total concession {feeMoney(rowsTotal)}</span>}
+            </div>
           </div>
-          <Field label="Reason">
+          <Field label="Reason (applies to all rows)">
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Sibling discount / staff ward / hardship…" />
           </Field>
           <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => { setOpen(false); resetForm(); }}>Cancel</Button>
             <Button size="sm" kind="primary" onClick={submit} disabled={busy}>{busy ? 'Submitting…' : 'Submit for approval'}</Button>
           </div>
           <p className="text-[11px] text-slate-400">Concessions need admin approval before they reduce the balance.</p>
@@ -453,6 +485,9 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const [addOpen, setAddOpen] = useState(true); // left "Add a fee" panel expanded?
   const [addKind, setAddKind] = useState<'van' | 'uniform' | 'idcard' | 'oldfee'>('van'); // active add-fee chip
   const [method, setMethod] = useState(''); // no default — operator must pick
+  // Split tender: one receipt paid partly by two+ modes (e.g. UPI + Cash).
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splits, setSplits] = useState<Record<string, string>>({}); // mode → amount typed
   const [note, setNote] = useState('');
   const [sendWa, setSendWa] = useState(false); // WhatsApp receipt to parent — opt-in, off by default
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -507,6 +542,11 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const allOut = useMemo(() => headsOut.flatMap((h) => h.items), [headsOut]);
 
   const total = Object.values(amounts).reduce((t, v) => t + (v || 0), 0);
+  // Split-tender helpers: the non-zero per-mode amounts and their sum.
+  const splitTenders = PAY_MODES
+    .map((m) => ({ method: m.v, amount: Math.round(Number(splits[m.v]) || 0) }))
+    .filter((t) => t.amount > 0);
+  const splitSum = splitTenders.reduce((t, x) => t + x.amount, 0);
   const toAllocate = tendered - total;
   const remainingBal = Math.max(0, (account?.summary.totalBalance || 0) - total);
   const receipts = (account?.payments || []);
@@ -600,11 +640,18 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
     try {
       const allocations = allOut.filter((c) => (amounts[c.id] || 0) > 0).map((c) => ({ chargeId: c.id, amount: amounts[c.id] }));
       if (allocations.length === 0) throw new Error('Enter an amount to collect against at least one fee.');
-      if (!method) throw new Error('Select a payment mode.');
       if (!date) throw new Error('Select a payment date.');
+      // Split tender: two+ modes on one receipt. Their amounts must sum to what's collected.
+      const useSplit = splitOpen && splitTenders.length > 0;
+      if (useSplit) {
+        if (splitTenders.length < 2) throw new Error('A split needs at least two payment modes — otherwise just pick one mode.');
+        if (splitSum !== total) throw new Error(`Split amounts (${feeMoney(splitSum)}) must add up to the amount collected (${feeMoney(total)}).`);
+      } else if (!method) {
+        throw new Error('Select a payment mode.');
+      }
       const res = await fetch('/api/fees/payments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId, method, note, date, allocations, sendWhatsApp: sendWa }),
+        body: JSON.stringify({ studentId, method: useSplit ? undefined : method, tenders: useSplit ? splitTenders : undefined, note, date, allocations, sendWhatsApp: sendWa }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
@@ -628,7 +675,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       const words = t.split(/\s+/).filter(Boolean);
       return words.length > 1 ? words.map((w) => w[0]).join('').toUpperCase() : t.slice(0, 4).toUpperCase();
     };
-    const method = PAY_METHOD_LABEL[pay.method as keyof typeof PAY_METHOD_LABEL] || pay.method;
+    const method = payMethodText(pay);
     const dt = (pay.paidAt || '').slice(0, 10);
     const stu = `<b>${esc(account.student.name)}</b> · ${esc(shortClass(account.student.className) || '—')}<br>${esc(pay.receiptNo)} · ${dt} · ${esc(method)}`;
     const allocs = ((pay.allocations || []) as { amount: number; label: string }[]).filter((a) => a.amount > 0);
@@ -637,6 +684,17 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
     const body = (arr: { amount: number; label: string }[], map: (l: string) => string) =>
       arr.map((a) => `<tr><td>${esc(map(a.label))}</td><td class="r b">${rup(a.amount)}</td></tr>`).join('');
     const sum = (arr: { amount: number }[]) => arr.reduce((t, a) => t + a.amount, 0);
+
+    // Balance due, per fee head (Tuition, Van, Old fee, Software, ID card …) as it stands
+    // AFTER this payment — uniform is billed on its own slip, so it's left off here.
+    const balHeads = account.summary.heads.filter((h) => !/uniform/i.test(h.name) && h.balance > 0);
+    const balTotal = balHeads.reduce((t, h) => t + h.balance, 0);
+    const balBlock = balHeads.length ? `
+        <table class="bal">
+          <thead><tr><th>Balance due</th><th class="r">Amount</th></tr></thead>
+          <tbody>${balHeads.map((h) => `<tr><td>${esc(h.name)}</td><td class="r${h.balance > 0 ? ' due' : ''}">${rup(h.balance)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td>Total balance</td><td class="r">${rup(balTotal)}</td></tr></tfoot>
+        </table>` : '';
 
     const feeSlip = feeAl.length ? `
       <div class="slip">
@@ -648,6 +706,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tbody>${body(feeAl, (l) => l)}</tbody>
           <tfoot><tr><td>Total paid</td><td class="r">${rup(sum(feeAl))}</td></tr></tfoot>
         </table>
+        ${balBlock}
         <div class="foot">Thank you.</div>
       </div>` : '';
 
@@ -678,6 +737,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       td.r,th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:6px}
       td.b{font-weight:700}
       tfoot td{border-top:1px solid #000;border-bottom:none;font-weight:700;padding-top:5px}
+      table.bal{margin-top:8px}
+      td.due{color:#C7322E;font-weight:700}
       .foot{margin-top:8px;font-size:10px;text-align:center;color:#555}
     </style></head><body>
       <div class="stage"></div>
@@ -799,15 +860,42 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
             <div className="font-display text-2xl font-extrabold tabular-nums text-purple-600 leading-none mt-0.5">{feeMoney(total)}</div>
           </div>
           <div>
-            <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold mb-1">Payment mode <span className="text-danger-500">*</span></div>
-            <div className="flex flex-wrap gap-1.5">
-              {PAY_MODES.map((m) => (
-                <button key={m.v} onClick={() => setMethod(m.v)} title={m.label}
-                  className={`flex flex-col items-center gap-0.5 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold flex-1 lg:flex-none min-w-[52px] transition-colors ${method === m.v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                  <Icon name={m.icon as any} size={16} />{m.label}
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Payment mode <span className="text-danger-500">*</span></div>
+              <button type="button" onClick={() => setSplitOpen((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors ${splitOpen ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                title="Split one receipt across two or more modes (e.g. UPI + Cash)">
+                <Icon name="Split" size={12} /> {splitOpen ? 'Single mode' : 'Split'}
+              </button>
             </div>
+            {!splitOpen ? (
+              <div className="flex flex-wrap gap-1.5">
+                {PAY_MODES.map((m) => (
+                  <button key={m.v} onClick={() => setMethod(m.v)} title={m.label}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold flex-1 lg:flex-none min-w-[52px] transition-colors ${method === m.v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                    <Icon name={m.icon as any} size={16} />{m.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  {PAY_MODES.map((m) => (
+                    <label key={m.v} title={m.label}
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${Number(splits[m.v]) > 0 ? 'border-purple-400 bg-purple-50' : 'border-slate-200'}`}>
+                      <Icon name={m.icon as any} size={18} className="text-slate-500" />
+                      <span className="text-[13px] font-semibold text-slate-600 w-12">{m.label}</span>
+                      <input inputMode="numeric" placeholder="0" value={splits[m.v] ?? ''}
+                        onChange={(e) => setSplits((s) => ({ ...s, [m.v]: e.target.value.replace(/[^\d]/g, '') }))}
+                        className="w-24 rounded-md border border-slate-200 px-2.5 py-1.5 text-right text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
+                    </label>
+                  ))}
+                </div>
+                <div className={`mt-1 text-[10.5px] font-semibold tabular-nums ${splitSum === total ? 'text-success-600' : 'text-danger-600'}`}>
+                  Split {feeMoney(splitSum)} / {feeMoney(total)}{splitSum !== total ? ` · ${splitSum > total ? 'over by' : 'short by'} ${feeMoney(Math.abs(total - splitSum))}` : ' ✓'}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Date <span className="text-danger-500">*</span></label>
@@ -995,10 +1083,17 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
 
             <div className="mt-3">
               <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
-              <label className="mt-3 flex items-center gap-2.5 cursor-pointer select-none">
-                <input type="checkbox" checked={sendWa} onChange={(e) => setSendWa(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
-                <span className="text-sm text-slate-700 inline-flex items-center gap-1.5"><Icon name="MessageCircle" size={15} className="text-success-600" /> Send WhatsApp receipt to parent</span>
-              </label>
+              {account.student.whatsappEnabled === false ? (
+                <div className="mt-3 flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <Icon name="MessageCircleOff" size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                  <span>WhatsApp is <b>off</b> for this student (set in the student profile) — the receipt won’t be sent. Print it instead.</span>
+                </div>
+              ) : (
+                <label className="mt-3 flex items-center gap-2.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={sendWa} onChange={(e) => setSendWa(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
+                  <span className="text-sm text-slate-700 inline-flex items-center gap-1.5"><Icon name="MessageCircle" size={15} className="text-success-600" /> Send WhatsApp receipt to parent</span>
+                </label>
+              )}
               <p className="text-[11px] text-slate-400 mt-2">Choose the <b>payment mode</b> and <b>date</b> in the bar below, then Record.</p>
             </div>
           </div>
