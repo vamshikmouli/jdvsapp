@@ -589,7 +589,30 @@ export async function updateFeeType(
   if (patch.active != null) data.active = !!patch.active;
   if (patch.installmentable != null) data.installmentable = !!patch.installmentable;
   if (patch.autoAssign != null) data.autoAssign = !!patch.autoAssign;
-  return prisma.feeType.update({ where: { id }, data });
+
+  // Renaming a fee type in Fee Setup must show up everywhere. Fee heads already
+  // read the live FeeType.name, but existing charge *labels* (shown on receipts,
+  // reports, the fee sheet, timelines) were frozen to the name at billing time —
+  // so cascade the rename to any charge whose label is that old name, or that old
+  // name + " — Installment N". Item labels (e.g. "Uniform — Shirt") are untouched.
+  const renaming = data.name != null;
+  const current = renaming ? await prisma.feeType.findUnique({ where: { id }, select: { name: true } }) : null;
+  const updated = await prisma.feeType.update({ where: { id }, data });
+  if (renaming && current && current.name !== data.name) {
+    const oldName = current.name;
+    const newName = data.name as string;
+    const sep = ' — ';
+    // label = oldName  → newName
+    // label = "oldName — …" → "newName — …"  (preserve the suffix)
+    await prisma.$executeRaw`
+      UPDATE "FeeCharge"
+      SET "label" = ${newName} || SUBSTRING("label" FROM ${oldName.length + 1})
+      WHERE "feeTypeId" = ${id}
+        AND ("label" = ${oldName}
+             OR SUBSTRING("label" FROM 1 FOR ${oldName.length + sep.length}) = ${oldName + sep})
+    `;
+  }
+  return updated;
 }
 
 export async function reorderFeeTypes(orderedIds: string[]) {

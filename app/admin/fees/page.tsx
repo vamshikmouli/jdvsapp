@@ -267,6 +267,18 @@ function CounterTab() {
     if (!ftId) return 0;
     return cfg.classFees.find((c) => c.classId === classId && c.feeTypeId === ftId)?.amount || 0;
   }, [cfg.classFees, feeTypeId]);
+  // Live display name for a concept, straight from Fee Setup (falls back to a
+  // sensible default if that fee type isn't configured). So renaming a fee type
+  // (e.g. Tuition → School Fee) shows the new name here too.
+  const feeTypeName = useCallback((concept: string, fallback: string): string => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const h = norm(concept);
+    const t = cfg.feeTypes;
+    const ft = t.find((x) => x.key === concept)
+      ?? t.find((x) => norm(x.key) === h || norm(x.key).startsWith(h))
+      ?? t.find((x) => norm(x.name).startsWith(h));
+    return ft?.name || fallback;
+  }, [cfg.feeTypes]);
 
   // All amounts come from Fee Setup (class fees) — no static/file fallback.
   const tuitionFor = useCallback((ck: ClassKey) => classFeeAmt(CLASS_ID_BY_KEY[ck], 'tuition'), [classFeeAmt]);
@@ -325,8 +337,8 @@ function CounterTab() {
 
   const childLines = useCallback((ch: CounterChild): { name: string; qty: number; amount: number }[] => {
     const out: { name: string; qty: number; amount: number }[] = [];
-    out.push({ name: 'Tuition fee', qty: 1, amount: tuitionFor(ch.classKey) });
-    out.push({ name: 'Software', qty: 1, amount: softwareFor(ch.classKey) });
+    out.push({ name: feeTypeName('tuition', 'Tuition fee'), qty: 1, amount: tuitionFor(ch.classKey) });
+    out.push({ name: feeTypeName('software', 'Software'), qty: 1, amount: softwareFor(ch.classKey) });
     // Uniforms — available for both new and old admission (ticked lines only).
     for (const it of uniformItemsFor(ch.classKey, ch.gender)) {
       const q = ch.qty[it.key] || 0;
@@ -334,11 +346,11 @@ function CounterTab() {
     }
     // One-time new-admission charges.
     if (ch.admission === 'new') {
-      if (ch.newSet) out.push({ name: 'New admission set (tie + belt + socks)', qty: 1, amount: newSetFor(ch.classKey) });
-      if (ch.idCard) out.push({ name: 'ID Card', qty: 1, amount: idCardFor(ch.classKey) });
+      if (ch.newSet) out.push({ name: feeTypeName('newadmission', 'New admission set (tie + belt + socks)'), qty: 1, amount: newSetFor(ch.classKey) });
+      if (ch.idCard) out.push({ name: feeTypeName('idcard', 'ID Card'), qty: 1, amount: idCardFor(ch.classKey) });
     }
     return out;
-  }, [tuitionFor, softwareFor, uniformItemsFor, newSetFor, idCardFor]);
+  }, [tuitionFor, softwareFor, uniformItemsFor, newSetFor, idCardFor, feeTypeName]);
 
   const childTotal = (ch: CounterChild) => childLines(ch).reduce((t, l) => t + l.amount, 0);
   const grandTotal = children.reduce((t, ch) => t + childTotal(ch), 0);
@@ -429,8 +441,8 @@ function CounterTab() {
 
                   {/* auto fees */}
                   <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">Tuition fee</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(tuitionFor(ch.classKey))}</span></div>
-                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">Software</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(softwareFor(ch.classKey))}</span></div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">{feeTypeName('tuition', 'Tuition fee')}</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(tuitionFor(ch.classKey))}</span></div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">{feeTypeName('software', 'Software')}</span><span className="tabular-nums font-medium text-slate-900">{feeMoney(softwareFor(ch.classKey))}</span></div>
                   </div>
 
                   <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
