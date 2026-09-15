@@ -107,7 +107,8 @@ export default function CommunicationsPage() {
 }
 
 /* ---------- Analytics: fee-reminder WhatsApp delivery (persisted) ---------- */
-interface DeliveryRow { student: string; className: string | null; recipient: string; phone: string; status: 'SENT' | 'FAILED'; error: string | null }
+interface DeliveryRow { student: string; className: string | null; recipient: string; phone: string; status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'; error: string | null }
+const DELIVERY_LABEL: Record<string, string> = { SENT: 'Sent', DELIVERED: 'Delivered', READ: 'Read', FAILED: 'Failed' };
 interface DeliveryBatch { batchId: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[] }
 
 function AnalyticsPanel() {
@@ -149,15 +150,15 @@ function AnalyticsPanel() {
             </button>
             {isOpen && (
               <div className="border-t border-slate-100 max-h-80 overflow-y-auto divide-y divide-slate-100">
-                {[...b.rows].sort((x, y) => Number(x.status === 'SENT') - Number(y.status === 'SENT')).map((r, i) => (
+                {[...b.rows].sort((x, y) => Number(y.status === 'FAILED') - Number(x.status === 'FAILED')).map((r, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
                     <div className="min-w-0">
                       <div className="font-medium text-slate-800 truncate">{r.student} <span className="text-slate-400">· {shortCls(r.className)}</span></div>
                       <div className="text-slate-500 truncate">{r.recipient}{r.phone && r.phone !== '—' ? ` · ${r.phone}` : ''}</div>
                     </div>
-                    {r.status === 'SENT'
-                      ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-success-700 font-medium"><Icon name="Check" size={13} /> Sent</span>
-                      : <span className="flex-shrink-0 text-danger-700 font-medium text-right max-w-[45%] truncate" title={r.error || ''}>Failed{r.error ? `: ${r.error}` : ''}</span>}
+                    {r.status === 'FAILED'
+                      ? <span className="flex-shrink-0 text-danger-700 font-medium text-right max-w-[55%] truncate" title={r.error || ''}>Failed{r.error ? `: ${r.error}` : ''}</span>
+                      : <span className="flex-shrink-0 inline-flex items-center gap-1 text-success-700 font-medium"><Icon name={r.status === 'READ' ? 'CheckCheck' : 'Check'} size={13} /> {DELIVERY_LABEL[r.status] || 'Sent'}</span>}
                   </div>
                 ))}
               </div>

@@ -640,21 +640,23 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
 
   // Individual slips the office cuts along the dashed lines and hands to students.
   const printChits = () => {
-    const list = [...sorted].sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
-    if (!list.length) return;
+    // Only students who actually owe something — skip fully-paid (zero balance) students.
+    const list = [...sorted]
+      .filter((r) => r.totalBalance > 0)
+      .sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
+    if (!list.length) { alert('No students with a pending balance to print.'); return; }
     const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     const chits = list
       .map(
         (r) => {
           // Show fee heads only — exclude uniform (items) from the chit.
           const heads = (r.heads || []).filter((h) => h.balance > 0 && !/uniform/i.test(h.name));
-          const lines = heads.length
-            ? heads.map((h) => `<div class="row"><span>${esc(h.name)}</span><span>₹${fmt(h.balance)}</span></div>`).join('')
-            : `<div class="row"><span>No dues</span><span>₹0</span></div>`;
+          const lines = heads.map((h) => `<div class="row"><span>${esc(h.name)}</span><span>₹${fmt(h.balance)}</span></div>`).join('');
           return `<div class="chit">
           <div class="nm">${esc(r.name)}</div>
           <div class="cl">Class: <b>${esc(shortClass(r.className) || '—')}</b></div>
           ${lines}
+          <div class="row bal"><span>Total Balance</span><span>₹${fmt(r.totalBalance)}</span></div>
           <div class="dt">${now}</div>
         </div>`;
         }

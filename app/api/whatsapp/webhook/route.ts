@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { matchInboundVerification } from '@/lib/auth/waVerify';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,26 @@ export const dynamic = 'force-dynamic';
 // Configure in Meta: App → WhatsApp → Configuration → Callback URL =
 //   https://jnanadeepika.app/api/whatsapp/webhook , Verify token = WHATSAPP_WEBHOOK_VERIFY_TOKEN
 // then subscribe to the "messages" field.
+
+// Delivery-status precedence: FAILED and READ are terminal; DELIVERED beats SENT.
+// Meta can send statuses slightly out of order, so never downgrade a stronger state.
+const STATUS_RANK: Record<string, number> = { SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+
+async function updateDeliveryStatus(wamid: string | undefined, waStatus: string, error: string) {
+  if (!wamid) return;
+  const next = String(waStatus || '').toUpperCase(); // sent | delivered | read | failed
+  if (!(next in STATUS_RANK)) return;
+  const rows = await prisma.messageDelivery.findMany({ where: { wamid }, select: { id: true, status: true } });
+  for (const row of rows) {
+    const cur = STATUS_RANK[String(row.status || '').toUpperCase()] || 0;
+    // Don't overwrite a stronger/terminal state with a weaker one (e.g. READ→DELIVERED).
+    if ((STATUS_RANK[next] || 0) < cur && cur >= STATUS_RANK.DELIVERED) continue;
+    await prisma.messageDelivery.update({
+      where: { id: row.id },
+      data: { status: next, error: next === 'FAILED' ? (error || 'Undeliverable (number may not be on WhatsApp)') : null },
+    });
+  }
+}
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -32,6 +53,11 @@ export async function POST(req: NextRequest) {
         for (const st of v.statuses || []) {
           const err = (st.errors || []).map((e: any) => `${e.code}:${e.title}${e.error_data?.details ? ` (${e.error_data.details})` : ''}`).join('; ');
           console.log(`[WA-STATUS] to=${st.recipient_id} status=${st.status} id=${st.id}${err ? ` ERROR=${err}` : ''}`);
+          // Reflect the real delivery outcome in the saved reminder log (Analytics).
+          // A number that isn't on WhatsApp is accepted (200) at send time and only
+          // reported "failed" here — so this is what turns a false "Sent" into "Failed".
+          await updateDeliveryStatus(st.id, st.status, err).catch((e) =>
+            console.log('[WA-STATUS] log update error:', e?.message));
         }
         for (const msg of v.messages || []) {
           console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${msg.text?.body || ''}`);

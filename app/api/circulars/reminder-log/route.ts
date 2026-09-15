@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest) {
     const map = new Map<string, any>();
     for (const r of rows) {
       const b = map.get(r.batchId) || { batchId: r.batchId, title: r.title, at: r.createdAt, sent: 0, failed: 0, rows: [] as any[] };
-      if (r.status === 'SENT') b.sent++; else b.failed++;
+      if (r.status === 'FAILED') b.failed++; else b.sent++;
       if (r.createdAt > b.at) b.at = r.createdAt;
       b.rows.push({ student: r.studentName, className: r.className, recipient: r.recipient, phone: r.phone, status: r.status, error: r.error });
       map.set(r.batchId, b);

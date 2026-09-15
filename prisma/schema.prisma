@@ -1013,13 +1013,17 @@ model MessageDelivery {
   className   String?
   recipient   String   // parent/contact name
   phone       String   // WhatsApp number the message was sent to
-  status      String   // "SENT" | "FAILED"
+  // Lifecycle: SENT (accepted by Meta) → DELIVERED → READ, or FAILED (e.g. the
+  // number isn't on WhatsApp). Updated from the delivery-status webhook via wamid.
+  status      String
   error       String?
+  wamid       String?  // Meta message id — matches the async status webhook to this row
   sentById    String?
   createdAt   DateTime @default(now())
 
   @@index([batchId])
   @@index([createdAt])
+  @@index([wamid])
 }
 
 // School photo (event gallery). `url` may be a remote/static image.

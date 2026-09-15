@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     let created = 0, skippedZero = 0, skippedMissing = 0, pushSent = 0, waSent = 0, waFailed = 0;
     // Per-recipient WhatsApp outcome, so the caller can show exactly which number
     // got it and which failed.
-    const waDetails: { student: string; className: string | null; name: string; to: string; ok: boolean; error?: string }[] = [];
+    const waDetails: { student: string; className: string | null; name: string; to: string; ok: boolean; error?: string; wamid?: string }[] = [];
     const waOn = whatsappConfigured();
     const feeTemplate = process.env.WHATSAPP_FEE_TEMPLATE || 'school_fee_reminder';
     const feeLang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
                 to: rcp.to, templateName: feeTemplate, lang: feeLang,
                 bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', balanceText],
               });
-              if (wr.ok) { waSent++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: true }); }
+              if (wr.ok) { waSent++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: true, wamid: wr.id }); }
               else { waFailed++; console.error('wa fee reminder', rcp.to, wr.error); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: wr.error || 'send failed' }); }
             } catch (e) { waFailed++; console.error('wa fee reminder', e); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: e instanceof Error ? e.message : 'send error' }); }
           }
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
         await prisma.messageDelivery.createMany({
           data: waDetails.map((d) => ({
             batchId, kind: 'FEE_REMINDER', title, studentName: d.student, className: d.className,
-            recipient: d.name, phone: d.to || '—', status: d.ok ? 'SENT' : 'FAILED', error: d.error || null, sentById: createdById,
+            recipient: d.name, phone: d.to || '—', status: d.ok ? 'SENT' : 'FAILED', error: d.error || null, wamid: d.wamid || null, sentById: createdById,
           })),
         });
       } catch (e) { console.error('reminder log', e); }
