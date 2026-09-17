@@ -1254,14 +1254,22 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     orderBy: { paidAt: 'desc' },
   });
 
-  // Collection grouped by day + by fee head.
+  // Collection grouped by day + by fee head. All figures are whole rupees (Int
+  // columns), so sums are exact — but a payment's allocations can total LESS than
+  // its `total` (an on-account / advance amount not tied to a charge). We add that
+  // remainder to an "Advance / on account" head so the fee-head breakdown always
+  // sums to the exact collected total (no rupee drift between the headline and the
+  // breakdown).
   const byDay = new Map<string, number>();
   const byHead = new Map<string, { name: string; amount: number }>();
   const byClass = new Map<string, number>();
   const byVillage = new Map<string, number>();
+  const paidStudentIds = new Set<string>();
   let collectedTotal = 0;
+  let allocatedTotal = 0;
   for (const p of payments) {
     collectedTotal += p.total;
+    paidStudentIds.add(p.studentId);
     const day = p.paidAt.toISOString().slice(0, 10);
     byDay.set(day, (byDay.get(day) || 0) + p.total);
     const cls = p.student.class?.name || 'Unassigned';
@@ -1269,12 +1277,15 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     const vil = p.student.village || '—';
     byVillage.set(vil, (byVillage.get(vil) || 0) + p.total);
     for (const a of p.allocations) {
+      allocatedTotal += a.amount;
       const key = a.feeCharge.feeType.key;
       const cur = byHead.get(key) || { name: a.feeCharge.feeType.name, amount: 0 };
       cur.amount += a.amount;
       byHead.set(key, cur);
     }
   }
+  const unallocated = collectedTotal - allocatedTotal;
+  if (unallocated > 0) byHead.set('__advance', { name: 'Advance / on account', amount: unallocated });
 
   // Outstanding + old-due, from assignments.
   const assignments = await prisma.studentFeeAssignment.findMany({
@@ -1286,13 +1297,20 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     },
   });
   const outstanding: { id: string; name: string; className: string | null; balance: number }[] = [];
+  // Students with dues who made NO payment in the selected date range — the
+  // "who hasn't paid between X and Y" list (only meaningful when a range is set).
+  const rangeActive = !!(opts.from || opts.to);
+  const notPaidInRange: { id: string; name: string; className: string | null; balance: number }[] = [];
   const oldDue: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[] = [];
   // Per-class billed / collected / pending, with headcounts — the class-wise detail.
   const classAgg = new Map<string, { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }>();
   let billedTotal = 0, collectedAllTotal = 0, oldFeeCollected = 0, oldFeePending = 0;
+  let uniformCollected = 0, uniformPending = 0;
   for (const a of assignments) {
     const rows = applyConcessions(a.charges.map(toChargeRow), approvedConcessionMap(a.concessions as any));
     const sum = aggregateAccount(rows);
+    const uniHead = sum.heads.find((h) => h.key === 'uniform' || /uniform/i.test(h.name));
+    if (uniHead) { uniformCollected += uniHead.paid; uniformPending += uniHead.balance; }
     const billed = Math.max(0, sum.totalCharged - sum.concession);
     billedTotal += billed;
     collectedAllTotal += sum.totalPaid;
@@ -1305,8 +1323,11 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     cs.students += 1;
     if (sum.totalBalance > 0) cs.withDues += 1;
     classAgg.set(clsKey, cs);
-    if (sum.totalBalance > 0)
+    if (sum.totalBalance > 0) {
       outstanding.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, balance: sum.totalBalance });
+      if (rangeActive && !paidStudentIds.has(a.studentId))
+        notPaidInRange.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, balance: sum.totalBalance });
+    }
     const oldHead = sum.heads.find((h) => h.key === 'olddue');
     if (oldHead && oldHead.charged > 0) {
       oldDue.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, amount: oldHead.charged, paid: oldHead.paid, balance: oldHead.balance });
@@ -1315,6 +1336,7 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     }
   }
   outstanding.sort((x, y) => y.balance - x.balance);
+  notPaidInRange.sort((x, y) => y.balance - x.balance);
   oldDue.sort((x, y) => y.balance - x.balance);
   // Natural class order (1st, 2nd, … 10th) via numeric-aware compare on the name.
   const classSummary = [...classAgg.values()]
@@ -1350,6 +1372,10 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     byVillage: [...byVillage.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     outstanding: outstanding.slice(0, 500),
     outstandingTotal: outstanding.reduce((t, o) => t + o.balance, 0),
+    notPaidInRange: notPaidInRange.slice(0, 500),
+    notPaidInRangeTotal: notPaidInRange.reduce((t, o) => t + o.balance, 0),
+    notPaidInRangeCount: notPaidInRange.length,
+    rangeActive,
     billedTotal,
     collectedAllTotal,
     withDues: outstanding.length,
@@ -1358,6 +1384,8 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     oldDueUnpaid: oldDue.filter((o) => o.balance > 0),
     oldFeeCollected,
     oldFeePending,
+    uniformCollected,
+    uniformPending,
     installmentDue,
   };
 }

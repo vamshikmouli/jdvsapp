@@ -1822,12 +1822,18 @@ interface ReportData {
   byDay: { day: string; amount: number }[];
   outstanding: { id: string; name: string; className: string | null; balance: number }[];
   outstandingTotal: number;
+  notPaidInRange: { id: string; name: string; className: string | null; balance: number }[];
+  notPaidInRangeTotal: number;
+  notPaidInRangeCount: number;
+  rangeActive: boolean;
   billedTotal: number;
   collectedAllTotal: number;
   withDues: number;
   classSummary: { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }[];
   oldFeeCollected: number;
   oldFeePending: number;
+  uniformCollected: number;
+  uniformPending: number;
   oldDue: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
   oldDueUnpaid: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
   installmentDue: { id: string; name: string; className: string | null; label: string; dueDate: string | null; balance: number; status: ChargeStatus }[];
@@ -1865,48 +1871,32 @@ function ReportsTab() {
 
   return (
     <div className="mt-6 space-y-5">
-      {/* Hero — collection rate for the year */}
-      <div className="relative overflow-hidden rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-600 to-purple-500 text-white shadow-sm">
-        <div className="absolute -right-8 -top-10 w-44 h-44 rounded-full bg-white/10" aria-hidden />
-        <div className="absolute -right-16 top-8 w-44 h-44 rounded-full bg-white/5" aria-hidden />
-        <div className="relative p-5 sm:p-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.08em] text-white/70 font-semibold">Collected this year · {data.year.label}</div>
-              <div className="font-display text-3xl sm:text-4xl font-extrabold tabular-nums leading-none mt-1">{feeMoney(data.collectedAllTotal)}</div>
-              <div className="text-[13px] text-white/80 mt-1.5">of {feeMoney(data.billedTotal)} billed · {feeMoney(data.outstandingTotal)} outstanding</div>
-            </div>
-            <div className="text-right">
-              <div className="font-display text-3xl font-extrabold tabular-nums leading-none">{rate}%</div>
-              <div className="text-[11px] uppercase tracking-wide text-white/70 font-semibold mt-1">collected</div>
-            </div>
-          </div>
-          <div className="mt-4 h-2.5 rounded-full bg-white/20 overflow-hidden">
-            <div className="h-full rounded-full bg-white/90 transition-all" style={{ width: `${Math.min(100, rate)}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* KPIs — whole year */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Students with dues', value: String(data.withDues), icon: 'Users', bar: 'bg-marigold-500', badge: 'bg-marigold-100 text-marigold-700' },
-          { label: 'Outstanding', value: feeMoney(data.outstandingTotal), icon: 'AlertCircle', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700' },
+      {/* Year overview — compact KPI strip (denser than the old hero, more data) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {([
+          { label: `Collected · ${data.year.label}`, value: feeMoney(data.collectedAllTotal), icon: 'IndianRupee', bar: 'bg-purple-500', badge: 'bg-purple-100 text-purple-700', sub: `${rate}% of billed` },
+          { label: 'Billed (year)', value: feeMoney(data.billedTotal), icon: 'ReceiptText', bar: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700' },
+          { label: 'Outstanding', value: feeMoney(data.outstandingTotal), icon: 'AlertCircle', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700', sub: `${data.withDues} student${data.withDues === 1 ? '' : 's'}` },
+          { label: 'Collection rate', value: `${rate}%`, icon: 'TrendingUp', bar: 'bg-purple-500', badge: 'bg-purple-100 text-purple-700', pct: rate },
+          { label: 'Uniform collected', value: feeMoney(data.uniformCollected), icon: 'Shirt', bar: 'bg-info-500', badge: 'bg-info-100 text-info-700', sub: data.uniformPending > 0 ? `${feeMoney(data.uniformPending)} pending` : 'fully paid' },
           { label: 'Old fee collected', value: feeMoney(data.oldFeeCollected), icon: 'History', bar: 'bg-success-500', badge: 'bg-success-100 text-success-700' },
           { label: 'Old fee pending', value: feeMoney(data.oldFeePending), icon: 'History', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700' },
-        ].map((k) => (
-          <div key={k.label} className="relative flex items-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-xs px-4 py-3.5 overflow-hidden">
+          { label: 'Uniform pending', value: feeMoney(data.uniformPending), icon: 'Shirt', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700' },
+        ] as { label: string; value: string; icon: string; bar: string; badge: string; sub?: string; pct?: number }[]).map((k) => (
+          <div key={k.label} className="relative bg-white border border-slate-200 rounded-2xl shadow-xs px-3.5 py-3 overflow-hidden">
             <span className={`absolute left-0 top-0 bottom-0 w-1 ${k.bar}`} aria-hidden />
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${k.badge}`}><Icon name={k.icon as any} size={18} /></div>
-            <div className="min-w-0">
-              <div className="text-lg font-bold text-slate-900 leading-none tabular-nums truncate">{k.value}</div>
-              <div className="text-[11px] text-slate-500 mt-1">{k.label}</div>
+            <div className="flex items-center gap-2">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${k.badge}`}><Icon name={k.icon as any} size={15} /></div>
+              <div className="text-[10.5px] text-slate-500 leading-tight">{k.label}</div>
             </div>
+            <div className="text-lg font-bold text-slate-900 leading-none tabular-nums mt-2 truncate">{k.value}</div>
+            {k.sub && <div className="text-[10.5px] text-slate-400 mt-1">{k.sub}</div>}
+            {typeof k.pct === 'number' && <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className={`h-full rounded-full ${k.bar}`} style={{ width: `${Math.min(100, k.pct)}%` }} /></div>}
           </div>
         ))}
       </div>
 
-      {/* range filter — collection within a date range */}
+      {/* range filter — collection within a date range (also drives "not paid in range") */}
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
@@ -1918,7 +1908,26 @@ function ReportsTab() {
             <div className="text-xs text-slate-500">{data.paymentCount} payments {from || to ? 'in range' : `· year ${data.year.label}`}</div>
           </div>
         </div>
+        {data.rangeActive && (
+          <p className="text-[12px] text-slate-500 mt-3 pt-3 border-t border-slate-100">
+            Set a range (e.g. 20 May → today) to see the <b className="text-danger-700">{data.notPaidInRangeCount}</b> student{data.notPaidInRangeCount === 1 ? '' : 's'} who owe money and made <b>no payment</b> in that period — listed below.
+          </p>
+        )}
       </Card>
+
+      {/* Who hasn't paid in the selected range (with dues, zero payments in range) */}
+      {data.rangeActive && (
+        <Card padded={false} title={<div className="flex items-center justify-between w-full">
+          <span className="inline-flex items-center gap-2"><Icon name="UserX" size={16} className="text-danger-600" /> Not paid {from ? `since ${new Date(from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}{to ? ` – ${new Date(to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}</span>
+          <span className="text-sm font-normal"><span className="text-slate-500">{data.notPaidInRangeCount} student{data.notPaidInRangeCount === 1 ? '' : 's'} · </span><span className="text-danger-700 font-semibold tabular-nums">{feeMoney(data.notPaidInRangeTotal)}</span></span>
+        </div>}>
+          <ReportRows
+            head={['Student', 'Class', 'Outstanding']}
+            rows={data.notPaidInRange.map((r) => [r.name + '  ·  ' + r.id, shortClass(r.className), feeMoney(r.balance)])}
+            empty="Everyone with dues has paid something in this range 🎉"
+          />
+        </Card>
+      )}
 
       {/* Class-wise: collected vs pending, with headcounts. Click a class → its students. */}
       <ClassBreakdown rows={data.classSummary} onClass={(r) => setClassDrill({ classId: r.classId || 'unassigned', name: r.name })} />

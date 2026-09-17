@@ -9,15 +9,20 @@ import { randomUUID } from 'crypto';
 export const runtime = 'nodejs';
 
 // Storage strategy:
-//  - If Supabase Storage is configured (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY),
-//    upload there and return its public URL. Works on serverless hosts (Vercel) where
-//    the filesystem is ephemeral.
-//  - Otherwise fall back to writing under /public/uploads/students (local dev / a VPS
-//    like Oracle Cloud with a persistent disk).
+//  - Set UPLOADS_TO_DISK=true to force local disk (/public/uploads/…) even when
+//    Supabase env vars are present — used on the Oracle VM, which has a persistent
+//    disk with plenty of free space (keeps photos local, no external dependency).
+//  - Else if Supabase Storage is configured (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY),
+//    upload there and return its public URL (needed on serverless hosts like Vercel
+//    where the filesystem is ephemeral).
+//  - Else fall back to writing under /public/uploads/students (local dev).
+// Note: the Supabase keys stay set for DB backups + brand-assets — this flag only
+// changes where student photos / logos are written.
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
-const useSupabase = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const forceDisk = ['1', 'true', 'yes'].includes((process.env.UPLOADS_TO_DISK || '').toLowerCase());
+const useSupabase = !forceDisk && Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 
 async function uploadToSupabase(filename: string, bytes: Buffer, contentType: string, folder: string) {
   const objectPath = `${folder}/${filename}`;

@@ -48,10 +48,10 @@ export default function CommunicationsPage() {
           : undefined}
       />
 
-      <div className="flex items-center gap-1 mt-6 border-b border-slate-200">
+      <div className="flex flex-nowrap items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['replies', 'Replies', 'MessageSquare'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            className={`inline-flex flex-shrink-0 whitespace-nowrap items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             <Icon name={icon as any} size={16} />{label}
           </button>
         ))}
