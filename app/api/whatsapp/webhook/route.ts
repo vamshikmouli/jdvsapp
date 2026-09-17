@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { matchInboundVerification } from '@/lib/auth/waVerify';
+import { recordInboundMessage } from '@/lib/services/waInbox';
 import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -60,10 +61,16 @@ export async function POST(req: NextRequest) {
             console.log('[WA-STATUS] log update error:', e?.message));
         }
         for (const msg of v.messages || []) {
-          console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${msg.text?.body || ''}`);
+          const inText = msg.text?.body || msg.button?.text || msg.interactive?.list_reply?.title || msg.interactive?.button_reply?.title || '';
+          console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${inText}`);
           // Reverse login-verification: the user sent us their one-time code.
           if (msg.type === 'text' && msg.text?.body && msg.from) {
             await matchInboundVerification(msg.from, msg.text.body).catch((e) => console.log('[WA-VERIFY] match error:', e?.message));
+          }
+          // Capture the reply so the office can see & answer it in-app (Communications → Replies).
+          if (msg.from) {
+            await recordInboundMessage({ waMessageId: msg.id, from: msg.from, type: msg.type, text: inText || null })
+              .catch((e) => console.log('[WA-INBOUND] store error:', e?.message));
           }
         }
       }

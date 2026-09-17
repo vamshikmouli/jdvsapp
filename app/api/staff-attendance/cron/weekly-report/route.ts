@@ -9,6 +9,7 @@ import {
 } from '@/lib/staffAttendance/schedule';
 import { renderAttendanceCalendarPng } from '@/lib/services/attendanceImage';
 import { whatsappConfigured, toWaNumber, uploadWhatsAppMedia, sendAttendanceTemplate } from '@/lib/services/whatsapp';
+import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +75,8 @@ async function handler(req: NextRequest) {
   const holidaySet = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
 
   const results: { sent: number; skipped: number; failed: number; details: any[] } = { sent: 0, skipped: 0, failed: 0, details: [] };
+  const deliveries: WaDeliveryInput[] = [];
+  const batchId = `staffreport-${monthLabel.replace(/\s+/g, '')}-${Date.now()}`;
 
   for (const s of staff) {
     const wa = toWaNumber(toOverride || s.phone);
@@ -105,6 +108,7 @@ async function handler(req: NextRequest) {
       const send = await sendAttendanceTemplate({ to: wa, name: s.name.split(' ')[0] || s.name, monthLabel, mediaId });
       if (send.ok) { results.sent++; results.details.push({ name: s.name, status: 'sent', to: wa, id: send.id }); }
       else { results.failed++; results.details.push({ name: s.name, status: 'failed', to: wa, error: send.error }); }
+      deliveries.push({ kind: 'STAFF_ATTENDANCE_REPORT', batchId, title: `Attendance report · ${monthLabel}`, studentName: s.name, recipient: s.name, phone: wa, ok: send.ok, error: send.ok ? null : (send.error || 'send failed'), wamid: send.id });
       await sleep(350); // gentle pacing
     } catch (e: any) {
       results.failed++;
@@ -112,6 +116,7 @@ async function handler(req: NextRequest) {
     }
   }
 
+  if (!dry) await recordWaDeliveries(deliveries);
   return NextResponse.json({ ok: true, month: monthLabel, dry, total: staff.length, ...results });
 }
 

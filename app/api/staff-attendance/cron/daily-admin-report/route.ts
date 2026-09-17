@@ -8,6 +8,7 @@ import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 import { renderDailyBoardPng } from '@/lib/services/attendanceImage';
 import { whatsappConfigured, toWaNumber, uploadWhatsAppMedia, sendImageTemplate } from '@/lib/services/whatsapp';
+import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,14 +119,18 @@ async function handler(req: NextRequest) {
   const mediaId = await uploadWhatsAppMedia(png);
 
   const results: any[] = [];
+  const deliveries: WaDeliveryInput[] = [];
+  const batchId = `adminreport-${dateShort}-${now.getTime()}`;
   let sent = 0, failed = 0;
   for (const to of recipients) {
     const r = await sendImageTemplate({ to, templateName: template, lang, mediaId, bodyParams: [dateShort, timeLabel] });
     if (r.ok) { sent++; results.push({ to, status: 'sent', id: r.id }); }
     else { failed++; results.push({ to, status: 'failed', error: r.error }); }
+    deliveries.push({ kind: 'ADMIN_REPORT', batchId, title: `Daily attendance report · ${dateShort}`, studentName: 'Admin', recipient: 'Admin', phone: to, ok: r.ok, error: r.ok ? null : (r.error || 'send failed'), wamid: r.id });
     await sleep(300);
   }
 
+  await recordWaDeliveries(deliveries);
   return NextResponse.json({ ok: true, date: dateShort, time: timeLabel, staff: rows.length, sent, failed, results });
 }
 

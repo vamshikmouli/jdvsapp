@@ -16,6 +16,7 @@ import {
 import { FeeBillingMode } from '@prisma/client';
 import { VILLAGE_VAN_FEES, UNIFORM_ITEMS } from '@/lib/feeStructure';
 import { buildDefaultMatrix } from '@/lib/uniformMatrix';
+import { logActivity } from '@/lib/activity';
 
 export async function GET(_req: NextRequest) {
   try {
@@ -46,6 +47,21 @@ export async function PATCH(req: NextRequest) {
     }
     const body = await req.json();
     const { kind, id } = body || {};
+
+    // School-wide fee settings (no row id needed).
+    if (kind === 'settings') {
+      const data: any = {};
+      if (body.feeReceiptWhatsapp != null) {
+        const v = String(body.feeReceiptWhatsapp).toUpperCase();
+        data.feeReceiptWhatsapp = ['OFF', 'ASK', 'AUTO'].includes(v) ? v : 'ASK';
+      }
+      if (Object.keys(data).length) {
+        await prisma.settings.upsert({ where: { id: 'singleton' }, update: data, create: { id: 'singleton', ...data } });
+        void logActivity(session, { category: 'CONFIG', action: 'FEE_SETTINGS_CHANGED', summary: `Set WhatsApp fee receipts to ${data.feeReceiptWhatsapp}`, meta: data, req });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     // classFee can be saved by (classId, feeTypeId) without an existing row id.
     const classFeeUpsert = kind === 'classFee' && body.classId && body.feeTypeId;
     if (!kind || (!id && !classFeeUpsert)) return NextResponse.json({ error: 'kind and id are required' }, { status: 400 });
@@ -87,6 +103,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Unknown kind' }, { status: 400 });
     }
 
+    void logActivity(session, { category: 'CONFIG', action: 'FEE_SETUP_CHANGED', entityType: kind, entityId: id || `${body.classId || ''}:${body.feeTypeId || ''}`, summary: `Updated fee setup (${kind}${kind === 'feeType' && body.name ? ` → "${body.name}"` : ''})`, meta: body, req });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('fees/config PATCH', err);

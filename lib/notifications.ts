@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import type { Permission, PunchType } from '@prisma/client';
 import { sendPushToUsers } from '@/lib/push';
 import { whatsappConfigured, toWaNumber, sendTextTemplate } from '@/lib/services/whatsapp';
+import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 
 /** User ids of active users whose active role grants `permission`. */
 export async function userIdsWithPermission(permission: Permission): Promise<string[]> {
@@ -128,15 +129,19 @@ async function adminWaNumbers(): Promise<string[]> {
 }
 
 /** Fire an approved WhatsApp template to every admin recipient. Best-effort. */
-async function sendWhatsAppToAdmins(opts: { template: string; bodyParams: string[]; context: string }): Promise<void> {
+async function sendWhatsAppToAdmins(opts: { template: string; bodyParams: string[]; context: string; title?: string }): Promise<void> {
   try {
     if (!whatsappConfigured()) return;
     const numbers = await adminWaNumbers();
     if (!numbers.length) return;
     const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
+    const deliveries: WaDeliveryInput[] = [];
+    const batchId = `adminalert-${opts.context}-${Date.now()}`;
     for (const to of numbers) {
-      await sendTextTemplate({ to, templateName: opts.template, lang, bodyParams: opts.bodyParams });
+      const r = await sendTextTemplate({ to, templateName: opts.template, lang, bodyParams: opts.bodyParams });
+      deliveries.push({ kind: 'ADMIN_ALERT', batchId, title: opts.title || opts.bodyParams[0] || 'Admin alert', studentName: 'Admin', recipient: 'Admin', phone: to, ok: r.ok, error: r.ok ? null : (r.error || 'send failed'), wamid: r.id });
     }
+    await recordWaDeliveries(deliveries);
   } catch (err) {
     console.error(`[notifications] ${opts.context} (whatsapp) failed`, err);
   }

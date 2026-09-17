@@ -10,6 +10,10 @@ import { sendTextTemplate, feeWaRecipients, whatsappConfigured } from '@/lib/ser
 
 const cleanClass = (name: string | null) => (name ? name.replace(/\s?STD$/i, '') : '');
 
+// Uniform is a one-off purchase we don't chase in fee reminders — exclude it from
+// both the reminder total and the head-wise break-up.
+const isUniformHead = (name: string, key?: string) => key === 'uniform' || /uniform/i.test(name || '');
+
 /**
  * Fill a message template with one student's details.
  * Tokens: {name} {firstname} {class} {guardian} {balance} {breakup}
@@ -64,7 +68,9 @@ export async function POST(req: NextRequest) {
     for (const sid of studentIds) {
       const acc = await getStudentAccount(sid, year.id);
       if (!acc) { skippedMissing++; continue; }
-      const balance = acc.summary.totalBalance;
+      // Dues per head, Uniform excluded — the reminder total is the sum of these.
+      const dueHeads = acc.summary.heads.filter((h) => h.balance > 0 && !isUniformHead(h.name, h.key));
+      const balance = dueHeads.reduce((t, h) => t + h.balance, 0);
       if (skipZero && balance <= 0) { skippedZero++; continue; }
 
       // Address the parent by father's name (fall back to guardian, then mother).
@@ -75,7 +81,7 @@ export async function POST(req: NextRequest) {
         className: acc.student.className,
         guardian: parentName,
         balance,
-        heads: acc.summary.heads.map((h) => ({ name: h.name, balance: h.balance })),
+        heads: dueHeads.map((h) => ({ name: h.name, balance: h.balance })),
       });
 
       const circ = await prisma.circular.create({
@@ -99,21 +105,21 @@ export async function POST(req: NextRequest) {
         pushSent += r.sent;
       } catch (e) { console.error('bulk push', e); }
 
-      // WhatsApp — the approved "school_fee_reminder" template (father, student, class, balance).
-      // The template has one balance slot, so pack the head-wise break-up into it
-      // (one line, no newlines — WhatsApp template variables forbid them).
+      // WhatsApp — the approved "school_fee_reminder" template. FIVE body variables:
+      //   {{1}} parent  {{2}} student  {{3}} class  {{4}} total balance  {{5}} head-wise break-up
+      // The break-up is one line per fee head (School Fee / Van / Old fee / Software /
+      // ID card…), Uniform excluded, so the parent sees exactly what is owed and why.
       if (waOn && acc.student.whatsappEnabled !== false) {
         // Send to father + mother + the extra fee-contact number (deduped).
         const recipients = feeWaRecipients(acc.student as any);
         if (recipients.length) {
-          const dueHeads = acc.summary.heads.filter((h) => h.balance > 0);
-          const breakup = dueHeads.map((h) => `${h.name} ${feeMoney(h.balance)}`).join(', ');
-          const balanceText = breakup ? `${feeMoney(balance)} (${breakup})` : feeMoney(balance);
+          const breakupLines = dueHeads.map((h) => `${h.name}: ${feeMoney(h.balance)}`).join('\n');
+          const totalText = feeMoney(balance);
           for (const rcp of recipients) {
             try {
               const wr = await sendTextTemplate({
                 to: rcp.to, templateName: feeTemplate, lang: feeLang,
-                bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', balanceText],
+                bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', totalText, breakupLines || totalText],
               });
               if (wr.ok) { waSent++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: true, wamid: wr.id }); }
               else { waFailed++; console.error('wa fee reminder', rcp.to, wr.error); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: wr.error || 'send failed' }); }

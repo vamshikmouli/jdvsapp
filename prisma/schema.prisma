@@ -195,6 +195,28 @@ model LoginAudit {
   createdAt DateTime       @default(now())
 }
 
+// General activity/audit trail: who did what in the system (payments, student
+// edits, fee-setup changes, staff/payroll, role changes…). userName/roleKey are
+// snapshots so the row still reads correctly if the user is later removed.
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  userName   String
+  roleKey    String?
+  category   String   // FEES | STUDENTS | STAFF | PAYROLL | ROLES | CONFIG | MARKS | OTHER
+  action     String   // machine code, e.g. PAYMENT_RECORDED
+  summary    String   // human-readable line
+  entityType String?
+  entityId   String?
+  meta       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([category])
+}
+
 model PasswordReset {
   id        String   @id @default(cuid())
   userId    String
@@ -709,6 +731,9 @@ model Settings {
   waAdminRecipients String?
   waDailyEnabled    Boolean @default(true)
   waWeeklyEnabled   Boolean @default(true)
+  // Whether Collect Payment offers/sends a WhatsApp fee receipt to the parent:
+  // OFF = never show it, ASK = show it unticked (default), AUTO = show it pre-ticked.
+  feeReceiptWhatsapp String @default("ASK")
   // Staff attendance — geofence + work schedule (drives late/half-day rules)
   staffAttEnabled   Boolean @default(false)
   schoolLat         Float?
@@ -1024,6 +1049,32 @@ model MessageDelivery {
   @@index([batchId])
   @@index([createdAt])
   @@index([wamid])
+}
+
+// A WhatsApp message in a conversation with a parent — inbound replies (IN) that
+// the webhook captures, and free-form replies the office sends back (OUT). Lets the
+// office see and answer parent replies in-app (Communications → Replies). Contact
+// is matched to a student/parent by phone at capture time (best-effort).
+model WaMessage {
+  id          String    @id @default(cuid())
+  waMessageId String?   @unique // Meta wamid — dedupes webhook retries
+  direction   String    @default("IN") // IN (parent → school) | OUT (school → parent)
+  phone       String    // the parent's WhatsApp number (wa_id, e.g. 91XXXXXXXXXX)
+  type        String    @default("text")
+  text        String?   @db.Text
+  studentId   String?
+  studentName String?
+  contactName String?   // matched parent/guardian name + role, e.g. "Ramesh (Father)"
+  handled     Boolean   @default(false) // inbound: office has dealt with it
+  handledById String?
+  handledAt   DateTime?
+  sentById    String?   // outbound: who replied from the office
+  error       String?   // outbound: send failure detail, if any
+  createdAt   DateTime  @default(now())
+
+  @@index([phone, createdAt])
+  @@index([direction, handled])
+  @@index([createdAt])
 }
 
 // School photo (event gallery). `url` may be a remote/static image.

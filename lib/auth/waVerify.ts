@@ -12,7 +12,7 @@ import { prisma } from '@/lib/db';
 import { normalizePhone } from '@/lib/auth/provision';
 import { hashPassword } from '@/lib/auth/password';
 import { anyAccountForPhone } from '@/lib/auth/accounts';
-import { toWaNumber } from '@/lib/services/whatsapp';
+import { toWaNumber, sendWhatsAppText } from '@/lib/services/whatsapp';
 import { OtpError } from '@/lib/auth/otp';
 
 const VERIFY_TTL_MIN = Number(process.env.WA_VERIFY_TTL_MIN) || 10;
@@ -68,12 +68,21 @@ export async function matchInboundVerification(from: string, text: string): Prom
   if (!hit) return;
 
   const fromWa = toWaNumber(from);
-  if (fromWa && fromWa === toWaNumber(hit.phone)) {
-    await prisma.waVerification.update({ where: { id: hit.id }, data: { verifiedAt: new Date(), fromNumber: fromWa } });
-  } else {
-    // Right code, wrong sender — don't verify (they must send from their own number).
-    await prisma.waVerification.update({ where: { id: hit.id }, data: { attempts: { increment: 1 }, fromNumber: fromWa || null } });
-  }
+  if (!fromWa) return;
+
+  // Sender-driven binding: verify whichever number actually sent the code — not
+  // necessarily the one typed on the login screen. This makes it irrelevant which
+  // WhatsApp app the user picks (personal vs Business, possibly on different
+  // numbers). Security is unchanged: the login is bound to the SENDING number, so
+  // a user can only ever reach an account whose WhatsApp they control.
+  await prisma.waVerification.update({ where: { id: hit.id }, data: { verifiedAt: new Date(), fromNumber: fromWa } });
+
+  // Free-form reply (the user just messaged us → 24h service window is open).
+  const registered = await anyAccountForPhone(normalizePhone(fromWa));
+  const reply = registered
+    ? '✅ Your Jnana Deepika login is verified. Head back to the app to set your PIN and sign in. If this wasn’t you, contact the school office.'
+    : 'We received your code, but this WhatsApp number isn’t registered with the school. Please send it from the number the school has on file, or contact the office.';
+  await sendWhatsAppText({ to: fromWa, text: reply }).catch((e) => console.log('[WA-VERIFY] confirm send error:', e?.message));
 }
 
 /** Poll/confirm. When verified + an account exists for the phone, mint a SET_PIN
@@ -82,7 +91,9 @@ export async function confirmWaVerify(id: string): Promise<{ verified: boolean; 
   const row = await prisma.waVerification.findUnique({ where: { id } });
   if (!row || row.expiresAt < new Date() || !row.verifiedAt) return { verified: !!row?.verifiedAt };
 
-  const phone = normalizePhone(row.phone);
+  // Bind to the number that actually sent the code (may differ from the typed
+  // phone when the user has two WhatsApp apps / numbers).
+  const phone = normalizePhone(row.fromNumber || row.phone);
   if (!(await anyAccountForPhone(phone))) {
     await prisma.waVerification.delete({ where: { id } }).catch(() => {});
     return { verified: true }; // verified their WhatsApp, but no account → nothing to grant

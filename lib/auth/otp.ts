@@ -10,6 +10,7 @@ import { normalizePhone } from '@/lib/auth/provision';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { anyAccountForPhone } from '@/lib/auth/accounts';
 import { sendAuthTemplate, toWaNumber } from '@/lib/services/whatsapp';
+import { recordWaDeliveries } from '@/lib/services/waLog';
 
 const OTP_TTL_MIN = Number(process.env.OTP_TTL_MIN) || 5;
 const GRANT_TTL_MIN = Number(process.env.OTP_GRANT_TTL_MIN) || 10;
@@ -59,6 +60,8 @@ export async function requestOtp(phoneRaw: string): Promise<{ ok: true }> {
   ]);
 
   const res = await sendAuthTemplate({ to: wa, templateName: OTP_TEMPLATE, lang: OTP_LANG, code });
+  // Log the delivery (never the code) so login codes appear in Analytics too.
+  await recordWaDeliveries([{ kind: 'LOGIN_OTP', batchId: `otp-${wa}-${Date.now()}`, title: 'Login code', studentName: 'Login', recipient: wa, phone: wa, ok: res.ok, error: res.ok ? null : (res.error || 'send failed'), wamid: res.id }]);
   if (!res.ok) {
     // Don't leave a live challenge the user can never satisfy.
     await prisma.otpChallenge.deleteMany({ where: { phone, purpose: 'LOGIN' } });

@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { hashPassword } from '@/lib/auth/password';
 import { normalizePhone, syntheticEmail } from '@/lib/auth/provision';
+import { logActivity } from '@/lib/activity';
 
 export async function GET(req: NextRequest) {
   try {
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
     // No role selected → login-less staff (e.g. a driver who never uses the app).
     if (!roleId) {
       const staff = await prisma.staff.create({ data: staffData, include: { classes: { select: { id: true, name: true } } } });
+      void logActivity(session, { category: 'STAFF', action: 'STAFF_CREATED', entityType: 'Staff', entityId: staff.id, summary: `Added staff ${staff.name} (no login)`, req });
       return NextResponse.json({ ...staff, login: null }, { status: 201 });
     }
 
@@ -93,6 +95,7 @@ export async function POST(req: NextRequest) {
       return tx.staff.create({ data: { ...staffData, userId: user.id }, include: { classes: { select: { id: true, name: true } } } });
     });
 
+    void logActivity(session, { category: 'STAFF', action: 'STAFF_CREATED', entityType: 'Staff', entityId: created.id, summary: `Added staff ${created.name} with a ${role.name} login`, req });
     return NextResponse.json({ ...created, login: { email, password: phone } }, { status: 201 });
   } catch (error) {
     console.error('Error creating staff:', error);

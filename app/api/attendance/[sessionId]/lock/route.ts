@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can, getClassScope } from '@/lib/rbac/roles';
+import { sendAbsenceAlerts } from '@/lib/services/absenceAlerts';
 
 // POST /api/attendance/:sessionId/lock  Body: { locked: boolean }
 // - Closing (locked=true): part of submitting attendance — needs ATTENDANCE_MARK
@@ -48,7 +49,16 @@ export async function POST(
       data: { locked },
     });
 
-    return NextResponse.json({ ok: true, locked: updated.locked });
+    // Submitting (locked=true) is the moment attendance is finalised — notify the
+    // guardians of absent students (once per student per date; gated by Settings).
+    // Best-effort: never let a WhatsApp hiccup fail the submit.
+    let notified: number | undefined;
+    if (locked) {
+      const r = await sendAbsenceAlerts(params.sessionId, (session.user as any)?.id ?? null);
+      notified = r.sent;
+    }
+
+    return NextResponse.json({ ok: true, locked: updated.locked, notified });
   } catch (error) {
     console.error('Error toggling lock:', error);
     return NextResponse.json({ error: 'Failed to update lock' }, { status: 500 });

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { decideConcession, deleteConcession, cancelConcession } from '@/lib/services/fees';
+import { logActivity } from '@/lib/activity';
 
 // Approve / reject a pending concession, or cancel an approved one
 // (admins with FEES_CONCESSION_APPROVE).
@@ -17,12 +18,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const userId = (session.user as any)?.id || null;
     if (action === 'cancel') {
       const result = await cancelConcession(params.id, userId, body.note || null);
+      void logActivity(session, { category: 'FEES', action: 'CONCESSION_CANCELLED', entityType: 'Concession', entityId: params.id, summary: `Cancelled an approved concession${body.note ? ` — ${body.note}` : ''}`, req });
       return NextResponse.json(result);
     }
     if (action !== 'approve' && action !== 'reject') {
       return NextResponse.json({ error: 'action must be approve, reject or cancel' }, { status: 400 });
     }
     const result = await decideConcession(params.id, action === 'approve', userId, body.note || null);
+    void logActivity(session, { category: 'FEES', action: action === 'approve' ? 'CONCESSION_APPROVED' : 'CONCESSION_REJECTED', entityType: 'Concession', entityId: params.id, summary: `${action === 'approve' ? 'Approved' : 'Rejected'} a concession${body.note ? ` — ${body.note}` : ''}`, req });
     return NextResponse.json(result);
   } catch (err) {
     console.error('fees/concessions/[id] PATCH', err);

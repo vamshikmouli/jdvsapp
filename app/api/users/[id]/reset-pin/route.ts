@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth/authOptions';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { hashPassword } from '@/lib/auth/password';
+import { logActivity } from '@/lib/activity';
 import crypto from 'crypto';
 
 // POST /api/users/[id]/reset-pin
@@ -27,6 +30,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       prisma.loginAudit.create({ data: { userId: user.id, type: 'PASSWORD_RESET', detail: 'Admin reset PIN' } }),
     ]);
 
+    void logActivity(await getServerSession(authOptions), { category: 'ROLES', action: 'PIN_RESET', entityType: 'User', entityId: user.id, summary: `Reset login PIN for ${user.name || 'a user'}`, req: _req });
     return NextResponse.json({ ok: true, name: user.name, tempPin });
   } catch (err) {
     const { status, body } = authErrorResponse(err);

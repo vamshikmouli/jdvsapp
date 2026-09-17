@@ -8,6 +8,8 @@ import { sendTextTemplate, sendImageTemplate, uploadWhatsAppMedia, feeWaRecipien
 import { renderReceiptImage, receiptImageAvailable } from '@/lib/services/receiptImage';
 import { prisma } from '@/lib/db';
 import { PAY_METHODS, feeMoney } from '@/lib/fees';
+import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { logActivity } from '@/lib/activity';
 import type { PayMethod } from '@prisma/client';
 
 export async function POST(req: NextRequest) {
@@ -49,6 +51,16 @@ export async function POST(req: NextRequest) {
       newItems: itemList.map((i: any) => ({ feeTypeId: String(i.feeTypeId), label: String(i.label || 'Item'), amount: Math.round(Number(i.amount) || 0) })),
     });
 
+    // Audit trail — who collected how much.
+    {
+      const paidNow = [...allocList, ...itemList].reduce((t: number, a: any) => t + Math.round(Number(a.amount) || 0), 0);
+      void logActivity(session, {
+        category: 'FEES', action: 'PAYMENT_RECORDED', entityType: 'Payment', entityId: result.id,
+        summary: `Recorded ${feeMoney(paidNow)} · receipt ${result.receiptNo} (${primaryMethod})`,
+        meta: { studentId, amount: paidNow, receiptNo: result.receiptNo, method: primaryMethod }, req,
+      });
+    }
+
     // Fire-and-forget: collecting a payment must never wait on WhatsApp/Meta.
     // The VM runs a persistent Node process, so this finishes after the response.
     void (async () => {
@@ -75,7 +87,9 @@ export async function POST(req: NextRequest) {
     // WhatsApp receipts (best-effort): one FEE receipt (with school name) and one
     // UNIFORM receipt (student details, no school name, short item codes).
     try {
-      if (body?.sendWhatsApp === true && whatsappConfigured()) {
+      // Global Fee-Setup switch can turn off WhatsApp fee receipts for the whole school.
+      const waMode = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { feeReceiptWhatsapp: true } }))?.feeReceiptWhatsapp || 'ASK';
+      if (body?.sendWhatsApp === true && waMode !== 'OFF' && whatsappConfigured()) {
         const acct = await getStudentAccount(studentId, year.id);
         // Fee receipts go to father + mother + the extra fee-contact number (deduped).
         const recipients = acct ? feeWaRecipients(acct.student as any) : [];
@@ -112,17 +126,24 @@ export async function POST(req: NextRequest) {
                 mediaId = await uploadWhatsAppMedia(png);
               } catch (e) { console.error('wa fee image render', e); }
             }
+            const deliveries: WaDeliveryInput[] = [];
             for (const rcp of recipients) {
-              let sent = false;
+              let sent = false, wamid: string | undefined, err: string | undefined;
               if (mediaId) {
                 const r = await sendImageTemplate({ to: rcp.to, templateName: feeImgTpl, lang, mediaId, bodyParams: [rcp.name, acct.student.name, cls, feeLine] });
-                if (r.ok) sent = true; else console.error('wa fee image', rcp.to, r.error);
+                if (r.ok) { sent = true; wamid = r.id; } else { err = r.error; console.error('wa fee image', rcp.to, r.error); }
               }
               if (!sent) {
                 const r = await sendTextTemplate({ to: rcp.to, templateName: process.env.WHATSAPP_FEE_RECEIPT_TEMPLATE || 'fee_receipt', lang, bodyParams: [rcp.name, acct.student.name, cls, feeLine] });
-                if (!r.ok) console.error('wa fee receipt', rcp.to, r.error);
+                if (r.ok) { sent = true; wamid = r.id; } else { err = r.error; console.error('wa fee receipt', rcp.to, r.error); }
               }
+              deliveries.push({
+                kind: 'FEE_RECEIPT', batchId: `receipt-${result.id}`, title: `Fee receipt ${result.receiptNo}`,
+                studentId, studentName: acct.student.name, className: acct.student.className,
+                recipient: rcp.name, phone: rcp.to, ok: sent, error: sent ? null : (err || 'send failed'), wamid,
+              });
             }
+            await recordWaDeliveries(deliveries);
           }
 
         }

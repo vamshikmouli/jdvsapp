@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { prisma } from '@/lib/db';
 import { getActiveYear, requestConcession, listConcessions } from '@/lib/services/fees';
+import { logActivity } from '@/lib/activity';
+import { feeMoney } from '@/lib/fees';
 
 export async function GET(req: NextRequest) {
   try {
@@ -75,6 +77,8 @@ export async function POST(req: NextRequest) {
         requestedById,
       }));
     }
+    const concTotal = items.reduce((t, i) => t + i.amount, 0);
+    void logActivity(session, { category: 'FEES', action: 'CONCESSION_REQUESTED', entityType: 'Student', entityId: String(body.studentId), summary: `Requested ${created.length} concession${created.length === 1 ? '' : 's'} totalling ${feeMoney(concTotal)}${reason ? ` — ${reason}` : ''}`, meta: { studentId: body.studentId, count: created.length }, req });
     return NextResponse.json({ count: created.length, items: created }, { status: 201 });
   } catch (err) {
     console.error('fees/concessions POST', err);

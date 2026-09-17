@@ -7,6 +7,7 @@ import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 import { whatsappConfigured, toWaNumber, sendTextTemplate } from '@/lib/services/whatsapp';
+import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,8 @@ async function handler(req: NextRequest) {
   const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 
   const results = { sent: 0, skipped: 0, failed: 0, candidates: [] as any[] };
+  const deliveries: WaDeliveryInput[] = [];
+  const batchId = `attreminder-${dateKey}-${now.getTime()}`;
 
   for (const s of staff) {
     const session = daySession(weekday, parseWeekSchedule(s.weekSchedule), { workPattern: parseWorkPattern(s.workPattern), workDays: parseWorkDays(s.workDays) }, weeklyOff);
@@ -82,9 +85,11 @@ async function handler(req: NextRequest) {
     const r = await sendTextTemplate({ to: wa, templateName: template, lang, bodyParams: [s.name.split(' ')[0] || s.name, dateShort] });
     if (r.ok) { results.sent++; results.candidates.push({ name: s.name, to: wa, status: 'sent', id: r.id }); }
     else { results.failed++; results.candidates.push({ name: s.name, to: wa, status: 'failed', error: r.error }); }
+    deliveries.push({ kind: 'ATTENDANCE_REMINDER', batchId, title: `Attendance reminder · ${dateShort}`, studentName: s.name, recipient: s.name, phone: wa, ok: r.ok, error: r.ok ? null : (r.error || 'send failed'), wamid: r.id });
     await sleep(300);
   }
 
+  if (!dry) await recordWaDeliveries(deliveries);
   return NextResponse.json({ ok: true, date: dateShort, dry, ...results });
 }
 

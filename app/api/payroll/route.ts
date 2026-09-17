@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
+import { logActivity } from '@/lib/activity';
 import { periodInfo, countDays, computeSalary, usedByType } from '@/lib/payroll/compute';
 import { leaveYearOf, parseQuotas } from '@/lib/staffAttendance/leaveBalance';
 
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
       return created;
     });
 
+    void logActivity(session, { category: 'PAYROLL', action: 'PAYROLL_RUN_CREATED', entityType: 'PayrollRun', entityId: run.id, summary: `Created payroll run for ${periodMonth} (${staff.length} staff)`, req });
     return NextResponse.json({ id: run.id, periodMonth, staffCount: staff.length, creditOn });
   } catch (err) {
     const { status, body } = authErrorResponse(err);

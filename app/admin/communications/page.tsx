@@ -12,7 +12,7 @@ interface CircularItem {
 interface ClassOpt { id: string; name: string }
 
 export default function CommunicationsPage() {
-  const [tab, setTab] = useState<'circulars' | 'reminders' | 'devices' | 'analytics'>('circulars');
+  const [tab, setTab] = useState<'circulars' | 'reminders' | 'monthly' | 'replies' | 'devices' | 'analytics'>('circulars');
   const [items, setItems] = useState<CircularItem[] | null>(null);
   const [classes, setClasses] = useState<ClassOpt[]>([]);
   const [composeCircular, setComposeCircular] = useState(false);
@@ -49,7 +49,7 @@ export default function CommunicationsPage() {
       />
 
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200">
-        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
+        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['replies', 'Replies', 'MessageSquare'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             <Icon name={icon as any} size={16} />{label}
@@ -59,8 +59,10 @@ export default function CommunicationsPage() {
 
       {tab === 'devices' && <DevicesPanel />}
       {tab === 'analytics' && <AnalyticsPanel />}
+      {tab === 'replies' && <RepliesPanel />}
+      {tab === 'monthly' && <MonthlyAttendancePanel classes={classes} />}
 
-      {tab !== 'devices' && tab !== 'analytics' && (
+      {tab !== 'devices' && tab !== 'analytics' && tab !== 'replies' && tab !== 'monthly' && (
       <div className="mt-5 space-y-3 max-w-3xl">
         <label className="flex items-center justify-end gap-2 text-xs text-slate-500 cursor-pointer">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
@@ -106,40 +108,318 @@ export default function CommunicationsPage() {
   );
 }
 
+/* ---------- Monthly attendance: appreciation/improvement image + message ---------- */
+type Tier = 'perfect' | 'great' | 'good' | 'low';
+interface MonthStudent { student: string; className: string | null; tier: Tier; pct: number; status: string; to?: string; error?: string }
+interface MonthResult { monthLabel: string; total: number; sent: number; failed: number; skipped: number; tiers: Record<Tier, number>; details: MonthStudent[]; waConfigured?: boolean }
+const TIER_META: Record<Tier, { label: string; chip: string; dot: string }> = {
+  perfect: { label: 'All present', chip: 'bg-success-50 text-success-700 border-success-100', dot: 'bg-success-500' },
+  great: { label: '90%+', chip: 'bg-info-50 text-info-700 border-info-100', dot: 'bg-info-500' },
+  good: { label: '75–90%', chip: 'bg-marigold-50 text-marigold-700 border-marigold-100', dot: 'bg-marigold-500' },
+  low: { label: 'Below 75%', chip: 'bg-danger-50 text-danger-700 border-danger-100', dot: 'bg-danger-500' },
+};
+function prevMonthStr(): string {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
+  const [month, setMonth] = useState(prevMonthStr());
+  const [classId, setClassId] = useState('');
+  const [preview, setPreview] = useState<MonthResult | null>(null);
+  const [result, setResult] = useState<MonthResult | null>(null);
+  const [testTo, setTestTo] = useState('');
+  const [busy, setBusy] = useState<'' | 'preview' | 'send' | 'test'>('');
+  const [err, setErr] = useState('');
+
+  const runPreview = async () => {
+    setBusy('preview'); setErr(''); setResult(null);
+    try {
+      const sp = new URLSearchParams({ month }); if (classId) sp.set('classId', classId);
+      const r = await fetch(`/api/attendance/monthly-report?${sp}`);
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Preview failed');
+      setPreview(d);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Preview failed'); }
+    finally { setBusy(''); }
+  };
+
+  const send = async (test = false) => {
+    if (!test && !confirm(`Send monthly attendance for ${preview?.monthLabel || month} to ${preview?.total ?? 'all'} students' parents on WhatsApp?`)) return;
+    setBusy(test ? 'test' : 'send'); setErr('');
+    try {
+      const body: any = { month }; if (classId) body.classId = classId; if (test) body.to = testTo.trim();
+      const r = await fetch('/api/attendance/monthly-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Send failed');
+      setResult(d);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Send failed'); }
+    finally { setBusy(''); }
+  };
+
+  const view = result || preview;
+  return (
+    <div className="mt-5 max-w-4xl space-y-4">
+      <p className="text-sm text-slate-500">Send each student's monthly attendance calendar as a WhatsApp image, with a personalised message — praise for good attendance, encouragement to improve where it's low. Leaves are shown but don't count against the student.</p>
+
+      <Card>
+        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] gap-3 items-end">
+          <Field label="Month"><Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPreview(null); setResult(null); }} /></Field>
+          <Field label="Class"><Select value={classId} onChange={(e) => { setClassId(e.target.value); setPreview(null); setResult(null); }}>
+            <option value="">All classes</option>
+            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select></Field>
+          <Button icon="Eye" onClick={runPreview} disabled={busy === 'preview'}>{busy === 'preview' ? 'Checking…' : 'Preview'}</Button>
+        </div>
+        {err && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-lg p-2.5 text-sm text-danger-700">{err}</div>}
+      </Card>
+
+      {view && (
+        <Card>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">{view.monthLabel}</div>
+              <div className="text-[13px] text-slate-500">{result ? <>Sent {result.sent} · failed {result.failed} · skipped {result.skipped}</> : <>{view.total} student{view.total === 1 ? '' : 's'} with attendance data</>}</div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(['perfect', 'great', 'good', 'low'] as Tier[]).map((t) => (
+                <span key={t} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${TIER_META[t].chip}`}>
+                  <span className={`w-2 h-2 rounded-full ${TIER_META[t].dot}`} />{TIER_META[t].label}: {view.tiers[t]}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {view.waConfigured === false && <div className="mt-3 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">WhatsApp isn't configured on the server, so nothing can be sent yet.</div>}
+
+          {!result && view.total > 0 && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                <div className="flex-1">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Test to a number first (optional)</label>
+                  <div className="flex gap-2 mt-1">
+                    <Input value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="9XXXXXXXXX" className="max-w-[180px]" />
+                    <Button icon="Send" onClick={() => send(true)} disabled={busy === 'test' || !testTo.trim()}>{busy === 'test' ? 'Sending…' : 'Send test'}</Button>
+                  </div>
+                </div>
+                <Button kind="primary" icon="Send" onClick={() => send(false)} disabled={busy === 'send'}>{busy === 'send' ? 'Sending…' : `Send to ${view.total} student(s)`}</Button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 max-h-[46vh] overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-50">
+            {view.details.map((d, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                <div className="min-w-0"><span className="font-medium text-slate-800">{d.student}</span> <span className="text-slate-400">{d.className || ''}</span></div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${TIER_META[d.tier].chip}`}><span className={`w-1.5 h-1.5 rounded-full ${TIER_META[d.tier].dot}`} />{d.pct}%</span>
+                  {d.status === 'sent' && <span className="text-success-600 text-[11.5px] inline-flex items-center gap-0.5"><Icon name="Check" size={13} />sent</span>}
+                  {d.status === 'failed' && <span className="text-danger-600 text-[11.5px]" title={d.error || ''}>failed</span>}
+                  {d.status === 'skipped' && <span className="text-slate-400 text-[11.5px]" title={d.error || ''}>no number</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Replies: two-way WhatsApp inbox (parent replies + office reply) ---------- */
+interface ReplyThread {
+  phone: string; studentId: string | null; studentName: string | null; contactName: string | null;
+  lastText: string | null; lastAt: string; lastDirection: string; unread: number; canReply: boolean; windowEndsAt: string | null;
+}
+interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null }
+
+const fmtTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+function windowLeft(iso: string | null): string {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'closed';
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+}
+
+function RepliesPanel() {
+  const [threads, setThreads] = useState<ReplyThread[] | null>(null);
+  const [sel, setSel] = useState<ReplyThread | null>(null);
+  const [msgs, setMsgs] = useState<ThreadMsg[] | null>(null);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState('');
+
+  const loadThreads = useCallback(async () => {
+    const r = await fetch('/api/whatsapp/replies');
+    if (r.ok) setThreads((await r.json()).threads); else setThreads([]);
+  }, []);
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  const openThread = async (t: ReplyThread) => {
+    setSel(t); setMsgs(null); setErr('');
+    const r = await fetch(`/api/whatsapp/replies?phone=${encodeURIComponent(t.phone)}`);
+    if (r.ok) setMsgs((await r.json()).messages); else setMsgs([]);
+    loadThreads(); // clear the unread badge (server marked it handled)
+  };
+
+  const send = async () => {
+    if (!sel || !text.trim()) return;
+    setSending(true); setErr('');
+    try {
+      const r = await fetch('/api/whatsapp/replies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: sel.phone, text: text.trim() }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Could not send');
+      setMsgs(d.messages); setText(''); loadThreads();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not send'); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="mt-5">
+      <p className="text-sm text-slate-500 mb-3 max-w-2xl">Parent replies to your WhatsApp messages land here. You can reply for free within <b>24 hours</b> of their last message; after that, they must message again first.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 items-start">
+        {/* thread list */}
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div className="text-sm font-bold text-slate-900">Conversations</div>
+            <button onClick={loadThreads} className="text-slate-400 hover:text-purple-600" title="Refresh"><Icon name="RefreshCw" size={15} /></button>
+          </div>
+          <div className="max-h-[64vh] overflow-y-auto divide-y divide-slate-50">
+            {threads === null && Array.from({ length: 4 }).map((_, i) => <div key={i} className="p-3"><Skeleton height={44} /></div>)}
+            {threads !== null && threads.length === 0 && (
+              <div className="px-4 py-10 text-center text-sm text-slate-400"><Icon name="Inbox" size={26} className="mx-auto mb-2 text-slate-300" />No replies yet.</div>
+            )}
+            {(threads || []).map((t) => (
+              <button key={t.phone} onClick={() => openThread(t)}
+                className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${sel?.phone === t.phone ? 'bg-purple-50/60' : ''}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-slate-800 text-sm truncate">{t.studentName || t.contactName || t.phone}</div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {t.unread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-purple-600 text-white text-[10px] font-bold grid place-items-center">{t.unread}</span>}
+                    <span className="text-[10.5px] text-slate-400">{fmtTime(t.lastAt).split(',')[0]}</span>
+                  </div>
+                </div>
+                <div className="text-[12px] text-slate-500 truncate mt-0.5">{t.contactName ? `${t.contactName} · ` : ''}{t.phone}</div>
+                <div className="text-[12.5px] text-slate-600 truncate mt-0.5">{t.lastDirection === 'OUT' ? <span className="text-slate-400">You: </span> : ''}{t.lastText || <span className="italic text-slate-400">({'media'})</span>}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* conversation */}
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden min-h-[420px] flex flex-col">
+          {!sel ? (
+            <div className="flex-1 grid place-items-center text-center p-10 text-slate-400">
+              <div><Icon name="MessageSquare" size={30} className="mx-auto mb-2 text-slate-300" />Pick a conversation to read and reply.</div>
+            </div>
+          ) : (
+            <>
+              <div className="px-4 py-3 border-b border-slate-100">
+                <div className="font-bold text-slate-900 text-sm">{sel.studentName || sel.contactName || sel.phone}</div>
+                <div className="text-[12px] text-slate-500">{sel.contactName ? `${sel.contactName} · ` : ''}{sel.phone}
+                  {sel.studentName && <span className="ml-1 text-slate-400">· student</span>}</div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50/60 max-h-[52vh]">
+                {msgs === null ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={34} />) :
+                  msgs.length === 0 ? <div className="text-center text-sm text-slate-400 py-8">No messages.</div> :
+                  msgs.map((m) => (
+                    <div key={m.id} className={`flex ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] ${m.direction === 'OUT' ? 'bg-purple-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                        <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">({m.type})</span>}</div>
+                        <div className={`text-[10px] mt-1 ${m.direction === 'OUT' ? 'text-purple-100' : 'text-slate-400'}`}>{fmtTime(m.at)}{m.error ? ` · failed: ${m.error}` : ''}</div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              {err && <div className="mx-4 mt-2 text-[12.5px] text-danger-700 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2">{err}</div>}
+              <div className="border-t border-slate-100 p-3">
+                {sel.canReply ? (
+                  <>
+                    <div className="flex items-end gap-2">
+                      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Type a reply…"
+                        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); }}
+                        className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
+                      <Button kind="primary" icon="Send" onClick={send} disabled={sending || !text.trim()}>{sending ? '…' : 'Send'}</Button>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1"><Icon name="Clock" size={12} /> Reply window: {windowLeft(sel.windowEndsAt)} · Ctrl+Enter to send</div>
+                  </>
+                ) : (
+                  <div className="text-[12.5px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 flex items-center gap-2">
+                    <Icon name="Clock" size={14} className="text-slate-400" />
+                    The 24-hour reply window has closed. WhatsApp only allows a free reply within 24h of the parent's last message — they'll need to message again first.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Analytics: fee-reminder WhatsApp delivery (persisted) ---------- */
 interface DeliveryRow { student: string; className: string | null; recipient: string; phone: string; status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'; error: string | null }
 const DELIVERY_LABEL: Record<string, string> = { SENT: 'Sent', DELIVERED: 'Delivered', READ: 'Read', FAILED: 'Failed' };
-interface DeliveryBatch { batchId: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[] }
+interface DeliveryBatch { batchId: string; kind: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[] }
+interface DeliveryGroup { kind: string; total: number; batches: DeliveryBatch[] }
+
+// Friendly names + a default per-batch title for each message kind.
+const KIND_LABEL: Record<string, string> = {
+  FEE_REMINDER: 'Fee reminders',
+  FEE_RECEIPT: 'Fee receipts',
+  ATTENDANCE_REMINDER: 'Attendance reminders',
+  ATTENDANCE_ABSENCE: 'Absence & leave alerts',
+  ATTENDANCE_MONTHLY: 'Monthly attendance',
+  STAFF_ATTENDANCE_REPORT: 'Attendance reports',
+  ADMIN_REPORT: 'Daily reports',
+  ADMIN_ALERT: 'Admin alerts',
+  LOGIN_OTP: 'Login codes',
+};
+const kindLabel = (k: string) => KIND_LABEL[k] || k.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+const defaultTitle = (k: string) => KIND_LABEL[k] ? KIND_LABEL[k].replace(/s$/, '') : 'Message';
 
 function AnalyticsPanel() {
-  const [batches, setBatches] = useState<DeliveryBatch[] | null>(null);
+  const [groups, setGroups] = useState<DeliveryGroup[] | null>(null);
+  const [tab, setTab] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetch('/api/circulars/reminder-log')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Failed (${r.status})`))))
-      .then((d) => setBatches(d.batches || []))
+      .then((d) => { const g: DeliveryGroup[] = d.groups || []; setGroups(g); setTab((cur) => cur ?? (g[0]?.kind || null)); })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, []);
 
   const toggle = (id: string) => setOpen((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const shortCls = (c: string | null) => (c || '—').replace(/\s?STD$/i, '');
+  const active = groups?.find((g) => g.kind === tab) || groups?.[0];
+  const batches = active?.batches || [];
 
   return (
     <div className="mt-5 max-w-3xl space-y-3">
-      <p className="text-sm text-slate-500">WhatsApp delivery of past fee reminders — which parent number got it and which failed. Saved, so you can review any time.</p>
-      {batches === null && !error && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={72} rounded="lg" />)}
+      <p className="text-sm text-slate-500">Every WhatsApp message the app sends — grouped by type — with each number's live delivery status. Saved, so you can review any time.</p>
+      {groups === null && !error && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={72} rounded="lg" />)}
       {error && <Card><EmptyState icon="AlertCircle" title="Couldn't load" body={error} /></Card>}
-      {batches && batches.length === 0 && <Card><EmptyState icon="BarChart3" title="No reminders sent yet" body="Send a fee reminder — its delivery report will appear here." /></Card>}
-      {batches && batches.map((b) => {
+      {groups && groups.length === 0 && <Card><EmptyState icon="BarChart3" title="No messages sent yet" body="When the app sends anything on WhatsApp, its delivery report appears here." /></Card>}
+      {groups && groups.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {groups.map((g) => (
+            <button key={g.kind} onClick={() => setTab(g.kind)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-colors ${(active?.kind === g.kind) ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+              {kindLabel(g.kind)} <span className="text-[11px] font-medium text-slate-400">{g.total}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {batches.map((b) => {
         const total = b.sent + b.failed;
         const isOpen = open.has(b.batchId);
         return (
           <div key={b.batchId} className="bg-white rounded-xl border border-slate-200 shadow-xs">
             <button onClick={() => toggle(b.batchId)} className="w-full flex items-center justify-between gap-3 p-4 text-left">
               <div className="min-w-0">
-                <div className="font-semibold text-slate-900 truncate">{b.title || 'Fee payment reminder'}</div>
+                <div className="font-semibold text-slate-900 truncate">{b.title || defaultTitle(b.kind)}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {total} number{total === 1 ? '' : 's'}</div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">

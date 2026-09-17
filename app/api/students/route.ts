@@ -9,6 +9,7 @@ import { normalizeContactTargets } from '@/lib/contactTargets';
 import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
+import { logActivity } from '@/lib/activity';
 
 export async function GET(req: NextRequest) {
   try {
@@ -152,6 +153,8 @@ export async function POST(req: NextRequest) {
       await upsertEnrollment(student.id, year.id, student.classId, student.sectionId, student.roll);
       try { await autoAssignClassFees(student.id, student.classId, year.id); } catch (e) { console.error('auto-assign failed for', student.id, e); }
     }
+
+    void logActivity(session, { category: 'STUDENTS', action: 'STUDENT_CREATED', entityType: 'Student', entityId: student.id, summary: `Added student ${student.name} (${student.id})`, req });
 
     return NextResponse.json(
       {

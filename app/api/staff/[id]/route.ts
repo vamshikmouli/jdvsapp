@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { hashPassword } from '@/lib/auth/password';
 import { normalizePhone, syntheticEmail } from '@/lib/auth/provision';
+import { logActivity } from '@/lib/activity';
 
 export async function PATCH(
   req: NextRequest,
@@ -110,6 +111,7 @@ export async function PATCH(
       }
     }
 
+    void logActivity(session, { category: 'STAFF', action: 'STAFF_UPDATED', entityType: 'Staff', entityId: params.id, summary: `Edited staff ${updated.name}${body.roleId ? ' (role changed)' : ''}`, req });
     return NextResponse.json(updated);
   } catch (error) {
     console.error('Error updating staff:', error);
@@ -137,6 +139,7 @@ export async function DELETE(
       prisma.staff.update({ where: { id: params.id }, data: { archived: !restore } }),
       ...(staff.userId ? [prisma.user.update({ where: { id: staff.userId }, data: { isActive: restore } })] : []),
     ]);
+    void logActivity(session, { category: 'STAFF', action: restore ? 'STAFF_RESTORED' : 'STAFF_ARCHIVED', entityType: 'Staff', entityId: params.id, summary: `${restore ? 'Restored' : 'Archived'} staff ${staff.name}`, req });
     return NextResponse.json({ ok: true, archived: !restore });
   } catch (error) {
     console.error('Error archiving staff:', error);

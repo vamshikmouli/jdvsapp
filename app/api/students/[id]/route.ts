@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { pickPrimaryContact } from '@/lib/services/parents';
 import { normalizeContactTargets } from '@/lib/contactTargets';
+import { logActivity } from '@/lib/activity';
 import { getActiveYear } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 
@@ -92,6 +93,7 @@ export async function PATCH(
       await upsertEnrollment(updated.id, year.id, updated.classId, updated.sectionId, updated.roll);
     }
 
+    void logActivity(session, { category: 'STUDENTS', action: 'STUDENT_UPDATED', entityType: 'Student', entityId: updated.id, summary: `Edited student ${updated.name} (${updated.id})`, req });
     return NextResponse.json(updated);
   } catch (error) {
     console.error('Error updating student:', error);
@@ -114,7 +116,8 @@ export async function DELETE(
 
     const body = await req.json().catch(() => ({}));
     const status = body?.restore ? 'ACTIVE' : 'INACTIVE';
-    await prisma.student.update({ where: { id: params.id }, data: { status } });
+    const s = await prisma.student.update({ where: { id: params.id }, data: { status }, select: { name: true } });
+    void logActivity(session, { category: 'STUDENTS', action: body?.restore ? 'STUDENT_RESTORED' : 'STUDENT_ARCHIVED', entityType: 'Student', entityId: params.id, summary: `${body?.restore ? 'Restored' : 'Archived'} student ${s.name} (${params.id})`, req });
     return NextResponse.json({ ok: true, status });
   } catch (error) {
     console.error('Error deleting student:', error);

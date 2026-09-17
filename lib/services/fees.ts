@@ -208,6 +208,48 @@ export async function getStudentAccount(studentId: string, yearId: string) {
   };
 }
 
+// The family (siblings sharing one parent) for the Multi Collect screen — each
+// child with their outstanding charges. Reuses getStudentAccount; changes nothing
+// in the single-student collect flow.
+export async function getFamilyForStudent(studentId: string, yearId: string) {
+  const me = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { guardianUserId: true, guardianPhone: true, guardianName: true, fatherName: true, fatherPhone: true },
+  });
+  if (!me) return null;
+  // Siblings = students sharing the same parent login; fall back to the guardian phone.
+  const where: any = me.guardianUserId
+    ? { guardianUserId: me.guardianUserId, status: 'ACTIVE' }
+    : { guardianPhone: me.guardianPhone || '__none__', status: 'ACTIVE' };
+  const kids = await prisma.student.findMany({ where, orderBy: { name: 'asc' }, select: { id: true } });
+  const ids = kids.length ? kids.map((k) => k.id) : [studentId];
+  const accounts = await Promise.all(ids.map((id) => Promise.all([getStudentAccount(id, yearId), getAssignableOptions(id, yearId).catch(() => null)])));
+  const students = accounts.filter(([a]) => a).map(([a, opts]: any) => ({
+    id: a.student.id,
+    name: a.student.name,
+    className: a.student.className,
+    section: a.student.section,
+    gender: a.student.gender,
+    village: a.student.village || null,
+    outstanding: a.summary.totalBalance,
+    charges: a.summary.heads.flatMap((h: any) =>
+      h.charges.filter((c: any) => c.balance > 0).map((c: any) => ({
+        chargeId: c.id, headKey: h.key, headName: h.name, label: c.label, balance: c.balance, dueDate: c.dueDate,
+      }))),
+    // Add-a-fee options for this child (amounts come from Fee Setup).
+    add: opts ? {
+      van: { feeTypeId: opts.van.feeTypeId, suggested: opts.van.suggestedFee, rates: opts.van.rates || [], village: a.student.village || null },
+      uniform: { feeTypeId: opts.uniform.feeTypeId, items: (opts.uniform.items || []).map((u: any) => ({ name: u.name, price: u.price })) },
+      idCard: { feeTypeId: opts.idCard.feeTypeId, fee: opts.idCard.fee },
+      oldFeeTypeId: opts.oldFeeTypeId,
+    } : null,
+  }));
+  return {
+    parent: { name: me.fatherName || me.guardianName || 'Parent', phone: me.fatherPhone || me.guardianPhone || '' },
+    students,
+  };
+}
+
 export interface AccountListRow {
   id: string;
   name: string;
@@ -223,6 +265,7 @@ export interface AccountListRow {
   hasVan: boolean;
   lastPaidAt: string | null;
   lastSeq: number;
+  siblingCount: number;
   heads: { name: string; balance: number }[];
 }
 
@@ -281,6 +324,17 @@ export async function listAccounts(
     },
   });
 
+  // How many ACTIVE children each parent has (by login, else by guardian phone) —
+  // counts the whole family regardless of the current class filter.
+  const guardianIds = Array.from(new Set(enrollments.map((e) => e.student.guardianUserId).filter(Boolean))) as string[];
+  const gPhones = Array.from(new Set(enrollments.filter((e) => !e.student.guardianUserId).map((e) => e.student.guardianPhone).filter(Boolean))) as string[];
+  const [byGuardian, byPhone] = await Promise.all([
+    guardianIds.length ? prisma.student.groupBy({ by: ['guardianUserId'], where: { status: 'ACTIVE', guardianUserId: { in: guardianIds } }, _count: { _all: true } }) : Promise.resolve([]),
+    gPhones.length ? prisma.student.groupBy({ by: ['guardianPhone'], where: { status: 'ACTIVE', guardianUserId: null, guardianPhone: { in: gPhones } }, _count: { _all: true } }) : Promise.resolve([]),
+  ]);
+  const gCount: Record<string, number> = Object.fromEntries((byGuardian as any[]).map((g) => [g.guardianUserId, g._count._all]));
+  const pCount: Record<string, number> = Object.fromEntries((byPhone as any[]).map((g) => [g.guardianPhone, g._count._all]));
+
   const rows = enrollments.map((e) => {
     const s = e.student;
     const a = s.feeAssignments[0];
@@ -304,6 +358,7 @@ export async function listAccounts(
       hasVan,
       lastPaidAt: s.payments[0]?.paidAt ? s.payments[0].paidAt.toISOString() : null,
       lastSeq: s.payments[0] ? (parseInt((s.payments[0].receiptNo.match(/(\d+)\s*$/) || [])[1] || '0', 10) || 0) : 0,
+      siblingCount: s.guardianUserId ? (gCount[s.guardianUserId] || 1) : (s.guardianPhone ? (pCount[s.guardianPhone] || 1) : 1),
       heads: sum.heads.filter((h) => h.balance > 0).map((h) => ({ name: h.name, balance: h.balance })),
     };
   });
@@ -512,10 +567,12 @@ export async function getFeeConfig(yearId: string) {
     prisma.uniformItem.findMany({ where: { yearId }, orderBy: { order: 'asc' } }),
   ]);
   const uniformMatrix = await getUniformMatrix(yearId); // tolerant of pre-migration
+  const feeReceiptWhatsapp = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { feeReceiptWhatsapp: true } }))?.feeReceiptWhatsapp || 'ASK';
   return {
     feeTypes,
     classes,
     uniformMatrix,
+    feeReceiptWhatsapp,
     classFees: classFees.map((cf) => ({
       id: cf.id,
       classId: cf.classId,
@@ -693,7 +750,10 @@ export async function getAssignableOptions(studentId: string, yearId: string) {
   // Van rates configured in Fee setup (drives the Collect-screen village dropdown),
   // plus the suggestion for the student's own village.
   const vanFees = await prisma.vanFee.findMany({ where: { yearId }, orderBy: { village: 'asc' } });
-  const van = student.village ? vanFees.find((v) => v.village === student.village) || null : null;
+  // Match the student's village to its Fee-setup rate case/space-insensitively, so a
+  // small spelling difference (e.g. "Kyalanur" vs "kyalanur ") still resolves the fee.
+  const normVillage = (s: string | null | undefined) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const van = student.village ? vanFees.find((v) => normVillage(v.village) === normVillage(student.village)) || null : null;
   const vanRates = vanFees.map((v) => ({ village: v.village, fee: v.annualFee }));
 
   // Uniform items for the Collect picker = the Fee-setup "Uniform prices" catalogue
@@ -732,6 +792,8 @@ export async function getAssignableOptions(studentId: string, yearId: string) {
   const idCardFee = (await classFeeAmount(ids.idcard)) || ID_CARD_FEE;
   const newAdmFee = (await classFeeAmount(ids.newadmission)) || NEW_ADMISSION_FEE;
 
+  const feeReceiptWhatsapp = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { feeReceiptWhatsapp: true } }))?.feeReceiptWhatsapp || 'ASK';
+
   return {
     student: { id: student.id, name: student.name, classId: student.classId, className: student.class?.name || null, gender: student.gender, village: student.village },
     van: { suggestedFee: van?.annualFee || 0, villageHasRate: !!van, feeTypeId: ids.van || null, rates: vanRates, ...headOf('van') },
@@ -740,6 +802,7 @@ export async function getAssignableOptions(studentId: string, yearId: string) {
     newAdmission: { fee: newAdmFee, feeTypeId: ids.newadmission || null, ...headOf('newadmission') },
     oldFees,
     oldFeeTypeId: oldHead.id,
+    feeReceiptWhatsapp,
   };
 }
 
@@ -1217,29 +1280,45 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
   const assignments = await prisma.studentFeeAssignment.findMany({
     where: { yearId },
     include: {
-      student: { include: { class: { select: { name: true } } } },
+      student: { include: { class: { select: { id: true, name: true } } } },
       charges: { include: chargeInclude },
       concessions: { select: { amount: true, status: true, feeType: { select: { key: true } } } },
     },
   });
   const outstanding: { id: string; name: string; className: string | null; balance: number }[] = [];
-  const oldDue: { id: string; name: string; className: string | null; amount: number; balance: number }[] = [];
+  const oldDue: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[] = [];
+  // Per-class billed / collected / pending, with headcounts — the class-wise detail.
+  const classAgg = new Map<string, { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }>();
   let billedTotal = 0, collectedAllTotal = 0, oldFeeCollected = 0, oldFeePending = 0;
   for (const a of assignments) {
     const rows = applyConcessions(a.charges.map(toChargeRow), approvedConcessionMap(a.concessions as any));
     const sum = aggregateAccount(rows);
-    billedTotal += Math.max(0, sum.totalCharged - sum.concession);
+    const billed = Math.max(0, sum.totalCharged - sum.concession);
+    billedTotal += billed;
     collectedAllTotal += sum.totalPaid;
+    const clsName = a.student.class?.name || 'Unassigned';
+    const clsKey = a.student.class?.id || 'unassigned';
+    const cs = classAgg.get(clsKey) || { classId: a.student.class?.id || null, name: clsName, billed: 0, collected: 0, pending: 0, students: 0, withDues: 0 };
+    cs.billed += billed;
+    cs.collected += sum.totalPaid;
+    cs.pending += Math.max(0, sum.totalBalance);
+    cs.students += 1;
+    if (sum.totalBalance > 0) cs.withDues += 1;
+    classAgg.set(clsKey, cs);
     if (sum.totalBalance > 0)
       outstanding.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, balance: sum.totalBalance });
     const oldHead = sum.heads.find((h) => h.key === 'olddue');
     if (oldHead && oldHead.charged > 0) {
-      oldDue.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, amount: oldHead.charged, balance: oldHead.balance });
+      oldDue.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, amount: oldHead.charged, paid: oldHead.paid, balance: oldHead.balance });
       oldFeeCollected += oldHead.paid;
       oldFeePending += oldHead.balance;
     }
   }
   outstanding.sort((x, y) => y.balance - x.balance);
+  oldDue.sort((x, y) => y.balance - x.balance);
+  // Natural class order (1st, 2nd, … 10th) via numeric-aware compare on the name.
+  const classSummary = [...classAgg.values()]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
   // Installment due — tuition/van installments not fully paid, with due date.
   const instCharges = await prisma.feeCharge.findMany({
@@ -1269,15 +1348,55 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     byHead: [...byHead.entries()].map(([key, v]) => ({ key, name: v.name, amount: v.amount })).sort((a, b) => b.amount - a.amount),
     byClass: [...byClass.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     byVillage: [...byVillage.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
-    outstanding: outstanding.slice(0, 200),
+    outstanding: outstanding.slice(0, 500),
     outstandingTotal: outstanding.reduce((t, o) => t + o.balance, 0),
     billedTotal,
     collectedAllTotal,
     withDues: outstanding.length,
+    classSummary,
     oldDue,
+    oldDueUnpaid: oldDue.filter((o) => o.balance > 0),
     oldFeeCollected,
     oldFeePending,
     installmentDue,
+  };
+}
+
+// Drill-down for a class: each student's billed / paid / pending for the year —
+// powers the "click a class → see individual students" list in Reports.
+export async function getClassFeeStudents(yearId: string, classId: string) {
+  const where: any = { yearId, student: classId === 'unassigned' ? { classId: null } : { classId } };
+  const assignments = await prisma.studentFeeAssignment.findMany({
+    where,
+    include: {
+      student: { select: { id: true, name: true, class: { select: { name: true } } } },
+      charges: { include: chargeInclude },
+      concessions: { select: { amount: true, status: true, feeType: { select: { key: true } } } },
+    },
+  });
+  const students = assignments
+    .map((a) => {
+      const rows = applyConcessions(a.charges.map(toChargeRow), approvedConcessionMap(a.concessions as any));
+      const sum = aggregateAccount(rows);
+      return {
+        id: a.student.id,
+        name: a.student.name,
+        billed: Math.max(0, sum.totalCharged - sum.concession),
+        paid: sum.totalPaid,
+        pending: Math.max(0, sum.totalBalance),
+      };
+    })
+    // Most-owing first, then by name.
+    .sort((x, y) => y.pending - x.pending || x.name.localeCompare(y.name));
+  const className = assignments[0]?.student.class?.name || (classId === 'unassigned' ? 'Unassigned' : '');
+  return {
+    className,
+    students,
+    totals: {
+      billed: students.reduce((t, s) => t + s.billed, 0),
+      paid: students.reduce((t, s) => t + s.paid, 0),
+      pending: students.reduce((t, s) => t + s.pending, 0),
+    },
   };
 }
 

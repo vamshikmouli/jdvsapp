@@ -10,6 +10,7 @@ import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type 
 import { CLASSES, CLASS_ID_BY_KEY, CLASS_KEY_BY_ID, VILLAGE_VAN_FEES, type Gender as FeeGender, type ClassKey } from '@/lib/feeStructure';
 import { UNIFORM_ITEM_DEFS, itemsForFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
 import { CollectDrawer, PaymentTimeline, type Account } from './account-ui';
+import { MultiCollectDrawer } from './multi-collect-ui';
 import { useBranding } from '@/components/useBranding';
 import { CollectionSettingsPanel } from './collection-settings';
 
@@ -561,7 +562,33 @@ interface AccountRow {
   hasVan?: boolean;
   lastPaidAt?: string | null;
   lastSeq?: number;
+  siblingCount?: number;
   heads?: { name: string; balance: number }[];
+}
+
+// A little cluster of person icons showing how many children the parent has (1–4,
+// capped). When `onClick` is given it becomes the button that opens Multi Collect
+// (the family payment drawer) for that family.
+function SiblingIcons({ count, onClick }: { count: number; onClick?: (e: React.MouseEvent) => void }) {
+  const n = Math.min(Math.max(1, count), 4);
+  const inner = (
+    <>
+      {Array.from({ length: n }).map((_, i) => <Icon key={i} name="User" size={12} className="-ml-1 first:ml-0" />)}
+      {count > 4 && <span className="text-[10px] font-semibold ml-0.5">{count}</span>}
+    </>
+  );
+  const title = `${count} child${count === 1 ? '' : 'ren'} for this parent — open family payment`;
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={title}
+        className="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-colors">
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-slate-400" title={title}>{inner}</span>
+  );
 }
 
 function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }: { refreshKey?: number; canCollect: boolean; canVoid?: boolean; canNotify?: boolean; canManage?: boolean }) {
@@ -573,6 +600,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
   const [classId, setClassId] = useState('all');
   const [classList, setClassList] = useState<{ id: string; name: string }[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [multiId, setMultiId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{ id: string; name: string } | null>(null);
   const [sort, setSort] = useState<SortState>({ key: 'recent', dir: 'desc' }); // most recent collection → top
   const onSort = (k: string) => setSort((s) => nextSort(s, k));
@@ -840,7 +868,10 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
                     </div>
                   </td>
                   <td className="py-3 px-6">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">{shortClass(r.className)}</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">{shortClass(r.className)}</span>
+                      <SiblingIcons count={r.siblingCount || 1} onClick={canCollect ? (e) => { e.stopPropagation(); setMultiId(r.id); } : undefined} />
+                    </span>
                   </td>
                   <td className="py-3 px-6 text-right tabular-nums text-slate-700">{feeMoney(r.totalCharged)}</td>
                   <td className="py-3 px-6 text-right tabular-nums text-success-700">
@@ -885,7 +916,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-slate-900 truncate">{r.name}</div>
                     {r.fatherName && <div className="text-[11px] text-slate-500 truncate">S/o {r.fatherName}</div>}
-                    <div className="text-[11px] text-slate-500">{shortClass(r.className)} · {r.id}{r.village ? ` · ${r.village}` : ''}</div>
+                    <div className="text-[11px] text-slate-500 inline-flex items-center gap-1.5">{shortClass(r.className)} · {r.id}{r.village ? ` · ${r.village}` : ''} <SiblingIcons count={r.siblingCount || 1} onClick={canCollect ? (e) => { e.stopPropagation(); setMultiId(r.id); } : undefined} /></div>
                     {r.phone && <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-[11px] text-purple-700 inline-flex items-center gap-1"><Icon name="Phone" size={10} /> {r.phone}</a>}
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -904,6 +935,7 @@ function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }
       </Card>
 
       {openId && <CollectDrawer studentId={openId} onClose={() => setOpenId(null)} onDone={async () => { setOpenId(null); await fetchRows(); }} />}
+      {multiId && <MultiCollectDrawer studentId={multiId} onClose={() => setMultiId(null)} onDone={async () => { setMultiId(null); await fetchRows(); }} />}
       {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)} />}
       {bulkOpen && (
         <BulkNotifyModal
@@ -1793,9 +1825,11 @@ interface ReportData {
   billedTotal: number;
   collectedAllTotal: number;
   withDues: number;
+  classSummary: { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }[];
   oldFeeCollected: number;
   oldFeePending: number;
-  oldDue: { id: string; name: string; className: string | null; amount: number; balance: number }[];
+  oldDue: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
+  oldDueUnpaid: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
   installmentDue: { id: string; name: string; className: string | null; label: string; dueDate: string | null; balance: number; status: ChargeStatus }[];
 }
 
@@ -1805,6 +1839,7 @@ function ReportsTab() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [headDrill, setHeadDrill] = useState<{ key: string; name: string } | null>(null);
+  const [classDrill, setClassDrill] = useState<{ classId: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1826,22 +1861,45 @@ function ReportsTab() {
 
   if (loading || !data) return <div className="mt-6 space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
 
+  const rate = data.billedTotal > 0 ? Math.round((data.collectedAllTotal / data.billedTotal) * 100) : 0;
+
   return (
     <div className="mt-6 space-y-5">
-      {/* KPIs — whole year */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        {[
-          { label: 'Total billed', value: feeMoney(data.billedTotal), icon: 'ReceiptText', badge: 'bg-purple-100 text-purple-700' },
-          { label: 'Collected', value: feeMoney(data.collectedAllTotal), icon: 'CheckCircle2', badge: 'bg-success-100 text-success-700' },
-          { label: 'Outstanding', value: feeMoney(data.outstandingTotal), icon: 'AlertCircle', badge: 'bg-danger-100 text-danger-700' },
-          { label: 'Students with dues', value: String(data.withDues), icon: 'Users', badge: 'bg-marigold-100 text-marigold-700' },
-          { label: 'Old fee collected', value: feeMoney(data.oldFeeCollected), icon: 'History', badge: 'bg-success-100 text-success-700' },
-          { label: 'Old fee pending', value: feeMoney(data.oldFeePending), icon: 'History', badge: 'bg-danger-100 text-danger-700' },
-        ].map((k) => (
-          <div key={k.label} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl shadow-xs px-4 py-3">
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${k.badge}`}><Icon name={k.icon as any} size={18} /></div>
+      {/* Hero — collection rate for the year */}
+      <div className="relative overflow-hidden rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-600 to-purple-500 text-white shadow-sm">
+        <div className="absolute -right-8 -top-10 w-44 h-44 rounded-full bg-white/10" aria-hidden />
+        <div className="absolute -right-16 top-8 w-44 h-44 rounded-full bg-white/5" aria-hidden />
+        <div className="relative p-5 sm:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <div className="text-lg font-bold text-slate-900 leading-none tabular-nums">{k.value}</div>
+              <div className="text-[11px] uppercase tracking-[0.08em] text-white/70 font-semibold">Collected this year · {data.year.label}</div>
+              <div className="font-display text-3xl sm:text-4xl font-extrabold tabular-nums leading-none mt-1">{feeMoney(data.collectedAllTotal)}</div>
+              <div className="text-[13px] text-white/80 mt-1.5">of {feeMoney(data.billedTotal)} billed · {feeMoney(data.outstandingTotal)} outstanding</div>
+            </div>
+            <div className="text-right">
+              <div className="font-display text-3xl font-extrabold tabular-nums leading-none">{rate}%</div>
+              <div className="text-[11px] uppercase tracking-wide text-white/70 font-semibold mt-1">collected</div>
+            </div>
+          </div>
+          <div className="mt-4 h-2.5 rounded-full bg-white/20 overflow-hidden">
+            <div className="h-full rounded-full bg-white/90 transition-all" style={{ width: `${Math.min(100, rate)}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* KPIs — whole year */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Students with dues', value: String(data.withDues), icon: 'Users', bar: 'bg-marigold-500', badge: 'bg-marigold-100 text-marigold-700' },
+          { label: 'Outstanding', value: feeMoney(data.outstandingTotal), icon: 'AlertCircle', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700' },
+          { label: 'Old fee collected', value: feeMoney(data.oldFeeCollected), icon: 'History', bar: 'bg-success-500', badge: 'bg-success-100 text-success-700' },
+          { label: 'Old fee pending', value: feeMoney(data.oldFeePending), icon: 'History', bar: 'bg-danger-500', badge: 'bg-danger-100 text-danger-700' },
+        ].map((k) => (
+          <div key={k.label} className="relative flex items-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-xs px-4 py-3.5 overflow-hidden">
+            <span className={`absolute left-0 top-0 bottom-0 w-1 ${k.bar}`} aria-hidden />
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${k.badge}`}><Icon name={k.icon as any} size={18} /></div>
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-slate-900 leading-none tabular-nums truncate">{k.value}</div>
               <div className="text-[11px] text-slate-500 mt-1">{k.label}</div>
             </div>
           </div>
@@ -1856,36 +1914,43 @@ function ReportsTab() {
           <Button size="sm" onClick={thisMonth}>This month</Button>
           <Button size="sm" onClick={clearRange}>Whole year</Button>
           <div className="ml-auto text-right">
-            <div className="text-2xl font-bold text-slate-900 tabular-nums">{feeMoney(data.collectedTotal)}</div>
+            <div className="text-2xl font-bold text-purple-600 tabular-nums">{feeMoney(data.collectedTotal)}</div>
             <div className="text-xs text-slate-500">{data.paymentCount} payments {from || to ? 'in range' : `· year ${data.year.label}`}</div>
           </div>
         </div>
       </Card>
 
+      {/* Class-wise: collected vs pending, with headcounts. Click a class → its students. */}
+      <ClassBreakdown rows={data.classSummary} onClass={(r) => setClassDrill({ classId: r.classId || 'unassigned', name: r.name })} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card padded={false} title="Collection by fee head">
-          {data.byHead.length === 0 ? (
-            <div className="px-6 py-8 text-center text-sm text-slate-400">No collection yet</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>
-                {data.byHead.map((r) => (
-                  <tr key={r.key} onClick={() => setHeadDrill({ key: r.key, name: r.name })}
-                    className="border-b border-slate-100 last:border-0 hover:bg-purple-50/40 cursor-pointer" title="Show who paid, by date">
-                    <td className="px-6 py-2.5 text-slate-700">{r.name}</td>
-                    <td className="px-6 py-2.5 text-right tabular-nums text-slate-900 whitespace-nowrap">{feeMoney(r.amount)}<Icon name="ChevronRight" size={14} className="inline align-middle text-slate-300 ml-1" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
-        <ReportTable title="Collection by class" rows={data.byClass.map((r) => [r.name, feeMoney(r.amount)])} empty="No collection yet" />
-        <ReportTable title="Collection by village" rows={data.byVillage.map((r) => [r.name, feeMoney(r.amount)])} empty="No collection yet" />
-        <ReportTable title="Daily collection" rows={data.byDay.map((r) => [new Date(r.day).toLocaleDateString('en-IN'), feeMoney(r.amount)])} empty="No collection yet" />
+        <BarList title="Collection by fee head" icon="Layers" accent="purple"
+          rows={data.byHead} empty="No collection yet" onRow={(r) => setHeadDrill({ key: r.key!, name: r.name })} />
+        <BarList title="Collection by village" icon="MapPin" accent="marigold"
+          rows={data.byVillage} empty="No collection yet" />
+        <BarList title="Daily collection" icon="CalendarDays" accent="success"
+          rows={data.byDay.map((r) => ({ name: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }), amount: r.amount }))} empty="No collection yet" />
       </div>
 
-      <Card padded={false} title={<div className="flex items-center justify-between w-full"><span>Outstanding fees</span><span className="text-sm font-normal text-danger-700">{feeMoney(data.outstandingTotal)} total</span></div>}>
+      {/* Old fee — who hasn't paid yet */}
+      <Card padded={false} title={<div className="flex items-center justify-between w-full">
+        <span className="inline-flex items-center gap-2"><Icon name="History" size={16} className="text-danger-600" /> Old fee — not paid yet</span>
+        <span className="text-sm font-normal">
+          <span className="text-slate-500">{data.oldDueUnpaid.length} student{data.oldDueUnpaid.length === 1 ? '' : 's'} · </span>
+          <span className="text-danger-700 font-semibold tabular-nums">{feeMoney(data.oldFeePending)}</span>
+        </span>
+      </div>}>
+        <ReportRows
+          head={['Student', 'Class', 'Old fee', 'Paid', 'Pending']}
+          rows={data.oldDueUnpaid.map((r) => [`${r.name}  ·  ${r.id}`, shortClass(r.className), feeMoney(r.amount), feeMoney(r.paid), feeMoney(r.balance)])}
+          empty="No pending old fees 🎉"
+        />
+      </Card>
+
+      <Card padded={false} title={<div className="flex items-center justify-between w-full">
+        <span className="inline-flex items-center gap-2"><Icon name="AlertCircle" size={16} className="text-danger-600" /> Outstanding fees</span>
+        <span className="text-sm font-normal"><span className="text-slate-500">{data.withDues} student{data.withDues === 1 ? '' : 's'} · </span><span className="text-danger-700 font-semibold tabular-nums">{feeMoney(data.outstandingTotal)}</span></span>
+      </div>}>
         <ReportRows
           head={['Student', 'Class', 'Balance']}
           rows={data.outstanding.map((r) => [r.name + '  ·  ' + r.id, shortClass(r.className), feeMoney(r.balance)])}
@@ -1893,16 +1958,15 @@ function ReportsTab() {
         />
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card padded={false} title="Old dues (previous year)">
-          <ReportRows head={['Student', 'Class', 'Balance']} rows={data.oldDue.map((r) => [r.name, shortClass(r.className), feeMoney(r.balance)])} empty="No old dues" />
-        </Card>
-        <Card padded={false} title="Installments due">
-          <ReportRows head={['Student', 'Installment', 'Balance']} rows={data.installmentDue.map((r) => [r.name, `${r.label}${r.dueDate ? ' · ' + r.dueDate : ''}`, feeMoney(r.balance)])} empty="No pending installments" />
-        </Card>
-      </div>
+      <Card padded={false} title={<div className="flex items-center justify-between w-full">
+        <span className="inline-flex items-center gap-2"><Icon name="CalendarClock" size={16} className="text-marigold-600" /> Installments due</span>
+        <span className="text-sm font-normal text-slate-500">{data.installmentDue.length} pending</span>
+      </div>}>
+        <ReportRows head={['Student', 'Installment', 'Balance']} rows={data.installmentDue.map((r) => [r.name, `${r.label}${r.dueDate ? ' · ' + r.dueDate : ''}`, feeMoney(r.balance)])} empty="No pending installments" />
+      </Card>
 
       {headDrill && <HeadPaymentsDrawer headKey={headDrill.key} headName={headDrill.name} from={from} to={to} onClose={() => setHeadDrill(null)} />}
+      {classDrill && <ClassStudentsDrawer classId={classDrill.classId} className={classDrill.name} onClose={() => setClassDrill(null)} />}
     </div>
   );
 }
@@ -1969,24 +2033,176 @@ function HeadPaymentsDrawer({ headKey, headName, from, to, onClose }: { headKey:
   );
 }
 
-function ReportTable({ title, rows, empty }: { title: string; rows: [string, string][]; empty: string }) {
+// Drill-down: each student in a class with their paid & pending for the year.
+function ClassStudentsDrawer({ classId, className, onClose }: { classId: string; className: string; onClose: () => void }) {
+  const [data, setData] = useState<{ className: string; students: { id: string; name: string; billed: number; paid: number; pending: number }[]; totals: { billed: number; paid: number; pending: number } } | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch(`/api/fees/reports/class-students?classId=${encodeURIComponent(classId)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Failed (${r.status})`))))
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+  }, [classId]);
+
   return (
-    <Card padded={false} title={title}>
-      {rows.length === 0 ? (
-        <div className="py-8"><EmptyState icon="BarChart3" title={empty} /></div>
-      ) : (
-        <table className="w-full text-sm">
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="border-t border-slate-100 first:border-0">
-                <td className="px-6 py-2.5 text-slate-700">{r[0]}</td>
-                <td className="px-6 py-2.5 text-right tabular-nums font-medium text-slate-900">{r[1]}</td>
-              </tr>
+    <Drawer open onClose={onClose} title={shortClass(className) || 'Class'} subtitle="Each student — paid & pending" width={620}
+      footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
+      {!data && !error && <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} height={40} />)}</div>}
+      {error && <EmptyState icon="AlertCircle" title="Couldn't load" body={error} />}
+      {data && (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {[
+              { label: 'Billed', value: feeMoney(data.totals.billed), tone: 'text-slate-900' },
+              { label: 'Paid', value: feeMoney(data.totals.paid), tone: 'text-success-700' },
+              { label: 'Pending', value: feeMoney(data.totals.pending), tone: data.totals.pending > 0 ? 'text-danger-700' : 'text-slate-400' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center">
+                <div className={`text-base font-bold tabular-nums ${s.tone}`}>{s.value}</div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-400 mt-0.5">{s.label}</div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+          {data.students.length === 0 ? (
+            <EmptyState icon="Users" title="No students" body="No students in this class." />
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 sticky top-0">
+                  <tr>
+                    <th className="text-left font-semibold px-3 py-2">Student</th>
+                    <th className="text-right font-semibold px-3 py-2">Paid</th>
+                    <th className="text-right font-semibold px-3 py-2">Pending</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.students.map((s) => (
+                    <tr key={s.id} className="border-t border-slate-100 odd:bg-slate-50/40">
+                      <td className="px-3 py-2"><div className="text-slate-900">{s.name}</div><div className="text-[11px] text-slate-400 font-mono">{s.id}</div></td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-success-700">{feeMoney(s.paid)}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${s.pending > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{feeMoney(s.pending)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
-    </Card>
+    </Drawer>
+  );
+}
+
+// A breakdown list where each row carries a proportional bar — turns a plain
+// column of numbers into an at-a-glance visual. Optionally clickable (drill-down).
+const BAR_ACCENT: Record<string, { bar: string; chip: string }> = {
+  purple: { bar: 'bg-purple-500', chip: 'bg-purple-100 text-purple-700' },
+  info: { bar: 'bg-info-500', chip: 'bg-info-100 text-info-700' },
+  marigold: { bar: 'bg-marigold-500', chip: 'bg-marigold-100 text-marigold-700' },
+  success: { bar: 'bg-success-500', chip: 'bg-success-100 text-success-700' },
+};
+function BarList({ title, icon, accent = 'purple', rows, empty, onRow }: {
+  title: string; icon: string; accent?: keyof typeof BAR_ACCENT;
+  rows: { key?: string; name: string; amount: number }[]; empty: string;
+  onRow?: (r: { key?: string; name: string; amount: number }) => void;
+}) {
+  const a = BAR_ACCENT[accent] || BAR_ACCENT.purple;
+  const total = rows.reduce((t, r) => t + r.amount, 0);
+  const max = Math.max(1, ...rows.map((r) => r.amount));
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-7 h-7 rounded-lg grid place-items-center ${a.chip}`}><Icon name={icon as any} size={15} /></span>
+          <span className="text-sm font-bold text-slate-900">{title}</span>
+        </div>
+        {rows.length > 0 && <span className="text-xs font-semibold tabular-nums text-slate-500">{feeMoney(total)}</span>}
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-slate-400">{empty}</div>
+      ) : (
+        <div className="p-2 max-h-96 overflow-y-auto">
+          {rows.map((r, i) => (
+            <div key={r.key || i} onClick={onRow ? () => onRow(r) : undefined}
+              className={`group rounded-lg px-3 py-2 transition-colors ${onRow ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+              title={onRow ? 'Show who paid, by date' : undefined}>
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <span className="text-[13px] text-slate-700 truncate">{r.name}</span>
+                <span className="text-[13px] font-semibold tabular-nums text-slate-900 whitespace-nowrap flex items-center gap-1">
+                  {feeMoney(r.amount)}
+                  {onRow && <Icon name="ChevronRight" size={13} className="text-slate-300 group-hover:text-purple-400" />}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className={`h-full rounded-full ${a.bar}`} style={{ width: `${Math.max(3, (r.amount / max) * 100)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Class-wise detail: billed / collected / pending, a collected-vs-pending bar,
+// and how many students still owe. The core "who's behind, by class" view.
+function ClassBreakdown({ rows, onClass }: { rows: { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }[]; onClass?: (r: { classId: string | null; name: string }) => void }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-lg grid place-items-center bg-info-100 text-info-700"><Icon name="GraduationCap" size={15} /></span>
+          <span className="text-sm font-bold text-slate-900">Class-wise collection &amp; pending</span>
+        </div>
+        <span className="text-xs text-slate-400">{rows.length} class{rows.length === 1 ? '' : 'es'}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-slate-400">No data yet</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="text-left font-semibold px-5 py-2.5">Class</th>
+                <th className="text-right font-semibold px-4 py-2.5">Students</th>
+                <th className="text-right font-semibold px-4 py-2.5">Collected</th>
+                <th className="text-right font-semibold px-4 py-2.5">Pending</th>
+                <th className="text-left font-semibold px-4 py-2.5 w-[170px]">Progress</th>
+                {onClass && <th className="px-2" />}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const pct = r.billed > 0 ? Math.round((r.collected / r.billed) * 100) : 100;
+                return (
+                  <tr key={r.name} onClick={onClass ? () => onClass({ classId: r.classId, name: r.name }) : undefined}
+                    className={`group border-t border-slate-100 transition-colors ${onClass ? 'cursor-pointer hover:bg-purple-50/40' : 'hover:bg-slate-50/60'}`}
+                    title={onClass ? 'Show each student — paid & pending' : undefined}>
+                    <td className="px-5 py-2.5 font-medium text-slate-800 whitespace-nowrap">{shortClass(r.name)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                      {r.students}
+                      {r.withDues > 0 && <span className="ml-1.5 inline-flex items-center rounded-full bg-danger-50 text-danger-700 text-[10.5px] font-semibold px-1.5 py-0.5">{r.withDues} due</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-success-700">{feeMoney(r.collected)}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${r.pending > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{feeMoney(r.pending)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-danger-100 overflow-hidden min-w-[70px]">
+                          <div className="h-full rounded-full bg-success-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-[11px] tabular-nums text-slate-500 w-9 text-right">{pct}%</span>
+                      </div>
+                    </td>
+                    {onClass && <td className="px-2 text-right"><Icon name="ChevronRight" size={15} className="text-slate-300 group-hover:text-purple-400" /></td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1995,15 +2211,15 @@ function ReportRows({ head, rows, empty }: { head: string[]; rows: string[][]; e
   return (
     <div className="overflow-x-auto max-h-96 overflow-y-auto">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-slate-50">
+        <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
           <tr className="text-[11px] uppercase tracking-wide text-slate-500">
-            {head.map((h, i) => <th key={i} className={`font-semibold px-6 py-2.5 ${i === head.length - 1 ? 'text-right' : 'text-left'}`}>{h}</th>)}
+            {head.map((h, i) => <th key={i} className={`font-semibold px-6 py-2.5 border-b border-slate-200 ${i === head.length - 1 ? 'text-right' : 'text-left'}`}>{h}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className="border-t border-slate-100">
-              {r.map((cell, j) => <td key={j} className={`px-6 py-2 ${j === r.length - 1 ? 'text-right tabular-nums font-medium text-slate-900' : 'text-slate-700'}`}>{cell}</td>)}
+            <tr key={i} className="border-t border-slate-100 odd:bg-slate-50/40 hover:bg-purple-50/40 transition-colors">
+              {r.map((cell, j) => <td key={j} className={`px-6 py-2 ${j === r.length - 1 ? 'text-right tabular-nums font-semibold text-slate-900' : 'text-slate-700'}`}>{cell}</td>)}
             </tr>
           ))}
         </tbody>

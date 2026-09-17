@@ -10,8 +10,6 @@ import { feeMoney, PAY_METHOD_LABEL, type AccountSummary } from '@/lib/fees';
 import { VILLAGE_VAN_FEES } from '@/lib/feeStructure';
 import { useBranding } from '@/components/useBranding';
 
-const VILLAGE_FEE_MAP: Record<string, number> = Object.fromEntries(VILLAGE_VAN_FEES.map((v) => [v.village, v.fee]));
-
 export function shortClass(name: string | null) {
   return name ? name.replace(/\s?STD$/, '') : '—';
 }
@@ -131,11 +129,11 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
     if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Failed to cancel'); return; }
     onChanged?.();
   };
-  const totals = [
-    { label: 'Total fee', value: s.totalCharged, tone: 'text-slate-900' },
+  const totals: { label: string; value: number; tone: string; metric?: HeadMetric }[] = [
+    { label: 'Total fee', value: s.totalCharged, tone: 'text-slate-900', metric: 'charged' },
     ...(s.concession > 0 ? [{ label: 'Concession', value: s.concession, tone: 'text-info-700' }] : []),
-    { label: 'Paid', value: s.totalPaid, tone: 'text-success-700' },
-    { label: 'Balance', value: s.totalBalance, tone: 'text-danger-700' },
+    { label: 'Paid', value: s.totalPaid, tone: 'text-success-700', metric: 'paid' as const },
+    { label: 'Balance', value: s.totalBalance, tone: 'text-danger-700', metric: 'balance' as const },
   ];
   return (
     <div className="space-y-6">
@@ -154,8 +152,14 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
       <div className={`grid gap-3 ${totals.length === 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
         {totals.map((b) => (
           <div key={b.label} className="rounded-lg border border-slate-200 px-3 py-2.5 text-center">
-            <div className={`text-base font-bold tabular-nums ${b.tone}`}>{feeMoney(b.value)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{b.label}</div>
+            {b.metric ? (
+              <HeadBreakdown heads={account.summary.heads} total={b.value} metric={b.metric} layout="stat" align="left" />
+            ) : (
+              <>
+                <div className={`text-base font-bold tabular-nums ${b.tone}`}>{feeMoney(b.value)}</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">{b.label}</div>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -437,6 +441,71 @@ function ConcessionSection({ account, canRequest, onChanged }: { account: Accoun
 
 /* ---------- small shared bits ---------- */
 
+// An Owed / Paid / Balance figure, clickable to reveal its fee-head-wise split
+// (School fee, Software, Uniform …). Used in the Collect header and the
+// account/History header.
+type HeadMetric = 'owed' | 'charged' | 'paid' | 'balance';
+type HeadRowLite = { name: string; charged: number; concession: number; paid: number; balance: number };
+const HEAD_METRIC: Record<HeadMetric, { label: string; headerColor: string; statColor: string; value: (h: HeadRowLite) => number }> = {
+  owed: { label: 'Owed', headerColor: 'text-slate-800', statColor: 'text-slate-900', value: (h) => Math.max(0, h.charged - h.concession) },
+  charged: { label: 'Total fee', headerColor: 'text-slate-800', statColor: 'text-slate-900', value: (h) => h.charged },
+  paid: { label: 'Paid', headerColor: 'text-success-600', statColor: 'text-success-700', value: (h) => h.paid },
+  balance: { label: 'Balance', headerColor: 'text-danger-600', statColor: 'text-danger-700', value: (h) => h.balance },
+};
+function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
+  heads: HeadRowLite[]; total: number; metric: HeadMetric;
+  layout: 'stat' | 'header'; align?: 'left' | 'right';
+}) {
+  const [open, setOpen] = useState(false);
+  const m = HEAD_METRIC[metric];
+  const rows = heads.map((h) => ({ name: h.name, amount: m.value(h) })).filter((r) => r.amount > 0).sort((a, b) => b.amount - a.amount);
+  const chevron = <Icon name="ChevronDown" size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />;
+  // Balance's colour flips to green when nothing is owed (matches the plain figure).
+  const headerColor = metric === 'balance' && total <= 0 ? 'text-success-600' : m.headerColor;
+  const statColor = metric === 'balance' && total <= 0 ? 'text-success-700' : m.statColor;
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full" title="See the fee-head-wise split">
+        {layout === 'stat' ? (
+          <>
+            <div className={`text-base font-bold tabular-nums ${statColor}`}>{feeMoney(total)}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-0.5">{m.label} {chevron}</div>
+          </>
+        ) : (
+          <>
+            <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold inline-flex items-center gap-0.5">{m.label} {chevron}</div>
+            <div className={`font-display text-[21px] font-extrabold tabular-nums leading-tight ${headerColor}`}>{feeMoney(total)}</div>
+          </>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
+          <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+            <div className="text-[10.5px] uppercase tracking-wide text-slate-400 px-2 pb-1 text-left">{m.label} by fee head</div>
+            {rows.length === 0 ? (
+              <div className="px-2 py-2 text-xs text-slate-400 text-left">{metric === 'paid' ? 'No payments yet.' : metric === 'balance' ? 'Nothing pending.' : 'Nothing charged yet.'}</div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto">
+                {rows.map((r) => (
+                  <div key={r.name} className="flex items-center justify-between gap-3 px-2 py-1.5 text-[13px]">
+                    <span className="text-slate-600 truncate text-left">{r.name}</span>
+                    <span className="tabular-nums font-semibold text-slate-900 whitespace-nowrap">{feeMoney(r.amount)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-3 px-2 py-1.5 mt-1 border-t border-slate-100 text-[13px] font-bold">
+                  <span className="text-slate-700 text-left">Total {m.label.toLowerCase()}</span>
+                  <span className={`tabular-nums whitespace-nowrap ${statColor}`}>{feeMoney(total)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function MiniStat({ label, value, tone = 'text-slate-900' }: { label: string; value: string; tone?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -519,7 +588,21 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   useEffect(() => {
     reloadAccount();
     fetch(`/api/fees/accounts/${studentId}/assignment`).then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setOpts(d); if (d.student?.village) setVanVillage(d.student.village); if (d.van?.suggestedFee && !d.van.active) setVanAmt(String(d.van.suggestedFee)); if (d.idCard?.fee) setIdAmt(String(d.idCard.fee)); } }).catch(() => {});
+      .then((d) => { if (d) {
+        setOpts(d);
+        if (d.student?.village) {
+          // Pre-select the canonical Fee-setup village (match ignoring case/spaces) so
+          // the dropdown lands on the configured rate and fills the van fee.
+          const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const match = (d.van?.rates || []).find((r: any) => norm(r.village) === norm(d.student.village));
+          setVanVillage(match ? match.village : d.student.village);
+        }
+        if (d.van?.suggestedFee && !d.van.active) setVanAmt(String(d.van.suggestedFee));
+        if (d.idCard?.fee) setIdAmt(String(d.idCard.fee));
+        // Global Fee-Setup preference: AUTO pre-ticks the WhatsApp receipt, OFF never sends.
+        if (d.feeReceiptWhatsapp === 'AUTO') setSendWa(true);
+        else if (d.feeReceiptWhatsapp === 'OFF') setSendWa(false);
+      } }).catch(() => {});
     fetch('/api/years').then((r) => (r.ok ? r.json() : { years: [] })).then((d) => {
       const yl = d.years || []; setYears(yl);
       const past = yl.filter((y: any) => !y.isActive);
@@ -840,16 +923,13 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       headerRight={
         <div className="hidden md:flex items-center gap-2.5">
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-right min-w-[104px]">
-            <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Owed</div>
-            <div className="font-display text-[21px] font-extrabold tabular-nums text-slate-800 leading-tight">{feeMoney(s.totalCharged - s.concession)}</div>
+            <HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="header" align="right" />
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-right min-w-[104px]">
-            <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Paid</div>
-            <div className="font-display text-[21px] font-extrabold tabular-nums text-success-600 leading-tight">{feeMoney(s.totalPaid)}</div>
+            <HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="header" align="right" />
           </div>
           <div className="rounded-xl border border-danger-100 bg-danger-50 px-4 py-2 text-right min-w-[104px]">
-            <div className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Balance</div>
-            <div className={`font-display text-[21px] font-extrabold tabular-nums leading-tight ${s.totalBalance > 0 ? 'text-danger-600' : 'text-success-600'}`}>{feeMoney(s.totalBalance)}</div>
+            <HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="header" align="right" />
           </div>
         </div>
       }
@@ -1083,7 +1163,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
 
             <div className="mt-3">
               <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
-              {account.student.whatsappEnabled === false ? (
+              {opts?.feeReceiptWhatsapp === 'OFF' ? (
+                <div className="mt-3 flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <Icon name="MessageCircleOff" size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                  <span>WhatsApp fee receipts are <b>turned off</b> for the school (Fees → Fee setup). Print the receipt instead.</span>
+                </div>
+              ) : account.student.whatsappEnabled === false ? (
                 <div className="mt-3 flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                   <Icon name="MessageCircleOff" size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
                   <span>WhatsApp is <b>off</b> for this student (set in the student profile) — the receipt won’t be sent. Print it instead.</span>
@@ -1170,7 +1255,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
 
 interface AssignOptions {
   student: { id: string; name: string; className: string | null; gender: string; village: string | null };
-  van: { suggestedFee: number; villageHasRate: boolean; active: boolean; amount: number; locked: boolean };
+  van: { suggestedFee: number; villageHasRate: boolean; active: boolean; amount: number; locked: boolean; rates?: { village: string; fee: number }[] };
   uniform: { items: { key: string; name: string; price: number; qty: number }[]; active: boolean; amount: number; locked: boolean };
   idCard: { fee: number; active: boolean; locked: boolean };
   newAdmission: { fee: number; active: boolean; locked: boolean };
@@ -1287,19 +1372,29 @@ export function AssignDrawer({ studentId, onClose, onDone }: { studentId: string
           <SectionCard icon="Bus" title="Van / transport" badge={vanOn ? 'Charged this student' : 'Not using the van'} right={<MiniToggle on={vanOn} disabled={opt.van.locked} onChange={setVanOn} />}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Village" hint="Selecting a village fills the fee">
-                <Select value={village} disabled={opt.van.locked}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setVillage(v);
-                    const fee = VILLAGE_FEE_MAP[v] || 0;
-                    if (fee > 0) { setVanFee(fee); setVanOn(true); }
-                  }}>
-                  <option value="">— No village —</option>
-                  {VILLAGE_VAN_FEES.map((v) => (
-                    <option key={v.village} value={v.village}>{v.village} — {feeMoney(v.fee)}/yr</option>
-                  ))}
-                  {village && !(village in VILLAGE_FEE_MAP) && <option value={village}>{village} (no rate)</option>}
-                </Select>
+                {(() => {
+                  // Village rates from Fee setup (fallback to the built-in list only if
+                  // none are configured), matched case/space-insensitively.
+                  const rates = (opt.van.rates?.length ? opt.van.rates : VILLAGE_VAN_FEES);
+                  const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                  const feeFor = (v: string) => rates.find((r) => norm(r.village) === norm(v))?.fee || 0;
+                  const known = rates.some((r) => norm(r.village) === norm(village));
+                  return (
+                    <Select value={known ? rates.find((r) => norm(r.village) === norm(village))!.village : village} disabled={opt.van.locked}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setVillage(v);
+                        const fee = feeFor(v);
+                        if (fee > 0) { setVanFee(fee); setVanOn(true); }
+                      }}>
+                      <option value="">— No village —</option>
+                      {rates.map((v) => (
+                        <option key={v.village} value={v.village}>{v.village} — {feeMoney(v.fee)}/yr</option>
+                      ))}
+                      {village && !known && <option value={village}>{village} (no rate)</option>}
+                    </Select>
+                  );
+                })()}
               </Field>
               <Field label="Van fee (₹ / year)" hint={opt.van.locked ? 'Paid — locked' : 'Editable'}>
                 <Input type="number" value={String(vanFee)} disabled={opt.van.locked || !vanOn} onChange={(e) => setVanFee(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="text-right tabular-nums" />

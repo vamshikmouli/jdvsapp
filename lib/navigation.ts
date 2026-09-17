@@ -51,6 +51,7 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'whatsapp', label: 'WhatsApp', icon: 'MessageCircle', perm: 'SETTINGS_MANAGE' },
       { id: 'promotions', label: 'Promotions', icon: 'GraduationCap', perm: 'SETTINGS_MANAGE' },
       { id: 'users', label: 'Logins & PINs', icon: 'KeyRound', perm: 'USERS_MANAGE' },
+      { id: 'activity', label: 'Activity log', icon: 'ScrollText', perm: 'USERS_MANAGE' },
       { id: 'roles', label: 'Roles & access', icon: 'Lock', perm: 'ROLES_MANAGE' },
       { id: 'logos', label: 'School logos', icon: 'Images', perm: 'SETTINGS_MANAGE' }, // admin-only downloads
       { id: 'settings', label: 'Settings', icon: 'Settings' }, // always (My Account)
