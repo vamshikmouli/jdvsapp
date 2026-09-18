@@ -1834,6 +1834,12 @@ interface ReportData {
   oldFeePending: number;
   uniformCollected: number;
   uniformPending: number;
+  uniformItems: { name: string; collected: number; pending: number }[];
+  uniformPendingStudents: { id: string; name: string; className: string | null; balance: number }[];
+  vanByVillage: { village: string; students: number; charged: number; collected: number; pending: number }[];
+  concessionTotal: number;
+  concessionByHead: { name: string; amount: number }[];
+  concessionStudents: { id: string; name: string; className: string | null; amount: number }[];
   oldDue: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
   oldDueUnpaid: { id: string; name: string; className: string | null; amount: number; paid: number; balance: number }[];
   installmentDue: { id: string; name: string; className: string | null; label: string; dueDate: string | null; balance: number; status: ChargeStatus }[];
@@ -1846,6 +1852,8 @@ function ReportsTab() {
   const [to, setTo] = useState('');
   const [headDrill, setHeadDrill] = useState<{ key: string; name: string } | null>(null);
   const [classDrill, setClassDrill] = useState<{ classId: string; name: string } | null>(null);
+  const [uniformDrill, setUniformDrill] = useState(false);
+  const [concessionDrill, setConcessionDrill] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1941,6 +1949,130 @@ function ReportsTab() {
           rows={data.byDay.map((r) => ({ name: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }), amount: r.amount }))} empty="No collection yet" />
       </div>
 
+      {/* Uniform — collected per item (White Uniform, School Uniform…) + pending drill-down */}
+      <Card padded={false} title={<div className="flex items-center justify-between w-full">
+        <span className="inline-flex items-center gap-2"><Icon name="Shirt" size={16} className="text-info-600" /> Uniform — collected by item</span>
+        <span className="text-sm font-normal"><span className="text-success-700 font-semibold tabular-nums">{feeMoney(data.uniformCollected)}</span><span className="text-slate-400"> collected</span></span>
+      </div>}>
+        {data.uniformItems.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-slate-400">No uniform collection yet.</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[360px]">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                    <th className="text-left font-semibold px-4 py-2">Item</th>
+                    <th className="text-right font-semibold px-4 py-2">Collected</th>
+                    <th className="text-right font-semibold px-4 py-2">Pending</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.uniformItems.map((u) => (
+                    <tr key={u.name} className="border-b border-slate-50 last:border-0">
+                      <td className="px-4 py-2 text-slate-800">{u.name}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-success-700 font-medium">{feeMoney(u.collected)}</td>
+                      <td className={`px-4 py-2 text-right tabular-nums ${u.pending > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{feeMoney(u.pending)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 font-semibold">
+                    <td className="px-4 py-2 text-slate-900">Total</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-success-700">{feeMoney(data.uniformCollected)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-danger-700">{feeMoney(data.uniformPending)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            {data.uniformPendingStudents.length > 0 && (
+              <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
+                <span className="text-[12.5px] text-slate-500">{data.uniformPendingStudents.length} student{data.uniformPendingStudents.length === 1 ? '' : 's'} owe uniform · {feeMoney(data.uniformPending)}</span>
+                <Button size="sm" icon="ListChecks" onClick={() => setUniformDrill(true)}>View pending students</Button>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      {/* Van fee by village — van students only */}
+      {data.vanByVillage.length > 0 && (
+        <Card padded={false} title={<div className="flex items-center justify-between w-full">
+          <span className="inline-flex items-center gap-2"><Icon name="Bus" size={16} className="text-purple-600" /> Van fee by village <span className="text-slate-400 font-normal">(van students only)</span></span>
+          <span className="text-sm font-normal"><span className="text-success-700 font-semibold tabular-nums">{feeMoney(data.vanByVillage.reduce((t, v) => t + v.collected, 0))}</span><span className="text-slate-400"> collected</span></span>
+        </div>}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[420px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                  <th className="text-left font-semibold px-4 py-2">Village</th>
+                  <th className="text-right font-semibold px-4 py-2">Students</th>
+                  <th className="text-right font-semibold px-4 py-2">Collected</th>
+                  <th className="text-right font-semibold px-4 py-2">Pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.vanByVillage.map((v) => (
+                  <tr key={v.village} className="border-b border-slate-50 last:border-0">
+                    <td className="px-4 py-2 text-slate-800">{v.village}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-600">{v.students}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-success-700 font-medium">{feeMoney(v.collected)}</td>
+                    <td className={`px-4 py-2 text-right tabular-nums ${v.pending > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{feeMoney(v.pending)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-slate-200 font-semibold">
+                  <td className="px-4 py-2 text-slate-900">Total</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{data.vanByVillage.reduce((t, v) => t + v.students, 0)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-success-700">{feeMoney(data.vanByVillage.reduce((t, v) => t + v.collected, 0))}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-danger-700">{feeMoney(data.vanByVillage.reduce((t, v) => t + v.pending, 0))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Concessions given (fee waived) — by head + which students */}
+      {data.concessionTotal > 0 && (
+        <Card padded={false} title={<div className="flex items-center justify-between w-full">
+          <span className="inline-flex items-center gap-2"><Icon name="BadgePercent" size={16} className="text-info-600" /> Concessions given <span className="text-slate-400 font-normal">(fee waived)</span></span>
+          <span className="text-sm font-normal"><span className="text-info-700 font-semibold tabular-nums">{feeMoney(data.concessionTotal)}</span></span>
+        </div>}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[320px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                  <th className="text-left font-semibold px-4 py-2">Fee head</th>
+                  <th className="text-right font-semibold px-4 py-2">Concession</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.concessionByHead.map((h) => (
+                  <tr key={h.name} className="border-b border-slate-50 last:border-0">
+                    <td className="px-4 py-2 text-slate-800">{h.name}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-info-700 font-medium">{feeMoney(h.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-slate-200 font-semibold">
+                  <td className="px-4 py-2 text-slate-900">Total</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-info-700">{feeMoney(data.concessionTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {data.concessionStudents.length > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
+              <span className="text-[12.5px] text-slate-500">{data.concessionStudents.length} student{data.concessionStudents.length === 1 ? '' : 's'} got a concession</span>
+              <Button size="sm" icon="ListChecks" onClick={() => setConcessionDrill(true)}>View students</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Old fee — who hasn't paid yet */}
       <Card padded={false} title={<div className="flex items-center justify-between w-full">
         <span className="inline-flex items-center gap-2"><Icon name="History" size={16} className="text-danger-600" /> Old fee — not paid yet</span>
@@ -1976,6 +2108,28 @@ function ReportsTab() {
 
       {headDrill && <HeadPaymentsDrawer headKey={headDrill.key} headName={headDrill.name} from={from} to={to} onClose={() => setHeadDrill(null)} />}
       {classDrill && <ClassStudentsDrawer classId={classDrill.classId} className={classDrill.name} onClose={() => setClassDrill(null)} />}
+      {uniformDrill && (
+        <Drawer open onClose={() => setUniformDrill(false)} title="Uniform pending" width={520}
+          subtitle={`${data.uniformPendingStudents.length} student(s) · ${feeMoney(data.uniformPending)}`}
+          footer={<div className="flex justify-end"><Button onClick={() => setUniformDrill(false)}>Close</Button></div>}>
+          <ReportRows
+            head={['Student', 'Class', 'Pending']}
+            rows={data.uniformPendingStudents.map((r) => [`${r.name}  ·  ${r.id}`, shortClass(r.className), feeMoney(r.balance)])}
+            empty="No uniform dues 🎉"
+          />
+        </Drawer>
+      )}
+      {concessionDrill && (
+        <Drawer open onClose={() => setConcessionDrill(false)} title="Concessions given" width={520}
+          subtitle={`${data.concessionStudents.length} student(s) · ${feeMoney(data.concessionTotal)}`}
+          footer={<div className="flex justify-end"><Button onClick={() => setConcessionDrill(false)}>Close</Button></div>}>
+          <ReportRows
+            head={['Student', 'Class', 'Concession']}
+            rows={data.concessionStudents.map((r) => [`${r.name}  ·  ${r.id}`, shortClass(r.className), feeMoney(r.amount)])}
+            empty="No concessions"
+          />
+        </Drawer>
+      )}
     </div>
   );
 }

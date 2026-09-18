@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 
@@ -51,6 +51,9 @@ export default function WhatsAppInbox() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState('');
+  const endRef = useRef<HTMLDivElement>(null);
+  // Keep the newest message + composer in view when a thread opens or a reply is sent.
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [msgs]);
 
   const loadThreads = useCallback(async () => {
     const r = await fetch('/api/whatsapp/replies');
@@ -80,7 +83,7 @@ export default function WhatsAppInbox() {
   const title = (t: { studentName: string | null; contactName: string | null; phone: string }) => t.studentName || t.contactName || t.phone;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[330px_1fr] rounded-2xl border border-slate-200 overflow-hidden bg-white" style={{ height: 'calc(100vh - 190px)', minHeight: 460 }}>
+    <div className="grid grid-cols-1 md:grid-cols-[330px_1fr] rounded-2xl border border-slate-200 overflow-hidden bg-white" style={{ height: 'calc(100vh - 230px)', minHeight: 440, maxHeight: 760 }}>
       {/* Conversation list */}
       <div className={`flex-col border-r border-slate-200 ${sel ? 'hidden md:flex' : 'flex'}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
@@ -148,6 +151,7 @@ export default function WhatsAppInbox() {
                     )}
                   </div>
                 ))}
+              <div ref={endRef} />
             </div>
 
             {err && <div className="mx-4 mb-2 text-[12.5px] text-danger-700 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2">{err}</div>}

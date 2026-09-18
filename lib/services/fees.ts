@@ -1306,11 +1306,52 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
   const classAgg = new Map<string, { classId: string | null; name: string; billed: number; collected: number; pending: number; students: number; withDues: number }>();
   let billedTotal = 0, collectedAllTotal = 0, oldFeeCollected = 0, oldFeePending = 0;
   let uniformCollected = 0, uniformPending = 0;
+  // Uniform split by item (White Uniform, School Uniform…) + who still owes uniform.
+  const uniformItemMap = new Map<string, { name: string; collected: number; pending: number }>();
+  const uniformPendingStudents: { id: string; name: string; className: string | null; balance: number }[] = [];
+  // Van fee grouped by village — VAN students only (village drives the van rate).
+  const vanVillageMap = new Map<string, { village: string; students: number; charged: number; collected: number; pending: number }>();
+  const normVil = (v: string) => v.trim().toLowerCase().replace(/\s+/g, ' ');
+  // Approved concessions (fee waived) — total, by fee head, and by student.
+  let concessionTotal = 0;
+  const concessionHeadMap = new Map<string, { name: string; amount: number }>();
+  const concessionStudents: { id: string; name: string; className: string | null; amount: number }[] = [];
   for (const a of assignments) {
     const rows = applyConcessions(a.charges.map(toChargeRow), approvedConcessionMap(a.concessions as any));
     const sum = aggregateAccount(rows);
     const uniHead = sum.heads.find((h) => h.key === 'uniform' || /uniform/i.test(h.name));
-    if (uniHead) { uniformCollected += uniHead.paid; uniformPending += uniHead.balance; }
+    if (uniHead) {
+      uniformCollected += uniHead.paid; uniformPending += uniHead.balance;
+      for (const ch of uniHead.charges) {
+        const item = ch.label.replace(/^\s*uniform\s*[—\-:]\s*/i, '').trim() || 'Uniform';
+        const cur = uniformItemMap.get(item) || { name: item, collected: 0, pending: 0 };
+        cur.collected += ch.paid; cur.pending += ch.balance;
+        uniformItemMap.set(item, cur);
+      }
+      if (uniHead.balance > 0) uniformPendingStudents.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, balance: uniHead.balance });
+    }
+    // Approved concessions for this student — total, by head, and per student.
+    const headNameByKey = new Map(sum.heads.map((h) => [h.key, h.name]));
+    let stuConc = 0;
+    for (const con of (a.concessions as any[])) {
+      if (con.status !== 'APPROVED') continue;
+      const key = con.feeType?.key || 'other';
+      const name = headNameByKey.get(key) || key;
+      concessionTotal += con.amount; stuConc += con.amount;
+      const cur = concessionHeadMap.get(key) || { name, amount: 0 };
+      cur.amount += con.amount; concessionHeadMap.set(key, cur);
+    }
+    if (stuConc > 0) concessionStudents.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, amount: stuConc });
+
+    // Van fee by village — only students who were billed a van fee.
+    const vanHead = sum.heads.find((h) => h.key === 'van' || /van|transport/i.test(h.name));
+    if (vanHead && vanHead.charged > 0) {
+      const raw = (a.student.village || '').trim() || '—';
+      const key = raw === '—' ? '—' : normVil(raw);
+      const cur = vanVillageMap.get(key) || { village: raw, students: 0, charged: 0, collected: 0, pending: 0 };
+      cur.students += 1; cur.charged += vanHead.charged; cur.collected += vanHead.paid; cur.pending += vanHead.balance;
+      vanVillageMap.set(key, cur);
+    }
     const billed = Math.max(0, sum.totalCharged - sum.concession);
     billedTotal += billed;
     collectedAllTotal += sum.totalPaid;
@@ -1386,6 +1427,12 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     oldFeePending,
     uniformCollected,
     uniformPending,
+    uniformItems: [...uniformItemMap.values()].filter((x) => x.collected > 0 || x.pending > 0).sort((a, b) => b.collected - a.collected),
+    uniformPendingStudents: uniformPendingStudents.sort((a, b) => b.balance - a.balance),
+    vanByVillage: [...vanVillageMap.values()].sort((a, b) => b.charged - a.charged),
+    concessionTotal,
+    concessionByHead: [...concessionHeadMap.values()].sort((a, b) => b.amount - a.amount),
+    concessionStudents: concessionStudents.sort((a, b) => b.amount - a.amount),
     installmentDue,
   };
 }
