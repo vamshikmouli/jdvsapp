@@ -140,6 +140,7 @@ export default function StudentsPage() {
 
   // View-details drawer
   const [viewing, setViewing] = useState<Student | null>(null);
+  const [photoView, setPhotoView] = useState<{ url: string; name: string } | null>(null);
 
   // Parent login PIN reset
   const [resetting, setResetting] = useState(false);
@@ -493,16 +494,20 @@ export default function StudentsPage() {
                 sorted.map((student) => (
                   <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-3 px-6">
-                      <button onClick={() => setViewing(student)} className="flex items-center gap-3 text-left group">
-                        <Avatar name={student.name} size="sm" />
-                        <div>
+                      <div className="flex items-center gap-3 text-left group">
+                        <button type="button" onClick={() => student.photoUrl ? setPhotoView({ url: student.photoUrl, name: student.name }) : setViewing(student)}
+                          className={`flex-shrink-0 rounded-full ${student.photoUrl ? 'ring-1 ring-slate-200 hover:ring-purple-400 cursor-zoom-in' : ''}`}
+                          title={student.photoUrl ? 'View photo' : undefined}>
+                          <Avatar name={student.name} size="sm" src={student.photoUrl} />
+                        </button>
+                        <button type="button" onClick={() => setViewing(student)} className="text-left">
                           <div className="font-medium text-slate-900 group-hover:text-purple-700">{student.name}</div>
                           <div className="text-xs text-slate-500">
                             {student.roll ? `Roll ${student.roll} · ` : ''}
                             {student.gender === 'F' ? 'Girl' : 'Boy'}
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                      </div>
                     </td>
                     <td className="hidden lg:table-cell py-3 px-6">
                       <span className="font-mono text-xs bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600">{student.id}</span>
@@ -585,16 +590,20 @@ export default function StudentsPage() {
           )}
           {!loading && !error && sorted.map((student) => (
             <div key={student.id} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
-              <button onClick={() => setViewing(student)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                <Avatar name={student.name} size="sm" />
-                <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                <button type="button" onClick={() => student.photoUrl ? setPhotoView({ url: student.photoUrl, name: student.name }) : setViewing(student)}
+                  className={`flex-shrink-0 rounded-full ${student.photoUrl ? 'ring-1 ring-slate-200 cursor-zoom-in' : ''}`}
+                  title={student.photoUrl ? 'View photo' : undefined}>
+                  <Avatar name={student.name} size="sm" src={student.photoUrl} />
+                </button>
+                <button type="button" onClick={() => setViewing(student)} className="flex-1 min-w-0 text-left">
                   <div className="font-medium text-slate-900 truncate">{student.name}</div>
                   <div className="text-xs text-slate-500 truncate">
                     {student.class?.name || 'Unassigned'}
                     {student.roll ? ` · Roll ${student.roll}` : ''} · {student.guardianName}
                   </div>
-                </div>
-              </button>
+                </button>
+              </div>
               <span
                 className={`flex-shrink-0 inline-block px-2 py-0.5 text-[11px] font-medium rounded-full ${
                   student.status === 'ACTIVE' ? 'bg-success-50 text-success-700' : 'bg-slate-100 text-slate-700'
@@ -884,6 +893,15 @@ export default function StudentsPage() {
           </div>
         )}
       </Drawer>
+
+      {/* Photo lightbox — click a student's photo in the list to see it large */}
+      <Modal open={!!photoView} onClose={() => setPhotoView(null)} title={photoView?.name || 'Photo'} width={460}>
+        {photoView && (
+          <div className="flex justify-center">
+            <img src={photoView.url} alt={photoView.name} className="max-h-[70vh] w-auto max-w-full rounded-xl object-contain bg-slate-50" />
+          </div>
+        )}
+      </Modal>
 
       <Modal open={!!resetResult} onClose={() => setResetResult(null)} title="Temporary PIN created" width={420}>
         {resetResult && (

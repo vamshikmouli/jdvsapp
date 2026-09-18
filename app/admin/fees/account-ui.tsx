@@ -42,12 +42,13 @@ export function PaymentTimeline({ studentId, name, onClose }: { studentId: strin
       footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
       {s && (
         <div className={`grid gap-3 mb-5 ${s.concession > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Total fee</div><div className="text-lg font-bold tabular-nums text-slate-900">{feeMoney(s.totalCharged)}</div></div>
+          {/* Tap Total fee / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer. */}
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="stat" align="left" /></div>
           {s.concession > 0 && (
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Concession</div><div className="text-lg font-bold tabular-nums text-info-700">−{feeMoney(s.concession)}</div></div>
           )}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Paid</div><div className="text-lg font-bold tabular-nums text-success-700">{feeMoney(s.totalPaid)}</div></div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Balance</div><div className={`text-lg font-bold tabular-nums ${s.totalBalance > 0 ? 'text-danger-700' : 'text-success-700'}`}>{feeMoney(s.totalBalance)}</div></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="left" /></div>
         </div>
       )}
 
@@ -990,6 +991,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       {error && <div className="mb-4 bg-danger-50 border border-danger-100 rounded-md p-3 text-sm text-danger-700 flex items-start gap-2"><Icon name="AlertCircle" size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
       {msg && !error && <div className="mb-4 bg-success-50 border border-success-100 rounded-md p-3 text-sm text-success-700">{msg}</div>}
 
+      {/* Owed / Paid / Balance — shown here on mobile (the header versions are md+ only). Tap for the fee-head split. */}
+      <div className="grid grid-cols-3 gap-2 mb-4 md:hidden">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="stat" align="left" /></div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
+        <div className="rounded-xl border border-danger-100 bg-danger-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="stat" align="left" /></div>
+      </div>
 
       <div className={addOpen ? 'grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 items-start' : 'space-y-4'}>
         {/* LEFT — Add a fee (chip rail) */}

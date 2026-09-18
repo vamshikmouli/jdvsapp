@@ -67,9 +67,11 @@ export function PageHeader({ eyebrow, title, meta, actions }: PageHeaderProps) {
 interface AvatarProps {
   name: string;
   size?: 'sm' | 'md' | 'lg';
+  /** When set, the photo is shown instead of initials (falls back to initials if it fails to load). */
+  src?: string | null;
 }
 
-export function Avatar({ name, size = 'md' }: AvatarProps) {
+export function Avatar({ name, size = 'md', src }: AvatarProps) {
   const initials = name
     .split(' ')
     .map((n) => n[0])
@@ -85,6 +87,18 @@ export function Avatar({ name, size = 'md' }: AvatarProps) {
 
   const colors = ['bg-purple-100', 'bg-blue-100', 'bg-green-100', 'bg-yellow-100', 'bg-pink-100'];
   const colorIndex = name.charCodeAt(0) % colors.length;
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        loading="lazy"
+        className={`${sizeClasses[size]} rounded-full object-cover bg-slate-100`}
+        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+      />
+    );
+  }
 
   return (
     <div className={`${sizeClasses[size]} ${colors[colorIndex]} rounded-full flex items-center justify-center font-semibold text-slate-700`}>
