@@ -25,6 +25,12 @@ export default function CommunicationsPage() {
     if (r.ok) setItems((await r.json()).items); else setItems([]);
   }, [showArchived]);
   useEffect(() => { load(); (async () => { const r = await fetch('/api/classes'); if (r.ok) setClasses(await r.json()); })(); }, [load]);
+  // Deep-link: /admin/communications?tab=replies opens a specific tab (used by the
+  // "new parent reply" push notification).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t && ['circulars', 'reminders', 'monthly', 'replies', 'analytics', 'devices'].includes(t)) setTab(t as typeof tab);
+  }, []);
 
   const del = async (id: string) => {
     if (!confirm('Archive this notice? It will be hidden from parents but kept and restorable.')) return;
@@ -229,7 +235,7 @@ interface ReplyThread {
   phone: string; studentId: string | null; studentName: string | null; contactName: string | null;
   lastText: string | null; lastAt: string; lastDirection: string; unread: number; canReply: boolean; windowEndsAt: string | null;
 }
-interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null }
+interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null; system?: boolean; kind?: string | null; status?: string | null }
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
 function windowLeft(iso: string | null): string {
@@ -323,10 +329,19 @@ function RepliesPanel() {
                   msgs.length === 0 ? <div className="text-center text-sm text-slate-400 py-8">No messages.</div> :
                   msgs.map((m) => (
                     <div key={m.id} className={`flex ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] ${m.direction === 'OUT' ? 'bg-purple-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
-                        <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">({m.type})</span>}</div>
-                        <div className={`text-[10px] mt-1 ${m.direction === 'OUT' ? 'text-purple-100' : 'text-slate-400'}`}>{fmtTime(m.at)}{m.error ? ` · failed: ${m.error}` : ''}</div>
-                      </div>
+                      {m.system ? (
+                        // Something the app sent to this parent (reminder, alert, receipt…) — shown for context.
+                        <div className="max-w-[82%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] bg-slate-100 border border-slate-200 text-slate-700">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-0.5 inline-flex items-center gap-1"><Icon name="Send" size={10} /> {kindLabel(m.kind || '')}</div>
+                          <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">Message sent</span>}</div>
+                          <div className="text-[10px] mt-1 text-slate-400">{fmtTime(m.at)}{m.status ? ` · ${DELIVERY_LABEL[m.status] || m.status}` : ''}</div>
+                        </div>
+                      ) : (
+                        <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[13px] ${m.direction === 'OUT' ? 'bg-purple-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'}`}>
+                          <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">({m.type})</span>}</div>
+                          <div className={`text-[10px] mt-1 ${m.direction === 'OUT' ? 'text-purple-100' : 'text-slate-400'}`}>{fmtTime(m.at)}{m.error ? ` · failed: ${m.error}` : ''}</div>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>

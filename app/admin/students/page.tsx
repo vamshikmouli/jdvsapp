@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   Button,
@@ -257,6 +257,7 @@ export default function StudentsPage() {
   };
 
   const [uploading, setUploading] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null); // pending image to crop before upload
   const uploadPhoto = async (file: File) => {
     setUploading(true);
     setFormError('');
@@ -663,15 +664,22 @@ export default function StudentsPage() {
             )}
           </div>
           <div>
-            <label className="inline-flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-700 cursor-pointer">
-              <Icon name="Upload" size={15} /> {uploading ? 'Uploading…' : form.photoUrl ? 'Change photo' : 'Upload student photo'}
-              <input type="file" accept="image/*" className="hidden" disabled={uploading}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); }} />
-            </label>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-700 cursor-pointer">
+                <Icon name="Upload" size={15} /> {uploading ? 'Uploading…' : form.photoUrl ? 'Change photo' : 'Upload photo'}
+                <input type="file" accept="image/*" className="hidden" disabled={uploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+              </label>
+              <label className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-purple-700 cursor-pointer">
+                <Icon name="Camera" size={15} /> Camera
+                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+              </label>
+            </div>
             {form.photoUrl && (
               <button type="button" onClick={() => setForm({ ...form, photoUrl: '' })} className="block text-xs text-slate-400 hover:text-danger-600 mt-1">Remove</button>
             )}
-            <p className="text-[11px] text-slate-400 mt-1">JPG/PNG, up to 5 MB.</p>
+            <p className="text-[11px] text-slate-400 mt-1">JPG/PNG, up to 5 MB. You can crop before saving.</p>
           </div>
         </div>
 
@@ -893,6 +901,15 @@ export default function StudentsPage() {
           </div>
         )}
       </Drawer>
+
+      {/* Crop the chosen/captured photo to a square before uploading */}
+      {cropFile && (
+        <PhotoCropModal
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onCropped={(blob) => { setCropFile(null); uploadPhoto(new File([blob], 'photo.jpg', { type: 'image/jpeg' })); }}
+        />
+      )}
 
       {/* Photo lightbox — click a student's photo in the list to see it large */}
       <Modal open={!!photoView} onClose={() => setPhotoView(null)} title={photoView?.name || 'Photo'} width={460}>
@@ -1233,5 +1250,74 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
         </div>
       )}
     </Drawer>
+  );
+}
+
+// Crop a chosen/captured image to a square before upload — drag to reposition,
+// slide to zoom. Outputs a 512×512 JPEG. No external library.
+function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: () => void; onCropped: (blob: Blob) => void }) {
+  const V = 288;   // viewport square (px)
+  const OUT = 512; // output square (px)
+  const [url, setUrl] = useState('');
+  const [img, setImg] = useState<{ w: number; h: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
+
+  const base = img ? V / Math.min(img.w, img.h) : 1; // "cover" scale
+  const scale = base * zoom;
+  const dispW = img ? img.w * scale : 0;
+  const dispH = img ? img.h * scale : 0;
+
+  const clamp = (p: { x: number; y: number }) => {
+    const maxX = Math.max(0, (dispW - V) / 2);
+    const maxY = Math.max(0, (dispH - V) / 2);
+    return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) };
+  };
+  useEffect(() => { setPan((p) => clamp(p)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [zoom, img]);
+
+  const onDown = (e: React.PointerEvent) => { drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture?.(e.pointerId); };
+  const onMove = (e: React.PointerEvent) => { if (!drag.current) return; setPan(clamp({ x: drag.current.px + (e.clientX - drag.current.x), y: drag.current.py + (e.clientY - drag.current.y) })); };
+  const onUp = () => { drag.current = null; };
+
+  const doCrop = () => {
+    if (!img || !imgRef.current) return;
+    const imgLeft = V / 2 - dispW / 2 + pan.x;
+    const imgTop = V / 2 - dispH / 2 + pan.y;
+    const srcX = (0 - imgLeft) / scale;
+    const srcY = (0 - imgTop) / scale;
+    const srcSize = V / scale;
+    const canvas = document.createElement('canvas');
+    canvas.width = OUT; canvas.height = OUT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(imgRef.current, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
+    canvas.toBlob((b) => { if (b) onCropped(b); }, 'image/jpeg', 0.9);
+  };
+
+  return (
+    <Modal open onClose={onCancel} title="Crop photo" width={360}
+      footer={<div className="flex justify-end gap-2"><Button onClick={onCancel}>Cancel</Button><Button kind="primary" icon="Check" onClick={doCrop} disabled={!img}>Use photo</Button></div>}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative rounded-2xl overflow-hidden bg-slate-900 touch-none select-none cursor-move" style={{ width: V, height: V }}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+          {url && (
+            <img ref={imgRef} src={url} alt="" draggable={false}
+              onLoad={(e) => setImg({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+              style={{ position: 'absolute', left: '50%', top: '50%', width: dispW || undefined, height: dispH || undefined, transform: `translate(${-dispW / 2 + pan.x}px, ${-dispH / 2 + pan.y}px)`, maxWidth: 'none' }} />
+          )}
+          <div className="absolute inset-0 pointer-events-none ring-1 ring-inset ring-white/25 rounded-2xl" />
+        </div>
+        <div className="flex items-center gap-2 w-full px-2">
+          <Icon name="ZoomOut" size={16} className="text-slate-400" />
+          <input type="range" min={1} max={3} step={0.01} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-1 accent-purple-600" />
+          <Icon name="ZoomIn" size={16} className="text-slate-400" />
+        </div>
+        <p className="text-[11px] text-slate-400">Drag to reposition · slide to zoom</p>
+      </div>
+    </Modal>
   );
 }

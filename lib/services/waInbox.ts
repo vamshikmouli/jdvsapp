@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db';
 import { sendWhatsAppText, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
+import { sendPushToUsers } from '@/lib/push';
+import { userIdsWithPermission } from '@/lib/notifications';
 
 // WhatsApp "customer service window": you may send free-form (non-template) messages
 // for 24 hours after the user's last inbound message. Replies from the office are
@@ -70,6 +72,29 @@ export async function recordInboundMessage(opts: { waMessageId?: string; from: s
         contactName: contact.contactName,
       },
     });
+
+    // Notify the office (anyone who can see Replies) with an app push. Skip a bare
+    // numeric code (that's a login OTP the parent is confirming, not a real reply).
+    const isOtpCode = /^\s*\d{4,8}\s*$/.test(opts.text || '');
+    if (!isOtpCode) {
+      try {
+        const admins = await userIdsWithPermission('NOTICES_MANAGE');
+        if (admins.length) {
+          const who = contact.studentName
+            ? `${contact.contactName || 'Parent'} · ${contact.studentName}`
+            : (contact.contactName || opts.from);
+          const preview = (opts.text || '').trim().slice(0, 120) || '(media message)';
+          await sendPushToUsers(admins, {
+            title: 'New parent reply',
+            body: `${who}: ${preview}`,
+            url: '/admin/communications?tab=replies',
+            tag: `wa-reply-${opts.from}`,
+          });
+        }
+      } catch (e) {
+        console.error('[waInbox] push notify failed', e);
+      }
+    }
   } catch (e) {
     console.error('[waInbox] recordInbound failed', e);
   }
@@ -120,14 +145,40 @@ export async function listReplyThreads(limit = 200): Promise<ReplyThread[]> {
   return threads.slice(0, limit);
 }
 
-/** Full conversation with one parent (phone), oldest first. */
-export async function getThread(phone: string) {
-  const rows = await prisma.waMessage.findMany({ where: { phone }, orderBy: { createdAt: 'asc' } });
-  return rows.map((r) => ({
-    id: r.id, direction: r.direction, text: r.text, type: r.type,
-    at: r.createdAt.toISOString(), error: r.error, handled: r.handled,
-    studentName: r.studentName, contactName: r.contactName,
-  }));
+interface ThreadMessage {
+  id: string; direction: string; text: string | null; type: string; at: string;
+  error: string | null; handled: boolean; studentName: string | null; contactName: string | null;
+  system: boolean; kind: string | null; status: string | null;
+}
+
+/**
+ * Full conversation with one parent (phone), oldest first. Merges the two-way
+ * WaMessage log (parent replies + office replies) with everything the app SENT to
+ * that number (fee reminders, absence/leave alerts, receipts, monthly attendance…
+ * from MessageDelivery), so the office sees exactly what a reply is responding to.
+ */
+export async function getThread(phone: string): Promise<ThreadMessage[]> {
+  const [waRows, sent] = await Promise.all([
+    prisma.waMessage.findMany({ where: { phone }, orderBy: { createdAt: 'asc' } }),
+    prisma.messageDelivery.findMany({
+      where: { phone },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, kind: true, title: true, status: true, error: true, createdAt: true, studentName: true },
+    }),
+  ]);
+  const merged: (ThreadMessage & { _at: Date })[] = [
+    ...waRows.map((r) => ({
+      id: r.id, direction: r.direction, text: r.text, type: r.type, at: r.createdAt.toISOString(),
+      error: r.error, handled: r.handled, studentName: r.studentName, contactName: r.contactName,
+      system: false, kind: null, status: null, _at: r.createdAt,
+    })),
+    ...sent.map((d) => ({
+      id: `md_${d.id}`, direction: 'OUT', text: d.title || null, type: 'template', at: d.createdAt.toISOString(),
+      error: d.error, handled: true, studentName: d.studentName, contactName: null,
+      system: true, kind: d.kind, status: d.status, _at: d.createdAt,
+    })),
+  ].sort((a, b) => a._at.getTime() - b._at.getTime());
+  return merged.map(({ _at, ...m }) => m);
 }
 
 /** Mark every inbound message from a phone as handled (read). */
