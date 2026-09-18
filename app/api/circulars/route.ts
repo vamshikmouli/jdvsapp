@@ -5,6 +5,8 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { getActiveYear, studentsForFeeReminder } from '@/lib/services/fees';
 import { sendPushToUsers, parentUserIdsForAudience } from '@/lib/push';
+import { broadcastNotice } from '@/lib/services/announce';
+import { whatsappConfigured } from '@/lib/services/whatsapp';
 import type { CircularAudience } from '@prisma/client';
 
 // GET /api/circulars — admin list of all circulars/reminders with recipient counts.
@@ -67,6 +69,21 @@ export async function POST(req: NextRequest) {
         audience = 'STUDENT';
         studentIds = ids;
       }
+    } else if (b.audience === 'VAN') {
+      // Only students who use the van/transport (billed a van fee this year). Resolved
+      // to an explicit student list so push + WhatsApp + the parent feed all match.
+      const year = await getActiveYear();
+      const assigns = await prisma.studentFeeAssignment.findMany({
+        where: {
+          yearId: year.id,
+          student: { status: 'ACTIVE' },
+          charges: { some: { feeType: { OR: [{ key: 'van' }, { name: { contains: 'van', mode: 'insensitive' } }] } } },
+        },
+        select: { studentId: true },
+      });
+      studentIds = Array.from(new Set(assigns.map((a) => a.studentId)));
+      if (studentIds.length === 0) return NextResponse.json({ error: 'No van/transport students found' }, { status: 400 });
+      audience = 'STUDENT';
     } else {
       audience = b.audience === 'CLASS' ? 'CLASS' : b.audience === 'STUDENT' ? 'STUDENT' : 'SCHOOL';
       if (audience === 'CLASS') {
@@ -102,8 +119,18 @@ export async function POST(req: NextRequest) {
       console.error('circular push', e);
     }
 
+    // Optional WhatsApp broadcast (announcements only) via the generic notice
+    // template. Fired in the background so a whole-school blast doesn't block the
+    // response — results appear in Analytics as they send.
+    let waQueued = false;
+    if (b.sendWhatsApp && kind === 'CIRCULAR' && whatsappConfigured()) {
+      waQueued = true;
+      void broadcastNotice({ circularId: created.id, audience, classIds, studentIds, title, body, lang: b.waLang === 'kn' ? 'kn' : 'en', sentById: (session.user as any)?.id || null })
+        .catch((e) => console.error('circular broadcastNotice', e));
+    }
+
     const reach = audience === 'SCHOOL' ? 'whole school' : audience === 'CLASS' ? `${classIds.length} class(es)` : `${studentIds.length} student(s)`;
-    return NextResponse.json({ ...created, reach, pushed }, { status: 201 });
+    return NextResponse.json({ ...created, reach, pushed, waQueued }, { status: 201 });
   } catch (err) {
     console.error('circulars POST', err);
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send' }, { status: 400 });

@@ -277,12 +277,12 @@ export default function DashboardPage() {
                     <EmptyState icon="BarChart3" title="No attendance data yet" body="Mark attendance to see the trend here." />
                   </div>
                 ) : (
-                  <div className="flex items-end justify-between gap-2 h-48 pt-4">
+                  <div className="flex items-end justify-between gap-2 h-24 pt-2">
                     {data.chart.map((day) => {
                       const heightPct = day.total ? (day.pct / maxPct) * 100 : 0;
                       const d = new Date(day.date);
                       return (
-                        <div key={day.date} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+                        <div key={day.date} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
                           <div className="relative w-full flex justify-center">
                             <div
                               className="w-full max-w-[26px] rounded-t-md bg-gradient-to-t from-purple-600 to-purple-400 group-hover:brightness-110 transition-all"

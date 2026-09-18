@@ -48,7 +48,8 @@ export const STAFF_NAV: NavGroup[] = [
     label: 'Administration',
     items: [
       { id: 'communications', label: 'Communications', icon: 'Megaphone', perm: 'NOTICES_MANAGE' },
-      { id: 'whatsapp', label: 'WhatsApp', icon: 'MessageCircle', perm: 'SETTINGS_MANAGE' },
+      { id: 'whatsapp-chat', label: 'WhatsApp', icon: 'MessagesSquare', perm: 'NOTICES_MANAGE' },
+      { id: 'whatsapp', label: 'WA Templates', icon: 'FileText', perm: 'SETTINGS_MANAGE' },
       { id: 'promotions', label: 'Promotions', icon: 'GraduationCap', perm: 'SETTINGS_MANAGE' },
       { id: 'users', label: 'Logins & PINs', icon: 'KeyRound', perm: 'USERS_MANAGE' },
       { id: 'activity', label: 'Activity log', icon: 'ScrollText', perm: 'USERS_MANAGE' },

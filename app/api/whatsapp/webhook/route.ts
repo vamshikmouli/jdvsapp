@@ -31,6 +31,19 @@ async function updateDeliveryStatus(wamid: string | undefined, waStatus: string,
       data: { status: next, error: next === 'FAILED' ? (error || 'Undeliverable (number may not be on WhatsApp)') : null },
     });
   }
+
+  // Also reflect the status on the two-way chat message (office replies), so the
+  // WhatsApp inbox can show Sent / Delivered / Read ticks.
+  const wa = await prisma.waMessage.findUnique({ where: { waMessageId: wamid }, select: { id: true, status: true } });
+  if (wa) {
+    const cur = STATUS_RANK[String(wa.status || '').toUpperCase()] || 0;
+    if (!((STATUS_RANK[next] || 0) < cur && cur >= STATUS_RANK.DELIVERED)) {
+      await prisma.waMessage.update({
+        where: { id: wa.id },
+        data: { status: next, error: next === 'FAILED' ? (error || 'Undeliverable') : null },
+      });
+    }
+  }
 }
 
 export async function GET(req: NextRequest) {

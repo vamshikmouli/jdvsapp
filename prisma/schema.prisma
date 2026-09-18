@@ -1069,6 +1069,7 @@ model WaMessage {
   handledById String?
   handledAt   DateTime?
   sentById    String?   // outbound: who replied from the office
+  status      String?   // outbound: SENT | DELIVERED | READ | FAILED (from the status webhook via waMessageId)
   error       String?   // outbound: send failure detail, if any
   createdAt   DateTime  @default(now())
 

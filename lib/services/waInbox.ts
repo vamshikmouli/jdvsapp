@@ -84,15 +84,17 @@ export async function recordInboundMessage(opts: { waMessageId?: string; from: s
             ? `${contact.contactName || 'Parent'} · ${contact.studentName}`
             : (contact.contactName || opts.from);
           const preview = (opts.text || '').trim().slice(0, 120) || '(media message)';
-          await sendPushToUsers(admins, {
-            title: 'New parent reply',
-            body: `${who}: ${preview}`,
-            url: '/admin/communications?tab=replies',
-            tag: `wa-reply-${opts.from}`,
+          const body = `${who}: ${preview}`;
+          const url = '/admin/whatsapp-chat';
+          // In-app notification (the bell) for every admin…
+          await prisma.notification.createMany({
+            data: admins.map((userId) => ({ userId, type: 'WA_REPLY', title: 'New parent reply', body, url })),
           });
+          // …plus a push to their devices.
+          await sendPushToUsers(admins, { title: 'New parent reply', body, url, tag: `wa-reply-${opts.from}` });
         }
       } catch (e) {
-        console.error('[waInbox] push notify failed', e);
+        console.error('[waInbox] notify failed', e);
       }
     }
   } catch (e) {
@@ -170,7 +172,7 @@ export async function getThread(phone: string): Promise<ThreadMessage[]> {
     ...waRows.map((r) => ({
       id: r.id, direction: r.direction, text: r.text, type: r.type, at: r.createdAt.toISOString(),
       error: r.error, handled: r.handled, studentName: r.studentName, contactName: r.contactName,
-      system: false, kind: null, status: null, _at: r.createdAt,
+      system: false, kind: null, status: r.status, _at: r.createdAt,
     })),
     ...sent.map((d) => ({
       id: `md_${d.id}`, direction: 'OUT', text: d.title || null, type: 'template', at: d.createdAt.toISOString(),
@@ -220,6 +222,7 @@ export async function sendReply(opts: { phone: string; text: string; sentById?: 
       studentName: contact.studentName,
       contactName: contact.contactName,
       sentById: opts.sentById || null,
+      status: res.ok ? 'SENT' : 'FAILED',
       error: res.ok ? null : (res.error || 'Send failed'),
     },
   });

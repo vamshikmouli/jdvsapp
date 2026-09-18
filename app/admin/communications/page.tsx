@@ -12,7 +12,7 @@ interface CircularItem {
 interface ClassOpt { id: string; name: string }
 
 export default function CommunicationsPage() {
-  const [tab, setTab] = useState<'circulars' | 'reminders' | 'monthly' | 'replies' | 'devices' | 'analytics'>('circulars');
+  const [tab, setTab] = useState<'circulars' | 'reminders' | 'monthly' | 'devices' | 'analytics'>('circulars');
   const [items, setItems] = useState<CircularItem[] | null>(null);
   const [classes, setClasses] = useState<ClassOpt[]>([]);
   const [composeCircular, setComposeCircular] = useState(false);
@@ -29,7 +29,7 @@ export default function CommunicationsPage() {
   // "new parent reply" push notification).
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t && ['circulars', 'reminders', 'monthly', 'replies', 'analytics', 'devices'].includes(t)) setTab(t as typeof tab);
+    if (t && ['circulars', 'reminders', 'monthly', 'analytics', 'devices'].includes(t)) setTab(t as typeof tab);
   }, []);
 
   const del = async (id: string) => {
@@ -55,7 +55,7 @@ export default function CommunicationsPage() {
       />
 
       <div className="flex flex-nowrap items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['replies', 'Replies', 'MessageSquare'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
+        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`inline-flex flex-shrink-0 whitespace-nowrap items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             <Icon name={icon as any} size={16} />{label}
@@ -65,10 +65,9 @@ export default function CommunicationsPage() {
 
       {tab === 'devices' && <DevicesPanel />}
       {tab === 'analytics' && <AnalyticsPanel />}
-      {tab === 'replies' && <RepliesPanel />}
-      {tab === 'monthly' && <MonthlyAttendancePanel classes={classes} />}
+      {tab === 'monthly' && <><ContinuousAbsentees /><MonthlyAttendancePanel classes={classes} /></>}
 
-      {tab !== 'devices' && tab !== 'analytics' && tab !== 'replies' && tab !== 'monthly' && (
+      {tab !== 'devices' && tab !== 'analytics' && tab !== 'monthly' && (
       <div className="mt-5 space-y-3 max-w-3xl">
         <label className="flex items-center justify-end gap-2 text-xs text-slate-500 cursor-pointer">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
@@ -111,6 +110,72 @@ export default function CommunicationsPage() {
       {composeReminder && <ReminderDrawer classes={classes} onClose={() => setComposeReminder(false)} onSent={() => { setComposeReminder(false); load(); }} />}
       {editing && <EditDrawer item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </>
+  );
+}
+
+/* ---------- Continuous absentees: students away (absent/leave) 3+ days in a row ---------- */
+interface StreakRow { studentId: string; name: string; className: string | null; streak: number; fromKey: string; toKey: string }
+const dayLabel = (k: string) => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+
+function ContinuousAbsentees() {
+  const [rows, setRows] = useState<StreakRow[] | null>(null);
+  const [waOn, setWaOn] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    const r = await fetch('/api/attendance/absence-streaks?min=3');
+    if (r.ok) { const d = await r.json(); setRows(d.rows); setWaOn(d.waConfigured !== false); } else setRows([]);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const sendNow = async () => {
+    setSending(true); setErr(''); setNote('');
+    try {
+      const r = await fetch('/api/attendance/absence-streaks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ min: 3 }) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Send failed');
+      setNote(`Sent to ${d.recipients} admin number(s) · ${d.flagged} student(s)${d.failed ? ` · ${d.failed} failed` : ''}.`);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Send failed'); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="mt-5 max-w-4xl">
+      <Card padded={false} title={<div className="flex items-center justify-between w-full flex-wrap gap-2">
+        <span className="inline-flex items-center gap-2"><Icon name="CalendarX" size={16} className="text-danger-600" /> Away 3+ days in a row <span className="text-slate-400 font-normal">(absent or leave)</span></span>
+        <span className="text-sm font-normal text-slate-500">{rows === null ? '' : `${rows.length} student${rows.length === 1 ? '' : 's'}`}</span>
+      </div>}>
+        <div className="px-4 py-3">
+          <p className="text-[12.5px] text-slate-500 mb-3">Students who missed <b>3 or more consecutive school days</b> (weekends/holidays skipped). The admins also get this as a WhatsApp summary automatically each day.</p>
+          {rows === null ? (
+            <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={34} />)}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center text-sm text-slate-400 py-6"><Icon name="Check" size={22} className="mx-auto mb-1 text-success-500" />No student is on a 3+ day streak right now.</div>
+          ) : (
+            <div className="rounded-lg border border-slate-100 divide-y divide-slate-50">
+              {rows.map((r) => (
+                <div key={r.studentId} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                  <div className="min-w-0"><span className="font-medium text-slate-800">{r.name}</span> <span className="text-slate-400">{r.className || ''}</span></div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-[11.5px] text-slate-500">{dayLabel(r.fromKey)}–{dayLabel(r.toKey)}</span>
+                    <span className="inline-flex items-center rounded-full bg-danger-50 text-danger-700 border border-danger-100 px-2 py-0.5 text-[11.5px] font-semibold">{r.streak} days</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {err && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-lg p-2.5 text-sm text-danger-700">{err}</div>}
+          {note && <div className="mt-3 bg-success-50 border border-success-100 rounded-lg p-2.5 text-sm text-success-700">{note}</div>}
+          {!waOn && <div className="mt-3 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">WhatsApp isn't configured on the server.</div>}
+          {rows && rows.length > 0 && (
+            <div className="flex justify-end mt-3">
+              <Button size="sm" icon="Send" onClick={sendNow} disabled={sending || !waOn}>{sending ? 'Sending…' : 'Send summary to admins now'}</Button>
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -385,6 +450,8 @@ const KIND_LABEL: Record<string, string> = {
   ATTENDANCE_REMINDER: 'Attendance reminders',
   ATTENDANCE_ABSENCE: 'Absence & leave alerts',
   ATTENDANCE_MONTHLY: 'Monthly attendance',
+  ABSENCE_STREAK: '3+ day absentees',
+  ANNOUNCEMENT: 'Announcements',
   STAFF_ATTENDANCE_REPORT: 'Attendance reports',
   ADMIN_REPORT: 'Daily reports',
   ADMIN_ALERT: 'Admin alerts',
@@ -534,7 +601,9 @@ function CircularDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
   const [body, setBody] = useState('');
   const [category, setCategory] = useState('Notice');
   const [pinned, setPinned] = useState(false);
-  const [audience, setAudience] = useState<'SCHOOL' | 'CLASS' | 'STUDENT'>('SCHOOL');
+  const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [waLang, setWaLang] = useState<'en' | 'kn'>('en');
+  const [audience, setAudience] = useState<'SCHOOL' | 'CLASS' | 'STUDENT' | 'VAN'>('SCHOOL');
   const [classIds, setClassIds] = useState<string[]>([]);
   const [studentQuery, setStudentQuery] = useState('');
   const [studentResults, setStudentResults] = useState<{ id: string; name: string; className: string | null }[]>([]);
@@ -559,7 +628,7 @@ function CircularDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
     try {
       const res = await fetch('/api/circulars', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'CIRCULAR', title, body, category, pinned, audience, classIds, studentIds: students.map((s) => s.id) }),
+        body: JSON.stringify({ kind: 'CIRCULAR', title, body, category, pinned, sendWhatsApp, waLang, audience, classIds, studentIds: students.map((s) => s.id) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
@@ -579,13 +648,37 @@ function CircularDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
           <Field label="Pin to top"><Select value={pinned ? 'y' : 'n'} onChange={(e) => setPinned(e.target.value === 'y')}><option value="n">No</option><option value="y">Yes</option></Select></Field>
         </div>
 
+        <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+          <input type="checkbox" checked={sendWhatsApp} onChange={(e) => setSendWhatsApp(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600" />
+          <span className="text-[13px] text-slate-700">
+            <span className="inline-flex items-center gap-1.5 font-medium"><Icon name="MessageCircle" size={14} className="text-success-600" /> Also send on WhatsApp</span>
+            <span className="block text-[11.5px] text-slate-500 mt-0.5">Sends this message to the selected parents' WhatsApp (via the approved notice template). It's always posted in the Parent app too.</span>
+          </span>
+        </label>
+        {sendWhatsApp && (
+          <div className="flex items-center gap-2 -mt-1 pl-1">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wide text-slate-400">WhatsApp language</span>
+            {([['en', 'English'], ['kn', 'ಕನ್ನಡ']] as const).map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setWaLang(v)}
+                className={`px-2.5 py-1 rounded-lg border text-[12px] font-medium transition-colors ${waLang === v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{l}</button>
+            ))}
+            <span className="text-[11px] text-slate-400">Type your message in the chosen language.</span>
+          </div>
+        )}
+
         <Field label="Send to">
-          <div className="grid grid-cols-3 gap-2">
-            {([['SCHOOL', 'Whole school'], ['CLASS', 'Classes'], ['STUDENT', 'Students']] as const).map(([v, l]) => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {([['SCHOOL', 'Whole school'], ['CLASS', 'Classes'], ['STUDENT', 'Students'], ['VAN', 'Van students']] as const).map(([v, l]) => (
               <button key={v} onClick={() => setAudience(v)} className={`py-2 text-xs font-medium rounded-lg border transition-colors ${audience === v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{l}</button>
             ))}
           </div>
         </Field>
+
+        {audience === 'VAN' && (
+          <div className="flex items-center gap-2 text-[12.5px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <Icon name="Bus" size={15} className="text-purple-600 flex-shrink-0" /> Goes to every student who uses the van / transport (billed a van fee this year).
+          </div>
+        )}
 
         {audience === 'CLASS' && (
           <div className="flex flex-wrap gap-1.5">
