@@ -1819,6 +1819,8 @@ interface ReportData {
   byHead: { key: string; name: string; amount: number }[];
   byClass: { name: string; amount: number }[];
   byVillage: { name: string; amount: number }[];
+  byMethod: { method: string; amount: number }[];
+  byDayMethods: Record<string, { method: string; amount: number }[]>;
   byDay: { day: string; amount: number }[];
   outstanding: { id: string; name: string; className: string | null; balance: number }[];
   outstandingTotal: number;
@@ -1836,7 +1838,7 @@ interface ReportData {
   uniformPending: number;
   uniformItems: { name: string; collected: number; pending: number }[];
   uniformPendingStudents: { id: string; name: string; className: string | null; balance: number }[];
-  vanByVillage: { village: string; students: number; charged: number; collected: number; pending: number }[];
+  vanByVillage: { village: string; count: number; charged: number; collected: number; pending: number; students: { id: string; name: string; className: string | null; charged: number; paid: number; pending: number }[] }[];
   concessionTotal: number;
   concessionByHead: { name: string; amount: number }[];
   concessionStudents: { id: string; name: string; className: string | null; amount: number }[];
@@ -1854,6 +1856,8 @@ function ReportsTab() {
   const [classDrill, setClassDrill] = useState<{ classId: string; name: string } | null>(null);
   const [uniformDrill, setUniformDrill] = useState(false);
   const [concessionDrill, setConcessionDrill] = useState(false);
+  const [dayDrill, setDayDrill] = useState<string | null>(null);
+  const [vanDrill, setVanDrill] = useState<ReportData['vanByVillage'][number] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1943,10 +1947,11 @@ function ReportsTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <BarList title="Collection by fee head" icon="Layers" accent="purple"
           rows={data.byHead} empty="No collection yet" onRow={(r) => setHeadDrill({ key: r.key!, name: r.name })} />
-        <BarList title="Collection by village" icon="MapPin" accent="marigold"
-          rows={data.byVillage} empty="No collection yet" />
+        <BarList title="Collection by payment mode" icon="Wallet" accent="info"
+          rows={data.byMethod.map((m) => ({ name: PAY_METHOD_LABEL[m.method as keyof typeof PAY_METHOD_LABEL] || m.method, amount: m.amount }))} empty="No collection yet" />
         <BarList title="Daily collection" icon="CalendarDays" accent="success"
-          rows={data.byDay.map((r) => ({ name: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }), amount: r.amount }))} empty="No collection yet" />
+          rows={data.byDay.map((r) => ({ key: r.day, name: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }), amount: r.amount }))}
+          empty="No collection yet" onRow={(r) => setDayDrill(r.key!)} />
       </div>
 
       {/* Uniform — collected per item (White Uniform, School Uniform…) + pending drill-down */}
@@ -2013,9 +2018,9 @@ function ReportsTab() {
               </thead>
               <tbody>
                 {data.vanByVillage.map((v) => (
-                  <tr key={v.village} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-2 text-slate-800">{v.village}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-600">{v.students}</td>
+                  <tr key={v.village} onClick={() => setVanDrill(v)} className="border-b border-slate-50 last:border-0 cursor-pointer hover:bg-purple-50/40">
+                    <td className="px-4 py-2 text-slate-800"><span className="inline-flex items-center gap-1.5">{v.village}<Icon name="ChevronRight" size={13} className="text-slate-300" /></span></td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-600">{v.count}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-success-700 font-medium">{feeMoney(v.collected)}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${v.pending > 0 ? 'text-danger-700' : 'text-slate-400'}`}>{feeMoney(v.pending)}</td>
                   </tr>
@@ -2024,7 +2029,7 @@ function ReportsTab() {
               <tfoot>
                 <tr className="border-t border-slate-200 font-semibold">
                   <td className="px-4 py-2 text-slate-900">Total</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{data.vanByVillage.reduce((t, v) => t + v.students, 0)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-700">{data.vanByVillage.reduce((t, v) => t + v.count, 0)}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-success-700">{feeMoney(data.vanByVillage.reduce((t, v) => t + v.collected, 0))}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-danger-700">{feeMoney(data.vanByVillage.reduce((t, v) => t + v.pending, 0))}</td>
                 </tr>
@@ -2119,6 +2124,35 @@ function ReportsTab() {
           />
         </Drawer>
       )}
+      {dayDrill && <DayCollectionDrawer date={dayDrill} onClose={() => setDayDrill(null)} />}
+      {vanDrill && (
+        <Drawer open onClose={() => setVanDrill(null)} title={`Van — ${vanDrill.village}`} width={560}
+          subtitle={`${vanDrill.count} student${vanDrill.count === 1 ? '' : 's'} · ${feeMoney(vanDrill.collected)} collected · ${feeMoney(vanDrill.pending)} pending`}
+          footer={<div className="flex justify-end"><Button onClick={() => setVanDrill(null)}>Close</Button></div>}>
+          <div className="rounded-lg border border-slate-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[440px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                  <th className="text-left font-semibold px-3 py-2">Student</th>
+                  <th className="text-right font-semibold px-3 py-2">Van fee</th>
+                  <th className="text-right font-semibold px-3 py-2">Paid</th>
+                  <th className="text-right font-semibold px-3 py-2">Pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vanDrill.students.map((st) => (
+                  <tr key={st.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2"><div className="text-slate-900">{st.name}</div><div className="text-[11px] text-slate-400">{shortClass(st.className)} · {st.id}</div></td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-700">{feeMoney(st.charged)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-success-700">{feeMoney(st.paid)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${st.pending > 0 ? 'text-danger-700 font-medium' : 'text-slate-400'}`}>{feeMoney(st.pending)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Drawer>
+      )}
       {concessionDrill && (
         <Drawer open onClose={() => setConcessionDrill(false)} title="Concessions given" width={520}
           subtitle={`${data.concessionStudents.length} student(s) · ${feeMoney(data.concessionTotal)}`}
@@ -2135,6 +2169,70 @@ function ReportsTab() {
 }
 
 // Drill-down: students who paid toward a fee head, by date.
+// Drill-down: who paid on a given day — receipts + payment-mode totals.
+function DayCollectionDrawer({ date, onClose }: { date: string; onClose: () => void }) {
+  const [data, setData] = useState<{ date: string; total: number; count: number; rows: { studentId: string; student: string; className: string | null; amount: number; mode: string; receiptNo: string }[]; byMethod: { method: string; amount: number }[] } | null>(null);
+  useEffect(() => {
+    fetch(`/api/fees/reports/day-collection?date=${encodeURIComponent(date)}`).then((r) => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
+  }, [date]);
+  const dayLabel = new Date(date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+  return (
+    <Drawer open onClose={onClose} title="Who paid on this day" width={560}
+      subtitle={data ? `${dayLabel} · ${data.count} receipt${data.count === 1 ? '' : 's'} · ${feeMoney(data.total)}` : dayLabel}
+      footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
+      {!data ? (
+        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} height={40} />)}</div>
+      ) : (
+        <div className="space-y-4">
+          {/* mode totals */}
+          <div className="flex flex-wrap gap-2">
+            {data.byMethod.map((m) => (
+              <span key={m.method} className="inline-flex items-center gap-1.5 rounded-lg border border-info-100 bg-info-50 px-3 py-1.5 text-[13px]">
+                <Icon name="Wallet" size={13} className="text-info-600" /><span className="text-slate-600">{PAY_METHOD_LABEL[m.method as keyof typeof PAY_METHOD_LABEL] || m.method}</span>
+                <span className="font-semibold tabular-nums text-slate-900">{feeMoney(m.amount)}</span>
+              </span>
+            ))}
+          </div>
+          {/* who paid */}
+          {data.rows.length === 0 ? (
+            <EmptyState icon="ReceiptText" title="No collection" body="No payments were recorded on this day." />
+          ) : (
+            <div className="rounded-lg border border-slate-200 overflow-x-auto">
+              <table className="w-full text-sm min-w-[460px]">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                    <th className="text-left font-semibold px-3 py-2">Student</th>
+                    <th className="text-left font-semibold px-3 py-2">Mode</th>
+                    <th className="text-right font-semibold px-3 py-2">Amount</th>
+                    <th className="text-left font-semibold px-3 py-2">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2"><div className="text-slate-900">{r.student}</div><div className="text-[11px] text-slate-400">{shortClass(r.className)}</div></td>
+                      <td className="px-3 py-2 text-slate-600 text-[12.5px]">{r.mode}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-900">{feeMoney(r.amount)}</td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{r.receiptNo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 font-semibold">
+                    <td className="px-3 py-2 text-slate-900" colSpan={2}>Total</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-success-700">{feeMoney(data.total)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
 function HeadPaymentsDrawer({ headKey, headName, from, to, onClose }: { headKey: string; headName: string; from: string; to: string; onClose: () => void }) {
   const [data, setData] = useState<{ headName: string; total: number; count: number; rows: { studentId: string; student: string; className: string | null; date: string; amount: number; receiptNo: string; method: string; label: string }[] } | null>(null);
   const [error, setError] = useState('');

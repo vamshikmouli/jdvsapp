@@ -920,7 +920,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const uniOptions = (opts?.uniform?.items || []) as { key: string; name: string; price: number }[];
 
   return (
-    <Drawer open onClose={onClose} title="Collect payment" subtitle={`${account.student.name} · ${account.student.id} · ${shortClass(account.student.className)}`} width={1240}
+    <Drawer open onClose={onClose} title="Collect payment" subtitle={`${account.student.name} · ${account.student.id} · ${shortClass(account.student.className)}${account.student.guardianPhone ? ` · ${account.student.guardianPhone}` : ''}`} width={1240}
       headerRight={
         <div className="hidden md:flex items-center gap-2.5">
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-right min-w-[104px]">

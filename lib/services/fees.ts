@@ -13,6 +13,7 @@ import {
   formatReceiptNo,
   feeMoney,
   PAY_METHODS,
+  PAY_METHOD_LABEL,
 } from '@/lib/fees';
 import { slugify } from '@/lib/utils';
 import type { FeeBillingMode, Gender } from '@prisma/client';
@@ -1264,6 +1265,8 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
   const byHead = new Map<string, { name: string; amount: number }>();
   const byClass = new Map<string, number>();
   const byVillage = new Map<string, number>();
+  const byMethod = new Map<string, number>();   // Cash / UPI / Bank / Card / Cheque
+  const byDayMethod = new Map<string, Map<string, number>>(); // day → method → amount
   const paidStudentIds = new Set<string>();
   let collectedTotal = 0;
   let allocatedTotal = 0;
@@ -1276,6 +1279,18 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     byClass.set(cls, (byClass.get(cls) || 0) + p.total);
     const vil = p.student.village || '—';
     byVillage.set(vil, (byVillage.get(vil) || 0) + p.total);
+    // By payment mode — split-tender payments (Json `tenders`) are split per mode.
+    // Also tracked per day, so a day can be drilled into its Cash / UPI / … split.
+    const tenders = Array.isArray(p.tenders) ? (p.tenders as any[]) : null;
+    const legs = tenders && tenders.length
+      ? tenders.map((t) => ({ method: String(t.method || 'OTHER'), amount: Math.round(Number(t.amount)) || 0 }))
+      : [{ method: String(p.method || 'OTHER'), amount: p.total }];
+    let dm = byDayMethod.get(day);
+    if (!dm) { dm = new Map(); byDayMethod.set(day, dm); }
+    for (const leg of legs) {
+      byMethod.set(leg.method, (byMethod.get(leg.method) || 0) + leg.amount);
+      dm.set(leg.method, (dm.get(leg.method) || 0) + leg.amount);
+    }
     for (const a of p.allocations) {
       allocatedTotal += a.amount;
       const key = a.feeCharge.feeType.key;
@@ -1310,7 +1325,8 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
   const uniformItemMap = new Map<string, { name: string; collected: number; pending: number }>();
   const uniformPendingStudents: { id: string; name: string; className: string | null; balance: number }[] = [];
   // Van fee grouped by village — VAN students only (village drives the van rate).
-  const vanVillageMap = new Map<string, { village: string; students: number; charged: number; collected: number; pending: number }>();
+  type VanStu = { id: string; name: string; className: string | null; charged: number; paid: number; pending: number };
+  const vanVillageMap = new Map<string, { village: string; count: number; charged: number; collected: number; pending: number; students: VanStu[] }>();
   const normVil = (v: string) => v.trim().toLowerCase().replace(/\s+/g, ' ');
   // Approved concessions (fee waived) — total, by fee head, and by student.
   let concessionTotal = 0;
@@ -1346,10 +1362,11 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     // Van fee by village — only students who were billed a van fee.
     const vanHead = sum.heads.find((h) => h.key === 'van' || /van|transport/i.test(h.name));
     if (vanHead && vanHead.charged > 0) {
-      const raw = (a.student.village || '').trim() || '—';
-      const key = raw === '—' ? '—' : normVil(raw);
-      const cur = vanVillageMap.get(key) || { village: raw, students: 0, charged: 0, collected: 0, pending: 0 };
-      cur.students += 1; cur.charged += vanHead.charged; cur.collected += vanHead.paid; cur.pending += vanHead.balance;
+      const raw = (a.student.village || '').trim() || 'No village set';
+      const key = raw === 'No village set' ? '__novillage' : normVil(raw);
+      const cur = vanVillageMap.get(key) || { village: raw, count: 0, charged: 0, collected: 0, pending: 0, students: [] as VanStu[] };
+      cur.count += 1; cur.charged += vanHead.charged; cur.collected += vanHead.paid; cur.pending += vanHead.balance;
+      cur.students.push({ id: a.student.id, name: a.student.name, className: a.student.class?.name || null, charged: vanHead.charged, paid: vanHead.paid, pending: vanHead.balance });
       vanVillageMap.set(key, cur);
     }
     const billed = Math.max(0, sum.totalCharged - sum.concession);
@@ -1411,6 +1428,8 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     byHead: [...byHead.entries()].map(([key, v]) => ({ key, name: v.name, amount: v.amount })).sort((a, b) => b.amount - a.amount),
     byClass: [...byClass.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     byVillage: [...byVillage.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
+    byMethod: [...byMethod.entries()].map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),
+    byDayMethods: Object.fromEntries([...byDayMethod.entries()].map(([day, m]) => [day, [...m.entries()].map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount)])) as Record<string, { method: string; amount: number }[]>,
     outstanding: outstanding.slice(0, 500),
     outstandingTotal: outstanding.reduce((t, o) => t + o.balance, 0),
     notPaidInRange: notPaidInRange.slice(0, 500),
@@ -1429,11 +1448,46 @@ export async function getReports(yearId: string, opts: { from?: string; to?: str
     uniformPending,
     uniformItems: [...uniformItemMap.values()].filter((x) => x.collected > 0 || x.pending > 0).sort((a, b) => b.collected - a.collected),
     uniformPendingStudents: uniformPendingStudents.sort((a, b) => b.balance - a.balance),
-    vanByVillage: [...vanVillageMap.values()].sort((a, b) => b.charged - a.charged),
+    vanByVillage: [...vanVillageMap.values()].map((v) => ({ ...v, students: v.students.sort((a, b) => b.pending - a.pending) })).sort((a, b) => b.charged - a.charged),
     concessionTotal,
     concessionByHead: [...concessionHeadMap.values()].sort((a, b) => b.amount - a.amount),
     concessionStudents: concessionStudents.sort((a, b) => b.amount - a.amount),
     installmentDue,
+  };
+}
+
+/** Who paid on a given day (UTC date, matching the reports' day grouping): each
+ *  receipt with student, amount and payment mode, plus the day's mode totals. */
+export async function getDayCollection(yearId: string, dateStr: string) {
+  const from = new Date(`${dateStr}T00:00:00.000Z`);
+  const to = new Date(`${dateStr}T23:59:59.999Z`);
+  const payments = await prisma.payment.findMany({
+    where: { yearId, voided: false, paidAt: { gte: from, lte: to } },
+    include: { student: { include: { class: { select: { name: true } } } } },
+    orderBy: { paidAt: 'asc' },
+  });
+  const label = (m: string) => PAY_METHOD_LABEL[m as keyof typeof PAY_METHOD_LABEL] || m;
+  const byMethod = new Map<string, number>();
+  const rows = payments.map((p) => {
+    const tenders = Array.isArray(p.tenders) ? (p.tenders as any[]) : null;
+    const legs = tenders && tenders.length
+      ? tenders.map((t) => ({ method: String(t.method || 'OTHER'), amount: Math.round(Number(t.amount)) || 0 }))
+      : [{ method: String(p.method || 'OTHER'), amount: p.total }];
+    for (const leg of legs) byMethod.set(leg.method, (byMethod.get(leg.method) || 0) + leg.amount);
+    const modeText = legs.length > 1
+      ? legs.map((l) => `${label(l.method)} ${feeMoney(l.amount)}`).join(' · ')
+      : label(legs[0].method);
+    return {
+      studentId: p.studentId, student: p.student.name, className: p.student.class?.name || null,
+      amount: p.total, mode: modeText, receiptNo: p.receiptNo, at: p.paidAt.toISOString(),
+    };
+  });
+  return {
+    date: dateStr,
+    total: payments.reduce((t, p) => t + p.total, 0),
+    count: payments.length,
+    rows,
+    byMethod: [...byMethod.entries()].map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),
   };
 }
 
