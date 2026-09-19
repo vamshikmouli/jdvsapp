@@ -51,9 +51,9 @@ export default function WhatsAppInbox() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState('');
-  const endRef = useRef<HTMLDivElement>(null);
-  // Keep the newest message + composer in view when a thread opens or a reply is sent.
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [msgs]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Scroll the messages pane itself to the newest message (never the whole page).
+  useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
 
   const loadThreads = useCallback(async () => {
     const r = await fetch('/api/whatsapp/replies');
@@ -83,14 +83,14 @@ export default function WhatsAppInbox() {
   const title = (t: { studentName: string | null; contactName: string | null; phone: string }) => t.studentName || t.contactName || t.phone;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[330px_1fr] rounded-2xl border border-slate-200 overflow-hidden bg-white" style={{ height: 'calc(100vh - 230px)', minHeight: 440, maxHeight: 760 }}>
+    <div className="flex rounded-2xl border border-slate-200 overflow-hidden bg-white" style={{ height: 'min(680px, calc(100vh - 210px))', minHeight: 420 }}>
       {/* Conversation list */}
-      <div className={`flex-col border-r border-slate-200 ${sel ? 'hidden md:flex' : 'flex'}`}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+      <div className={`w-full md:w-[330px] md:flex-shrink-0 flex-col border-r border-slate-200 min-h-0 ${sel ? 'hidden md:flex' : 'flex'}`}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 flex-shrink-0">
           <div className="text-sm font-bold text-slate-900 inline-flex items-center gap-2"><Icon name="MessagesSquare" size={16} className="text-emerald-600" /> Chats</div>
           <button onClick={loadThreads} className="text-slate-400 hover:text-emerald-600" title="Refresh"><Icon name="RefreshCw" size={15} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+        <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-50">
           {threads === null && Array.from({ length: 6 }).map((_, i) => <div key={i} className="p-3"><Skeleton height={44} /></div>)}
           {threads !== null && threads.length === 0 && (
             <div className="px-4 py-12 text-center text-sm text-slate-400"><Icon name="Inbox" size={28} className="mx-auto mb-2 text-slate-300" />No conversations yet.</div>
@@ -115,14 +115,14 @@ export default function WhatsAppInbox() {
       </div>
 
       {/* Conversation */}
-      <div className={`flex-col ${sel ? 'flex' : 'hidden md:flex'}`} style={{ background: WA_BG }}>
+      <div className={`flex-1 min-w-0 flex-col min-h-0 ${sel ? 'flex' : 'hidden md:flex'}`} style={{ background: WA_BG }}>
         {!sel ? (
           <div className="flex-1 grid place-items-center text-center p-10 text-slate-400">
             <div><Icon name="MessagesSquare" size={34} className="mx-auto mb-2 text-slate-300" />Pick a conversation to read and reply.</div>
           </div>
         ) : (
           <>
-            <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
+            <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-3 flex-shrink-0">
               <button className="md:hidden text-slate-500" onClick={() => setSel(null)}><Icon name="ArrowLeft" size={18} /></button>
               <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 grid place-items-center text-[13px] font-semibold flex-shrink-0">{initials(title(sel))}</span>
               <div className="min-w-0">
@@ -131,7 +131,7 @@ export default function WhatsAppInbox() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1.5">
               {msgs === null ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={34} />) :
                 msgs.length === 0 ? <div className="text-center text-sm text-slate-500 py-8">No messages.</div> :
                 msgs.map((m) => (
@@ -151,11 +151,10 @@ export default function WhatsAppInbox() {
                     )}
                   </div>
                 ))}
-              <div ref={endRef} />
             </div>
 
-            {err && <div className="mx-4 mb-2 text-[12.5px] text-danger-700 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2">{err}</div>}
-            <div className="border-t border-slate-200 p-3 bg-slate-50">
+            {err && <div className="mx-4 mb-2 text-[12.5px] text-danger-700 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2 flex-shrink-0">{err}</div>}
+            <div className="border-t border-slate-200 p-3 bg-slate-50 flex-shrink-0">
               {sel.canReply ? (
                 <>
                   <div className="flex items-end gap-2">
