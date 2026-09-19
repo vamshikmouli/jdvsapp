@@ -105,21 +105,32 @@ export async function POST(req: NextRequest) {
         pushSent += r.sent;
       } catch (e) { console.error('bulk push', e); }
 
-      // WhatsApp — the approved "school_fee_reminder" template. FIVE body variables:
-      //   {{1}} parent  {{2}} student  {{3}} class  {{4}} total balance  {{5}} head-wise break-up
-      // The break-up is one line per fee head (School Fee / Van / Old fee / Software /
-      // ID card…), Uniform excluded, so the parent sees exactly what is owed and why.
+      // WhatsApp — the "school_fee_reminder" template with a FIXED line per fee head
+      // (so the breakdown is line-by-line — WhatsApp forbids newlines *inside* a
+      // variable, so each amount is its own single-value variable). Uniform excluded.
+      //   {{1}} parent {{2}} student {{3}} class {{4}} total
+      //   {{5}} School Fee  {{6}} Software & Marks Card  {{7}} Van / Transport
+      //   {{8}} Tie, Belt & Socks  {{9}} ID Card  {{10}} Old Balance
+      // A head with no dues shows ₹0. Order MUST match the template's fixed lines.
       if (waOn && acc.student.whatsappEnabled !== false) {
         // Send to father + mother + the extra fee-contact number (deduped).
         const recipients = feeWaRecipients(acc.student as any);
         if (recipients.length) {
-          const breakupLines = dueHeads.map((h) => `${h.name}: ${feeMoney(h.balance)}`).join('\n');
+          const catAmt = (re: RegExp) => feeMoney(dueHeads.filter((h) => re.test(`${(h as any).key || ''} ${h.name}`)).reduce((t, h) => t + h.balance, 0));
+          const parts = [
+            catAmt(/tuition|school\s*fee/i),           // School Fee
+            catAmt(/software|marks\s*card/i),          // Software & Marks Card
+            catAmt(/van|transport/i),                  // Van / Transport
+            catAmt(/tie|belt|sock/i),                  // Tie, Belt & Socks
+            catAmt(/id[\s-]*card|(^|\s)id(\s|$)/i),    // ID Card
+            catAmt(/old|arrear|previou/i),             // Old Balance
+          ];
           const totalText = feeMoney(balance);
           for (const rcp of recipients) {
             try {
               const wr = await sendTextTemplate({
                 to: rcp.to, templateName: feeTemplate, lang: feeLang,
-                bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', totalText, breakupLines || totalText],
+                bodyParams: [rcp.name || parentName, acc.student.name, cleanClass(acc.student.className) || '—', totalText, ...parts],
               });
               if (wr.ok) { waSent++; waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: true, wamid: wr.id }); }
               else { waFailed++; console.error('wa fee reminder', rcp.to, wr.error); waDetails.push({ student: acc.student.name, className: acc.student.className, name: rcp.name, to: rcp.to, ok: false, error: wr.error || 'send failed' }); }
