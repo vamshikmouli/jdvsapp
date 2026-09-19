@@ -166,6 +166,19 @@ export async function sendWhatsAppText(opts: {
   return { ok: true, id: j?.messages?.[0]?.id };
 }
 
+// WhatsApp rejects template BODY parameters that contain newlines, tabs, or 4+
+// consecutive spaces (error #132018). Normalise every param: newlines become " · ",
+// tabs a space, long space runs collapse. (Line-by-line output is only possible in a
+// template's FIXED text, never inside a variable.)
+export function waSafeParam(v: string): string {
+  return String(v ?? '')
+    .replace(/\r/g, '')
+    .replace(/\n+/g, ' · ')
+    .replace(/\t+/g, ' ')
+    .replace(/ {4,}/g, '   ')
+    .trim();
+}
+
 /** Send a TEXT-only template (no header) with N body variables. */
 export async function sendTextTemplate(opts: {
   to: string; templateName: string; lang?: string; bodyParams: string[];
@@ -180,7 +193,7 @@ export async function sendTextTemplate(opts: {
     template: {
       name: opts.templateName,
       language: { code: opts.lang || 'en' },
-      components: opts.bodyParams.length ? [{ type: 'body', parameters: opts.bodyParams.map((t) => ({ type: 'text', text: t })) }] : [],
+      components: opts.bodyParams.length ? [{ type: 'body', parameters: opts.bodyParams.map((t) => ({ type: 'text', text: waSafeParam(t) })) }] : [],
     },
   };
   const res = await fetch(`${GRAPH}/${phoneId}/messages`, {
@@ -273,7 +286,7 @@ export async function sendImageTemplate(opts: {
       language: { code: opts.lang || 'en' },
       components: [
         { type: 'header', parameters: [{ type: 'image', image: { id: opts.mediaId } }] },
-        { type: 'body', parameters: opts.bodyParams.map((t) => ({ type: 'text', text: t })) },
+        { type: 'body', parameters: opts.bodyParams.map((t) => ({ type: 'text', text: waSafeParam(t) })) },
       ],
     },
   };
