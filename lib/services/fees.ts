@@ -24,6 +24,7 @@ import {
   UNIFORM_ITEMS,
 } from '@/lib/feeStructure';
 import { itemsForFromMatrix, priceFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
+import { deductUniformStock, reverseUniformStock } from '@/lib/services/uniformStock';
 import type { PayMethod } from '@prisma/client';
 
 // The editable uniform price matrix for a year (falls back to the static file).
@@ -489,7 +490,7 @@ export async function recordPayment(input: {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
+  const payment = await prisma.$transaction(async (tx) => {
     // Counter-sold items: create a charge for each, then pay it in full below.
     let assignmentId = assignment?.id;
     if (items.length && !assignmentId) {
@@ -537,6 +538,10 @@ export async function recordPayment(input: {
       select: { id: true, receiptNo: true },
     });
   });
+  // Uniform stock deduction runs AFTER the payment commits and swallows its own
+  // errors, so it can never roll back or block a receipt (gated + idempotent inside).
+  await deductUniformStock(payment.id).catch((e) => console.error('[stock] deduct failed', e));
+  return payment;
 }
 
 /** Cancel a payment: keep the record (audit), drop its allocations so the
@@ -545,7 +550,7 @@ export async function voidPayment(paymentId: string, voidedById: string | null, 
   const pay = await prisma.payment.findUnique({ where: { id: paymentId }, select: { id: true, voided: true } });
   if (!pay) throw new Error('Payment not found');
   if (pay.voided) throw new Error('This payment is already cancelled');
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await tx.paymentAllocation.deleteMany({ where: { paymentId } }); // restores charge balances
     return tx.payment.update({
       where: { id: paymentId },
@@ -553,6 +558,9 @@ export async function voidPayment(paymentId: string, voidedById: string | null, 
       select: { id: true, voided: true },
     });
   });
+  // Put back any uniform stock this receipt had deducted (best-effort, idempotent).
+  await reverseUniformStock(paymentId).catch((e) => console.error('[stock] reverse failed', e));
+  return res;
 }
 
 // Change a receipt's date (YYYY-MM-DD). Allocations/amounts are unaffected.

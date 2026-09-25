@@ -76,6 +76,9 @@ enum Permission {
   ADMISSION_EXTRACT_ACCESS
   STUDY_CERTIFICATE_ACCESS
   RURAL_CERTIFICATE_ACCESS
+  // Uniform stock / inventory
+  STOCK_VIEW   // see the Stocks section (levels + analytics)
+  STOCK_MANAGE // add/adjust stock, toggle receipt auto-deduction
 }
 
 // A role is data, not an enum. Admins can create custom roles.
@@ -349,6 +352,7 @@ model SchoolClass {
   classSubjects ClassSubject[]
   markSheets  MarkSheet[]
   enrollments Enrollment[]
+  uniformStock UniformStock[]
   archived    Boolean  @default(false) // soft-delete: hidden until restored
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -801,6 +805,9 @@ model Settings {
   collectDateFixed String?  // yyyy-mm-dd, used when collectDateMode = 'fixed'
   // Auto-allocate priority: ordered fee-type keys, first = filled first. Empty = built-in default.
   feeAllocPriority String[] @default([])
+  // Uniform stock — global approval gate. When true, generating a fee receipt with a
+  // uniform line deducts from UniformStock. OFF until the admin approves it.
+  uniformStockDeductionEnabled Boolean @default(false)
   updatedAt       DateTime @updatedAt
 }
 
@@ -833,6 +840,8 @@ model AcademicYear {
   classFees   ClassFee[]
   vanFees     VanFee[]
   uniformItems UniformItem[]
+  uniformStock UniformStock[]
+  uniformStockLedger UniformStockLedger[]
   assignments StudentFeeAssignment[]
   payments    Payment[]
   assessments Assessment[]
@@ -921,6 +930,49 @@ model UniformItem {
   selections UniformSelection[]
 
   @@unique([yearId, name])
+}
+
+// Uniform inventory. One row per SKU = catalogue item key × class × gender.
+// itemKey is a UNIFORM_ITEMS key (school/white/tshirt/wed/tie/belt/socks).
+// gender is 'M' | 'F' for gendered items, 'ANY' for the rest (matches the price matrix).
+model UniformStock {
+  id             String   @id @default(cuid())
+  yearId         String
+  year           AcademicYear @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  itemKey        String
+  classId        String
+  class          SchoolClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  gender         String       // 'M' | 'F' | 'ANY'
+  qty            Int      @default(0)   // on-hand; may go negative (never blocks a sale)
+  lowThreshold   Int      @default(0)   // qty <= this => low-stock alert
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([yearId, itemKey, classId, gender])
+  @@index([yearId])
+}
+
+// Every change to on-hand stock — the audit trail + analytics source.
+// delta > 0 added, < 0 deducted; reason is why.
+model UniformStockLedger {
+  id        String   @id @default(cuid())
+  yearId    String
+  year      AcademicYear @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  itemKey   String
+  classId   String
+  gender    String
+  delta       Int
+  reason      String   // 'ADD' | 'RECEIPT' | 'ADJUST' | 'VOID_REVERSAL'
+  paymentId   String?  // set for RECEIPT / VOID_REVERSAL — links to the receipt
+  feeChargeId String?  // the uniform charge this deduction came from (dedup per charge)
+  note        String?
+  byId        String?  // user who made the change
+  createdAt   DateTime @default(now())
+
+  @@index([yearId, createdAt])
+  @@index([itemKey, classId, gender])
+  @@index([paymentId])
+  @@index([feeChargeId])
 }
 
 // One per student per year — header for what the student owes.

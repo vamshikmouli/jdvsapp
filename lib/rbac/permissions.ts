@@ -129,6 +129,14 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    group: 'Stock / Inventory',
+    icon: 'Boxes',
+    permissions: [
+      { key: 'STOCK_VIEW', label: 'View stock', desc: 'See uniform stock levels and analytics' },
+      { key: 'STOCK_MANAGE', label: 'Manage stock', desc: 'Add/adjust stock and turn receipt auto-deduction on/off' },
+    ],
+  },
+  {
     group: 'Data access',
     icon: 'LayoutGrid',
     permissions: [
