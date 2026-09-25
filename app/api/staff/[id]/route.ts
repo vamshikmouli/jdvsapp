@@ -13,7 +13,7 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STAFF_MANAGE')) {
+    if (!session || !can(session, 'STAFF_UPDATE')) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 });
     }
 
@@ -127,7 +127,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STAFF_MANAGE')) {
+    if (!session || !can(session, 'STAFF_DELETE')) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 });
     }
 

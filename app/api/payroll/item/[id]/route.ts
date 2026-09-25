@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 //   paid?: boolean                   -> mark this row paid/unpaid
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await requirePermission('PAYROLL_MANAGE');
+    await requirePermission('PAYROLL_UPDATE');
     const item = await prisma.payrollItem.findUnique({ where: { id: params.id } });
     if (!item) return NextResponse.json({ error: 'Row not found' }, { status: 404 });
 

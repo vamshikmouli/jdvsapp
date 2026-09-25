@@ -23,11 +23,20 @@ enum Surface {
 // Fine-grained capabilities. Devs add new keys here; admins toggle them per role.
 enum Permission {
   STUDENTS_VIEW
-  STUDENTS_MANAGE
+  STUDENTS_MANAGE          // legacy umbrella = create+update+delete (kept for compatibility)
+  STUDENTS_CREATE
+  STUDENTS_UPDATE
+  STUDENTS_DELETE
   CLASSES_VIEW
   CLASSES_MANAGE
+  CLASSES_CREATE
+  CLASSES_UPDATE
+  CLASSES_DELETE
   STAFF_VIEW
   STAFF_MANAGE
+  STAFF_CREATE
+  STAFF_UPDATE
+  STAFF_DELETE
   ATTENDANCE_VIEW
   ATTENDANCE_MARK
   ATTENDANCE_LOCK
@@ -43,6 +52,8 @@ enum Permission {
   FEES_VIEW_ALL
   FEES_CONCESSION_APPROVE // approve/reject fee concession requests
   FEES_VOID // cancel/void a recorded payment
+  FEES_SETUP   // see the Fee setup tab (editing still needs SETTINGS_MANAGE)
+  FEES_REPORTS // see the Fee reports tab + reports API
   NOTICES_MANAGE // create circulars / send fee reminders to parents
   MARKS_VIEW // view marks/assessments
   MARKS_ENTER // teacher: enter & submit marks for assigned classes
@@ -55,7 +66,16 @@ enum Permission {
   USERS_MANAGE
   ALL_CLASSES_ACCESS // see data for ALL classes; without it, scoped to assigned classes
   PAYROLL_VIEW    // view salary register / payslips
-  PAYROLL_MANAGE  // generate runs, edit amounts, approve, mark paid
+  PAYROLL_MANAGE  // legacy umbrella = create+update+delete (kept for compatibility)
+  PAYROLL_CREATE  // generate a salary run
+  PAYROLL_UPDATE  // edit amounts, approve, mark paid
+  PAYROLL_DELETE  // delete / discard a run
+  // Super Tools — each screen individually grantable (default off; admins keep
+  // access via the STUDENTS_MANAGE fallback in the nav).
+  HALL_TICKETS_ACCESS
+  ADMISSION_EXTRACT_ACCESS
+  STUDY_CERTIFICATE_ACCESS
+  RURAL_CERTIFICATE_ACCESS
 }
 
 // A role is data, not an enum. Admins can create custom roles.
@@ -414,6 +434,15 @@ model Student {
   noOfDependents Int?
   status        StudentStatus @default(ACTIVE)
   joinedDate    DateTime?     // admission date
+  // Transfer / Study certificate fields (used by the Super Tools certificate generators)
+  tcNo              String?     // transfer certificate number
+  tcDate            DateTime?   // transfer certificate date
+  schoolLeavingDate DateTime?   // date of leaving school (defaults to 10-Apr of the academic year's end)
+  studyFromYear     String?     // studied from (academic year), e.g. "2026-27"
+  studyToYear       String?     // studied to (academic year), e.g. "2029-30"
+  studyFromStandard String?     // from standard, e.g. "8th"
+  studyToStandard   String?     // to standard, e.g. "10th"
+  customFields      Json?       // admin-defined custom field values, keyed by field id
   attendance    AttendanceRecord[]
   feeAssignments StudentFeeAssignment[]
   payments       Payment[]
@@ -731,6 +760,10 @@ model Settings {
   waAdminRecipients String?
   waDailyEnabled    Boolean @default(true)
   waWeeklyEnabled   Boolean @default(true)
+  // Recipients (comma-separated numbers) for the 11 AM class-attendance status digest.
+  attendanceStatusRecipients String?
+  // Admin-defined custom fields for the student form: [{id,label,type,options?}]
+  studentCustomFields Json?
   // Whether Collect Payment offers/sends a WhatsApp fee receipt to the parent:
   // OFF = never show it, ASK = show it unticked (default), AUTO = show it pre-ticked.
   feeReceiptWhatsapp String @default("ASK")
@@ -945,6 +978,10 @@ model Payment {
   yearId        String
   year          AcademicYear        @relation(fields: [yearId], references: [id], onDelete: Cascade)
   receiptNo     String              @unique
+  // Serial from the physical carbon receipt book, filled when a payment is
+  // back-entered after being written by hand (app/net/power was down). Lets the
+  // book and the app reconcile. Null for normal app-first collections.
+  manualReceiptNo String?
   method        PayMethod           // single mode, or the largest tender when split
   // Split tender: [{ method, amount }] when one receipt mixes modes (e.g. UPI + Cash).
   // Null for a single-mode payment. Sum equals `total`.
@@ -1043,6 +1080,7 @@ model MessageDelivery {
   status      String
   error       String?
   wamid       String?  // Meta message id — matches the async status webhook to this row
+  reaction    String?  // latest emoji a parent reacted to this message with (WhatsApp reaction)
   sentById    String?
   createdAt   DateTime @default(now())
 
@@ -1062,6 +1100,8 @@ model WaMessage {
   phone       String    // the parent's WhatsApp number (wa_id, e.g. 91XXXXXXXXXX)
   type        String    @default("text")
   text        String?   @db.Text
+  mediaId     String?   // Meta media id for image/sticker/document inbound messages (fetched via the media proxy)
+  reaction    String?   // latest emoji a parent reacted to this message with (WhatsApp reaction)
   studentId   String?
   studentName String?
   contactName String?   // matched parent/guardian name + role, e.g. "Ramesh (Father)"

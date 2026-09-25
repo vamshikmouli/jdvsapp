@@ -52,7 +52,7 @@ export async function resolveContactByPhone(phone: string): Promise<{ studentId:
  * Persist an inbound WhatsApp message (a parent reply). Idempotent on the Meta
  * message id, so webhook retries don't duplicate. Best-effort — never throws.
  */
-export async function recordInboundMessage(opts: { waMessageId?: string; from: string; type?: string; text?: string | null }): Promise<void> {
+export async function recordInboundMessage(opts: { waMessageId?: string; from: string; type?: string; text?: string | null; mediaId?: string | null }): Promise<void> {
   try {
     if (!opts.from) return;
     if (opts.waMessageId) {
@@ -67,6 +67,7 @@ export async function recordInboundMessage(opts: { waMessageId?: string; from: s
         phone: opts.from,
         type: opts.type || 'text',
         text: opts.text ?? null,
+        mediaId: opts.mediaId ?? null,
         studentId: contact.studentId,
         studentName: contact.studentName,
         contactName: contact.contactName,
@@ -151,6 +152,7 @@ interface ThreadMessage {
   id: string; direction: string; text: string | null; type: string; at: string;
   error: string | null; handled: boolean; studentName: string | null; contactName: string | null;
   system: boolean; kind: string | null; status: string | null;
+  mediaId: string | null; reaction: string | null;
 }
 
 /**
@@ -165,19 +167,19 @@ export async function getThread(phone: string): Promise<ThreadMessage[]> {
     prisma.messageDelivery.findMany({
       where: { phone },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, kind: true, title: true, status: true, error: true, createdAt: true, studentName: true },
+      select: { id: true, kind: true, title: true, status: true, error: true, createdAt: true, studentName: true, reaction: true },
     }),
   ]);
   const merged: (ThreadMessage & { _at: Date })[] = [
     ...waRows.map((r) => ({
       id: r.id, direction: r.direction, text: r.text, type: r.type, at: r.createdAt.toISOString(),
       error: r.error, handled: r.handled, studentName: r.studentName, contactName: r.contactName,
-      system: false, kind: null, status: r.status, _at: r.createdAt,
+      system: false, kind: null, status: r.status, mediaId: r.mediaId, reaction: r.reaction, _at: r.createdAt,
     })),
     ...sent.map((d) => ({
       id: `md_${d.id}`, direction: 'OUT', text: d.title || null, type: 'template', at: d.createdAt.toISOString(),
       error: d.error, handled: true, studentName: d.studentName, contactName: null,
-      system: true, kind: d.kind, status: d.status, _at: d.createdAt,
+      system: true, kind: d.kind, status: d.status, mediaId: null, reaction: d.reaction, _at: d.createdAt,
     })),
   ].sort((a, b) => a._at.getTime() - b._at.getTime());
   return merged.map(({ _at, ...m }) => m);

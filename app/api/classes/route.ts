@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'CLASSES_MANAGE')) {
+    if (!session || !can(session, 'CLASSES_CREATE')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 

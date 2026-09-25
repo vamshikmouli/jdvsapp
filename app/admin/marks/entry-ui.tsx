@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
@@ -213,11 +214,47 @@ export function EntryTab() {
 }
 
 /* ---------------- Upload marks (all-subjects Excel/CSV → grid) ---------------- */
+// One collapsible warning section in the upload preview. Renders nothing when empty.
+function IssueBlock({ tone, title, items }: { tone: 'danger' | 'amber'; title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  const c = tone === 'danger'
+    ? { box: 'bg-danger-50 border-danger-100', head: 'text-danger-700', body: 'text-danger-600' }
+    : { box: 'bg-amber-50 border-amber-100', head: 'text-amber-800', body: 'text-amber-700' };
+  return (
+    <details className={`rounded-md border px-3 py-2 text-sm ${c.box}`}>
+      <summary className={`cursor-pointer font-medium ${c.head}`}>{title}</summary>
+      <ul className={`mt-1.5 space-y-0.5 text-[12px] ${c.body} max-h-40 overflow-y-auto list-disc pl-4`}>
+        {items.map((t, i) => <li key={i}>{t}</li>)}
+      </ul>
+    </details>
+  );
+}
+
 interface UploadSubject { id: string; name: string; max: number }
 interface UploadStudent { id: string; name: string; roll: string | null }
 
 const uNorm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const uLetters = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+const uRoll = (s: any) => String(s ?? '').replace(/[^0-9]/g, '').replace(/^0+/, ''); // digits, no leading zeros
+
+// Cheap edit-distance, used only to suggest the closest roster student for an
+// unmatched row (a hint for the teacher — never used to auto-fill a mark).
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prevDiag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, prevDiag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prevDiag = tmp;
+    }
+  }
+  return prev[b.length];
+}
 
 function UploadMarksModal({
   assessmentName, className, sectionName, subjects, students, onClose, onFill,
@@ -236,8 +273,13 @@ function UploadMarksModal({
     subjectsMissing: string[];
     columnsUnmatched: string[];
     studentsMatched: number;
-    rowsUnmatched: number;
     cells: number;
+    // Accuracy report — everything the teacher must eyeball before filling.
+    unmatchedRows: string[];    // CSV rows that matched no student (+ closest-name hint)
+    outOfRange: string[];       // cells outside 0..max, or unreadable — NOT filled
+    ambiguous: string[];        // a row's name matched more than one student
+    conflicts: string[];        // same student+subject given two different marks
+    missingStudents: string[];  // roster students with no mark at all
   } | null>(null);
 
   // Template: Student ID + Roll + Name, then one column per subject.
@@ -254,16 +296,16 @@ function UploadMarksModal({
   };
 
   const copyPrompt = async () => {
-    const header = ['Student ID', 'Name', ...subjects.map((s) => s.name)].join(',');
+    const header = ['Student ID', 'Roll', 'Name', ...subjects.map((s) => s.name)].join(',');
     const maxes = subjects.map((s) => `${s.name}=${s.max}`).join(', ');
-    const text = `You are given a photo/scan of a handwritten marks sheet (${assessmentName}, Class ${className}${sectionName ? ' ' + sectionName : ''}).
-Output ONLY a CSV table. The first line must be exactly this header:
+    const text = `You are transcribing a photo/scan of a handwritten marks sheet (${assessmentName}, Class ${className}${sectionName ? ' ' + sectionName : ''}). Accuracy is critical.
+Output ONLY a CSV table — nothing else, no explanation, no markdown fences. The first line must be exactly this header:
 ${header}
 Then one line per student. Rules:
-- Copy the Student ID exactly as printed.
-- Fill each subject column with that student's mark; write AB if absent; leave blank if no mark is given.
-- Max marks per subject: ${maxes}.
-- Do not invent students or marks, and add no extra text.
+- Copy the Student ID and Roll EXACTLY as printed — these are how each mark is matched to the right child. If a digit is unclear, transcribe your best single reading (do not guess a different student).
+- Fill each subject column with that student's number only. Write AB if absent. Leave the cell blank if no mark is written.
+- A mark must be within its subject's range: ${maxes}. Never output a mark above the maximum. If a value looks impossible (e.g. above the max), leave it blank rather than guessing.
+- One row per student, in the same order as the sheet. Do NOT invent, merge, reorder, or skip students, and do not add totals or extra rows.
 Save the result as a .csv (or Excel) file and upload it.`;
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
   };
@@ -282,7 +324,7 @@ Save the result as a .csv (or Excel) file and upload it.`;
       const headers = Object.keys(rows[0]);
 
       // Match each header to id/name/roll or a subject (by name).
-      const idCols: string[] = [], nameCols: string[] = [];
+      const idCols: string[] = [], nameCols: string[] = [], rollCols: string[] = [];
       const colToSubject: Record<string, UploadSubject> = {};
       const columnsUnmatched: string[] = [];
       const matchSubject = (h: string): UploadSubject | undefined => {
@@ -296,46 +338,108 @@ Save the result as a .csv (or Excel) file and upload it.`;
       };
       for (const h of headers) {
         const hn = uNorm(h);
-        if (/ADMISSION|ADMNO|ADM|^ID$/.test(hn)) { idCols.push(h); continue; }
+        if (/ADMISSION|ADMNO|ADM|^ID$|STUDENTID/.test(hn)) { idCols.push(h); continue; }
+        if (/^ROLL|SLNO|^SL$|^SNO$/.test(hn)) { rollCols.push(h); continue; }
         if (/^NAME$|STUDENT/.test(hn)) { nameCols.push(h); continue; }
-        if (/^ROLL/.test(hn)) continue;
         const su = matchSubject(h);
         if (su) colToSubject[h] = su; else columnsUnmatched.push(h);
       }
 
+      // Lookup keys. Names/rolls that map to 2+ students are AMBIGUOUS — never
+      // auto-matched by that weaker key (we don't want to guess the wrong child).
       const byId = new Map(students.map((s) => [s.id, s]));
-      const byName = new Map(students.map((s) => [uLetters(s.name), s]));
+      const nameCount = new Map<string, number>();
+      const rollCount = new Map<string, number>();
+      for (const s of students) {
+        const nk = uLetters(s.name); if (nk) nameCount.set(nk, (nameCount.get(nk) || 0) + 1);
+        const rk = uRoll(s.roll); if (rk) rollCount.set(rk, (rollCount.get(rk) || 0) + 1);
+      }
+      const byName = new Map<string, UploadStudent>();
+      const byRoll = new Map<string, UploadStudent>();
+      for (const s of students) {
+        const nk = uLetters(s.name); if (nk && nameCount.get(nk) === 1) byName.set(nk, s);
+        const rk = uRoll(s.roll); if (rk && rollCount.get(rk) === 1) byRoll.set(rk, s);
+      }
+      const rosterLetters = students.map((s) => ({ s, nk: uLetters(s.name) }));
+
       const filled: Record<string, Record<string, string>> = {};
       const perSubjectCount: Record<string, number> = {};
-      let studentsMatched = 0, rowsUnmatched = 0, cells = 0;
+      const filledStudents = new Set<string>();
+      const matchedRowFor = new Map<string, number>(); // studentId → first row index that claimed them
+      const unmatchedRows: string[] = [], outOfRange: string[] = [], ambiguous: string[] = [], conflicts: string[] = [];
+      let cells = 0;
 
-      for (const r of rows) {
+      // A readable label for a raw CSV row (for the report).
+      const rowLabel = (r: any, idx: number) => {
+        const id = idCols.map((c) => String(r[c] ?? '').trim()).find(Boolean);
+        const roll = rollCols.map((c) => String(r[c] ?? '').trim()).find(Boolean);
+        const name = nameCols.map((c) => String(r[c] ?? '').trim()).find(Boolean);
+        return [name || `Row ${idx + 2}`, id ? `ID ${id}` : '', roll ? `Roll ${roll}` : ''].filter(Boolean).join(' · ');
+      };
+
+      rows.forEach((r, idx) => {
+        // Match: Student ID (exact) → Roll (exact, unique) → Name (exact, unique).
         let stu: UploadStudent | undefined;
         for (const c of idCols) { const v = String(r[c] ?? '').trim(); if (v && byId.has(v)) { stu = byId.get(v); break; } }
+        if (!stu) for (const c of rollCols) { const v = uRoll(r[c]); if (v && byRoll.has(v)) { stu = byRoll.get(v); break; } }
         if (!stu) for (const c of nameCols) { const v = uLetters(r[c]); if (v && byName.has(v)) { stu = byName.get(v); break; } }
-        if (!stu) { rowsUnmatched++; continue; }
-        studentsMatched++;
+
+        if (!stu) {
+          // Flag ambiguous vs. truly unmatched, with a closest-name hint.
+          const nk = nameCols.map((c) => uLetters(r[c])).find(Boolean) || '';
+          if (nk && nameCount.get(nk)! > 1) {
+            ambiguous.push(`${rowLabel(r, idx)} — name matches ${nameCount.get(nk)} students; fill by Student ID.`);
+          } else {
+            let hint = '';
+            if (nk) {
+              let best = Infinity, bestName = '';
+              for (const { s, nk: rn } of rosterLetters) { if (!rn) continue; const d = editDistance(nk, rn); if (d < best) { best = d; bestName = s.name; } }
+              if (bestName && best <= Math.max(2, Math.floor(nk.length * 0.25))) hint = ` — did you mean ${bestName}?`;
+            }
+            unmatchedRows.push(`${rowLabel(r, idx)}${hint}`);
+          }
+          return;
+        }
+
+        // Same student claimed by an earlier row → don't overwrite; flag it.
+        if (matchedRowFor.has(stu.id) && matchedRowFor.get(stu.id) !== idx) {
+          conflicts.push(`${stu.name} appears in more than one row — kept the first.`);
+          return;
+        }
+        matchedRowFor.set(stu.id, idx);
+
         for (const [col, su] of Object.entries(colToSubject)) {
           const raw = String(r[col] ?? '').trim();
-          if (raw === '') continue;
-          let cell: string;
-          if (/^a/i.test(raw)) cell = 'AB';
-          else { const n = Number(raw.replace(/[^0-9.]/g, '')); if (isNaN(n)) continue; cell = String(Math.round(n)); }
+          if (raw === '' || raw === '-' || raw === '—') continue; // no mark given
+          if (/^(AB|ABS|ABSENT|A)$/i.test(raw)) { (filled[su.id] ||= {})[stu.id] = 'AB'; filledStudents.add(stu.id); perSubjectCount[su.name] = (perSubjectCount[su.name] || 0) + 1; cells++; continue; }
+          const n = Number(raw.replace(/[^0-9.]/g, ''));
+          if (isNaN(n)) { outOfRange.push(`${stu.name} · ${su.name}: "${raw}" is not a number`); continue; }
+          const rounded = Math.round(n);
+          if (rounded < 0 || rounded > su.max) { outOfRange.push(`${stu.name} · ${su.name}: ${raw} (allowed 0–${su.max})`); continue; }
+          const cell = String(rounded);
+          const existing = filled[su.id]?.[stu.id];
+          if (existing != null && existing !== cell) { conflicts.push(`${stu.name} · ${su.name}: two different marks (${existing} vs ${cell}) — kept ${existing}.`); continue; }
           (filled[su.id] ||= {})[stu.id] = cell;
+          filledStudents.add(stu.id);
           perSubjectCount[su.name] = (perSubjectCount[su.name] || 0) + 1;
           cells++;
         }
-      }
+      });
 
       const matchedSubjectIds = new Set(Object.values(colToSubject).map((s) => s.id));
+      const missingStudents = students.filter((s) => !filledStudents.has(s.id)).map((s) => `${s.roll ? s.roll + '. ' : ''}${s.name}`);
       setPreview({
         filled,
         perSubject: Object.entries(perSubjectCount).map(([name, count]) => ({ name, count })),
         subjectsMissing: subjects.filter((s) => !matchedSubjectIds.has(s.id)).map((s) => s.name),
         columnsUnmatched,
-        studentsMatched,
-        rowsUnmatched,
+        studentsMatched: filledStudents.size,
         cells,
+        unmatchedRows,
+        outOfRange,
+        ambiguous,
+        conflicts,
+        missingStudents,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read the file.');
@@ -372,7 +476,7 @@ Save the result as a .csv (or Excel) file and upload it.`;
             <div className="font-semibold text-slate-700">All subjects in one sheet</div>
             <div>1. <b>Download the template</b> — one row per student, one column per subject ({subjects.map((s) => s.name).join(', ')}).</div>
             <div>2. <b>Handwritten?</b> Give your scan + the <b>copied prompt</b> to Gemini/Claude to get a CSV, then save it.</div>
-            <div>3. <b>Upload</b> the filled Excel/CSV — marks are matched by Student ID and fill the grid for you to review &amp; submit.</div>
+            <div>3. <b>Upload</b> the filled Excel/CSV — marks are matched by Student ID (then Roll, then Name) and fill the grid. Anything unmatched or out of range is flagged for you to fix before submitting.</div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" icon="Download" onClick={downloadTemplate}>Template</Button>
               <Button size="sm" icon={copied ? 'Check' : 'Copy'} onClick={copyPrompt}>{copied ? 'Copied' : 'Copy AI prompt'}</Button>
@@ -389,8 +493,7 @@ Save the result as a .csv (or Excel) file and upload it.`;
           {preview && (
             <div className="space-y-2">
               <div className={`px-3 py-2 rounded-md text-sm ${preview.cells > 0 ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-800'}`}>
-                <b>{preview.cells}</b> marks · {preview.studentsMatched} students matched
-                {preview.rowsUnmatched > 0 ? ` · ${preview.rowsUnmatched} row(s) unmatched` : ''}.
+                <b>{preview.cells}</b> marks · {preview.studentsMatched} of {students.length} students matched.
               </div>
               <div className="border border-slate-200 rounded-lg divide-y divide-slate-50 max-h-40 overflow-y-auto">
                 {preview.perSubject.map((s) => (
@@ -400,12 +503,21 @@ Save the result as a .csv (or Excel) file and upload it.`;
                   </div>
                 ))}
               </div>
+
+              {/* Accuracy report — anything that could be wrong is shown, not hidden. */}
+              <IssueBlock tone="danger" title={`${preview.outOfRange.length} mark(s) out of range / unreadable — not filled`} items={preview.outOfRange} />
+              <IssueBlock tone="danger" title={`${preview.unmatchedRows.length} row(s) matched no student — their marks are dropped`} items={preview.unmatchedRows} />
+              <IssueBlock tone="amber" title={`${preview.conflicts.length} conflict(s)`} items={preview.conflicts} />
+              <IssueBlock tone="amber" title={`${preview.ambiguous.length} ambiguous name(s)`} items={preview.ambiguous} />
+              <IssueBlock tone="amber" title={`${preview.missingStudents.length} student(s) with no mark`} items={preview.missingStudents} />
+
               {preview.subjectsMissing.length > 0 && (
                 <div className="text-[11px] text-amber-700">No column matched: {preview.subjectsMissing.join(', ')}.</div>
               )}
               {preview.columnsUnmatched.length > 0 && (
                 <div className="text-[11px] text-slate-500">Ignored columns: {preview.columnsUnmatched.join(', ')}.</div>
               )}
+              <p className="text-[11px] text-slate-400">Marks fill the grid as a draft — review every value, fix anything flagged above, then submit.</p>
             </div>
           )}
         </div>
@@ -425,7 +537,7 @@ export function ApprovalsTab() {
 
   const decide = async (id: string, action: 'approve' | 'return') => {
     const r = await fetch('/api/marks/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheetId: id, action }) });
-    if (!r.ok) alert((await r.json().catch(() => ({}))).error || 'Failed');
+    if (!r.ok) toast.error((await r.json().catch(() => ({}))).error || 'Failed');
     setReview(null); load();
   };
 

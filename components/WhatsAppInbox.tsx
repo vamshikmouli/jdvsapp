@@ -11,7 +11,7 @@ interface ReplyThread {
   phone: string; studentId: string | null; studentName: string | null; contactName: string | null;
   lastText: string | null; lastAt: string; lastDirection: string; unread: number; canReply: boolean; windowEndsAt: string | null;
 }
-interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null; system?: boolean; kind?: string | null; status?: string | null }
+interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null; system?: boolean; kind?: string | null; status?: string | null; mediaId?: string | null; reaction?: string | null }
 
 const KIND_LABEL: Record<string, string> = {
   FEE_REMINDER: 'Fee reminder', FEE_RECEIPT: 'Fee receipt', ATTENDANCE_REMINDER: 'Attendance reminder',
@@ -42,6 +42,31 @@ function Ticks({ status }: { status?: string | null }) {
   if (s === 'READ') return <Icon name="CheckCheck" size={14} className="inline text-sky-500" />;
   if (s === 'DELIVERED') return <Icon name="CheckCheck" size={14} className="inline text-slate-400" />;
   return <Icon name="Check" size={13} className="inline text-slate-400" />; // SENT
+}
+
+// Photo / media types render as an inline image (fetched through our token-gated
+// proxy); everything else falls back to the text, with a placeholder for empty media.
+const MEDIA_TYPES = new Set(['image', 'sticker']);
+function MediaBody({ m }: { m: ThreadMsg }) {
+  if (MEDIA_TYPES.has(m.type) && m.mediaId) {
+    return (
+      <div>
+        <a href={`/api/whatsapp/media/${m.mediaId}`} target="_blank" rel="noreferrer">
+          <img src={`/api/whatsapp/media/${m.mediaId}`} alt={m.text || 'Photo'} loading="lazy"
+            className="rounded-md max-h-64 w-auto object-cover cursor-zoom-in" />
+        </a>
+        {m.text && <div className="whitespace-pre-wrap break-words mt-1">{m.text}</div>}
+      </div>
+    );
+  }
+  return <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">({m.type})</span>}</div>;
+}
+
+// A parent's emoji reaction, shown as a small chip clinging to the bubble's edge
+// (like WhatsApp). Empty when there's no reaction.
+function ReactionChip({ emoji }: { emoji?: string | null }) {
+  if (!emoji) return null;
+  return <span className="absolute -bottom-2.5 right-1 bg-white border border-slate-200 rounded-full px-1 text-[13px] leading-none py-0.5 shadow-sm">{emoji}</span>;
 }
 
 export default function WhatsAppInbox() {
@@ -137,16 +162,18 @@ export default function WhatsAppInbox() {
                 msgs.map((m) => (
                   <div key={m.id} className={`flex ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
                     {m.system ? (
-                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-[13px] bg-white/70 border border-slate-200 text-slate-600 shadow-sm">
+                      <div className="relative max-w-[85%] rounded-lg px-3 py-2 text-[13px] bg-white/70 border border-slate-200 text-slate-600 shadow-sm">
                         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-0.5 inline-flex items-center gap-1"><Icon name="Send" size={10} /> {kindLabel(m.kind || '')}</div>
                         <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">Message sent</span>}</div>
                         <div className="text-[10px] mt-1 text-slate-400 flex items-center gap-1 justify-end">{fmtTime(m.at)}<Ticks status={m.status} /></div>
+                        <ReactionChip emoji={m.reaction} />
                       </div>
                     ) : (
-                      <div className={`max-w-[80%] rounded-lg px-2.5 py-1.5 text-[13.5px] shadow-sm ${m.direction === 'OUT' ? 'text-slate-800 rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none'}`}
+                      <div className={`relative max-w-[80%] rounded-lg px-2.5 py-1.5 text-[13.5px] shadow-sm ${m.direction === 'OUT' ? 'text-slate-800 rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none'}`}
                         style={m.direction === 'OUT' ? { background: WA_GREEN } : undefined}>
-                        <div className="whitespace-pre-wrap break-words">{m.text || <span className="italic opacity-70">({m.type})</span>}</div>
+                        <MediaBody m={m} />
                         <div className="text-[10px] mt-0.5 text-slate-500 flex items-center gap-1 justify-end">{fmtTime(m.at).split(', ')[1] || fmtTime(m.at)}{m.direction === 'OUT' && <Ticks status={m.status} />}</div>
+                        <ReactionChip emoji={m.reaction} />
                       </div>
                     )}
                   </div>

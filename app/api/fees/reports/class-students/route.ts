@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { canAny } from '@/lib/rbac/roles';
 import { getActiveYear, getClassFeeStudents } from '@/lib/services/fees';
 
 // GET /api/fees/reports/class-students?classId=
@@ -9,7 +9,7 @@ import { getActiveYear, getClassFeeStudents } from '@/lib/services/fees';
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'FEES_VIEW')) {
+    if (!session || !canAny(session, ['FEES_REPORTS', 'SETTINGS_MANAGE'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     const classId = new URL(req.url).searchParams.get('classId') || '';

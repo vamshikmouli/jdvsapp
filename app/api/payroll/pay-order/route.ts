@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // list in exactly this order. Order is per-staff and carries across months.
 export async function POST(req: NextRequest) {
   try {
-    await requirePermission('PAYROLL_MANAGE');
+    await requirePermission('PAYROLL_UPDATE');
     const { order } = await req.json();
     if (!Array.isArray(order) || order.some((id) => typeof id !== 'string')) {
       return NextResponse.json({ error: 'order must be an array of staff ids' }, { status: 400 });

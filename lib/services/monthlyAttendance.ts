@@ -165,6 +165,21 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
   const batchId = `monthatt-${opts.month}-${Date.now()}`;
   const live = !opts.dry && whatsappConfigured();
 
+  // Batch-fetch every student's contact fields in ONE query (avoids an N+1 —
+  // previously one findUnique per student inside the loop).
+  const contactById = new Map<string, any>();
+  if (!opts.toOverride && students.length) {
+    const contactRows = await prisma.student.findMany({
+      where: { id: { in: students.map((s) => s.studentId) } },
+      select: {
+        id: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true,
+        altGuardianName: true, altGuardianPhone: true, guardianName: true, guardianPhone: true,
+        smsFor: true, whatsappEnabled: true,
+      },
+    });
+    for (const r of contactRows) contactById.set(r.id, r);
+  }
+
   for (const s of students) {
     res.tiers[s.tier]++;
     // Resolve recipients: a test override, else the student's own contact setting
@@ -174,15 +189,7 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
       const to = toWaNumber(opts.toOverride);
       reps = to ? [{ name: 'Test', to }] : [];
     } else {
-      const student = await prisma.student.findUnique({
-        where: { id: s.studentId },
-        select: {
-          fatherName: true, fatherPhone: true, motherName: true, motherPhone: true,
-          altGuardianName: true, altGuardianPhone: true, guardianName: true, guardianPhone: true,
-          smsFor: true, whatsappEnabled: true,
-        },
-      });
-      reps = feeWaRecipients((student || {}) as any);
+      reps = feeWaRecipients((contactById.get(s.studentId) || {}) as any);
     }
     if (!reps.length) { res.skipped++; res.details.push({ student: s.name, className: s.className, tier: s.tier, pct: s.pct, status: 'skipped', error: 'no WhatsApp number' }); continue; }
 

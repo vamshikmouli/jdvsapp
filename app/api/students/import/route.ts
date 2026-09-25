@@ -102,7 +102,7 @@ const UPPER_FIELDS = new Set(['fatherName', 'motherName']);
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STUDENTS_MANAGE')) {
+    if (!session || !can(session, 'STUDENTS_CREATE')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

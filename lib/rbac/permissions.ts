@@ -21,24 +21,33 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     group: 'Students',
     icon: 'Users',
     permissions: [
-      { key: 'STUDENTS_VIEW', label: 'View students', desc: 'See the student list and profiles' },
-      { key: 'STUDENTS_MANAGE', label: 'Manage students', desc: 'Add, edit and remove students' },
+      { key: 'STUDENTS_VIEW', label: 'View (read)', desc: 'See the student list and profiles' },
+      { key: 'STUDENTS_CREATE', label: 'Create', desc: 'Add new students' },
+      { key: 'STUDENTS_UPDATE', label: 'Update', desc: 'Edit existing students' },
+      { key: 'STUDENTS_DELETE', label: 'Delete', desc: 'Archive / remove students' },
+      { key: 'STUDENTS_MANAGE', label: 'Manage (full)', desc: 'Legacy: all of create, update and delete' },
     ],
   },
   {
     group: 'Classes',
     icon: 'BookOpen',
     permissions: [
-      { key: 'CLASSES_VIEW', label: 'View classes', desc: 'See classes and their rosters' },
-      { key: 'CLASSES_MANAGE', label: 'Manage classes', desc: 'Add, edit and remove classes' },
+      { key: 'CLASSES_VIEW', label: 'View (read)', desc: 'See classes and their rosters' },
+      { key: 'CLASSES_CREATE', label: 'Create', desc: 'Add new classes' },
+      { key: 'CLASSES_UPDATE', label: 'Update', desc: 'Edit existing classes' },
+      { key: 'CLASSES_DELETE', label: 'Delete', desc: 'Remove classes' },
+      { key: 'CLASSES_MANAGE', label: 'Manage (full)', desc: 'Legacy: all of create, update and delete' },
     ],
   },
   {
     group: 'Staff',
     icon: 'UserCog',
     permissions: [
-      { key: 'STAFF_VIEW', label: 'View staff', desc: 'See the staff directory' },
-      { key: 'STAFF_MANAGE', label: 'Manage staff', desc: 'Add, edit and remove staff (creates logins)' },
+      { key: 'STAFF_VIEW', label: 'View (read)', desc: 'See the staff directory' },
+      { key: 'STAFF_CREATE', label: 'Create', desc: 'Add new staff (creates logins)' },
+      { key: 'STAFF_UPDATE', label: 'Update', desc: 'Edit existing staff' },
+      { key: 'STAFF_DELETE', label: 'Delete', desc: 'Archive / remove staff' },
+      { key: 'STAFF_MANAGE', label: 'Manage (full)', desc: 'Legacy: all of create, update and delete' },
     ],
   },
   {
@@ -58,7 +67,29 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: 'STAFF_ATTENDANCE_VIEW', label: 'View staff attendance', desc: 'See the daily board, per-staff history and reports' },
       { key: 'STAFF_ATTENDANCE_MANAGE', label: 'Manage staff attendance', desc: 'Regularize entries and reset a staff member’s device / PIN' },
       { key: 'STAFF_ATTENDANCE_CONFIG', label: 'Configure staff attendance', desc: 'Set the geofence, shift timings and weekly-offs / holidays' },
+      { key: 'STAFF_ATTENDANCE_KIOSK', label: 'Run the kiosk', desc: 'Run the shared on-campus attendance kiosk (dedicated device login)' },
       { key: 'LEAVE_APPROVE', label: 'Approve leave', desc: 'Approve or reject staff leave requests (anyone who can punch may apply)' },
+    ],
+  },
+  {
+    group: 'Exams / Marks',
+    icon: 'ClipboardList',
+    permissions: [
+      { key: 'MARKS_VIEW', label: 'View (read)', desc: 'View marks and assessments' },
+      { key: 'MARKS_ENTER', label: 'Enter marks', desc: 'Teacher: enter & submit marks for assigned classes' },
+      { key: 'MARKS_APPROVE', label: 'Approve / publish', desc: 'Admin: verify, edit and publish submitted marks' },
+      { key: 'MARKS_SETUP', label: 'Set up', desc: 'Manage subjects, assessments and grade bands' },
+    ],
+  },
+  {
+    group: 'Payroll',
+    icon: 'Wallet',
+    permissions: [
+      { key: 'PAYROLL_VIEW', label: 'View (read)', desc: 'View the salary register and payslips' },
+      { key: 'PAYROLL_CREATE', label: 'Create', desc: 'Generate a salary run' },
+      { key: 'PAYROLL_UPDATE', label: 'Update', desc: 'Edit amounts, approve and mark paid' },
+      { key: 'PAYROLL_DELETE', label: 'Delete', desc: 'Delete / discard a run' },
+      { key: 'PAYROLL_MANAGE', label: 'Manage (full)', desc: 'Legacy: all of create, update and delete' },
     ],
   },
   {
@@ -71,6 +102,8 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: 'FEES_VIEW_ALL', label: 'View all accounts', desc: 'See every student’s fee account' },
       { key: 'FEES_CONCESSION_APPROVE', label: 'Approve concessions', desc: 'Approve or reject fee concession (discount) requests' },
       { key: 'FEES_VOID', label: 'Cancel payments', desc: 'Cancel/void a recorded payment (reverses it, keeps an audit record)' },
+      { key: 'FEES_SETUP', label: 'Fee setup tab', desc: 'See the Fee setup tab (changing values still needs Manage settings)' },
+      { key: 'FEES_REPORTS', label: 'Fee reports tab', desc: 'See the Fee reports tab and its analytics' },
     ],
   },
   {
@@ -83,6 +116,16 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: 'SETTINGS_MANAGE', label: 'Manage settings', desc: 'Change school-wide settings' },
       { key: 'ROLES_MANAGE', label: 'Manage roles & access', desc: 'Create roles and set permissions' },
       { key: 'USERS_MANAGE', label: 'Manage user accounts', desc: 'Assign roles to people' },
+    ],
+  },
+  {
+    group: 'Super Tools',
+    icon: 'Wrench',
+    permissions: [
+      { key: 'HALL_TICKETS_ACCESS', label: 'Hall tickets', desc: 'Generate exam hall tickets' },
+      { key: 'ADMISSION_EXTRACT_ACCESS', label: 'Admission extract', desc: 'Export admission details' },
+      { key: 'STUDY_CERTIFICATE_ACCESS', label: 'Study certificate', desc: 'Generate study certificates' },
+      { key: 'RURAL_CERTIFICATE_ACCESS', label: 'Rural certificate', desc: 'Generate rural certificates' },
     ],
   },
   {

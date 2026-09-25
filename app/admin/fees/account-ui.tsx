@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 // Shared fee-account UI used by both the Collection drawer and the full-page
 // student fee view (/admin/fees/student/[id]).
 
@@ -110,7 +111,7 @@ export interface Account {
   student: { id: string; name: string; className: string | null; section: string | null; guardianName: string; guardianPhone: string; village: string | null; whatsappEnabled?: boolean };
   assignment: { oldDue: number; concession: number; concessionReason: string | null } | null;
   summary: AccountSummary;
-  payments: { id: string; receiptNo: string; method: string; tenders?: { method: string; amount: number }[] | null; total: number; note: string | null; paidAt: string; voided?: boolean; voidReason?: string | null; allocations: { amount: number; label: string }[] }[];
+  payments: { id: string; receiptNo: string; manualReceiptNo?: string | null; method: string; tenders?: { method: string; amount: number }[] | null; total: number; note: string | null; paidAt: string; voided?: boolean; voidReason?: string | null; allocations: { amount: number; label: string }[] }[];
   concessions: { id: string; feeTypeId: string; feeTypeName: string; amount: number; reason: string; status: string; decisionNote: string | null; decidedAt: string | null; createdAt: string }[];
 }
 
@@ -127,7 +128,7 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
     const reason = window.prompt(`Cancel receipt ${receiptNo}? This reverses the payment and restores the balance.\n\nReason (optional):`, '');
     if (reason === null) return; // user dismissed
     const res = await fetch(`/api/fees/payments/${id}/void`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
-    if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Failed to cancel'); return; }
+    if (!res.ok) { const e = await res.json().catch(() => ({})); toast.error(e.error || 'Failed to cancel'); return; }
     onChanged?.();
   };
   const totals: { label: string; value: number; tone: string; metric?: HeadMetric }[] = [
@@ -559,6 +560,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const [splitOpen, setSplitOpen] = useState(false);
   const [splits, setSplits] = useState<Record<string, string>>({}); // mode → amount typed
   const [note, setNote] = useState('');
+  const [manualNo, setManualNo] = useState(''); // serial from the carbon book (offline back-entry)
   const [sendWa, setSendWa] = useState(false); // WhatsApp receipt to parent — opt-in, off by default
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
@@ -735,13 +737,14 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       }
       const res = await fetch('/api/fees/payments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId, method: useSplit ? undefined : method, tenders: useSplit ? splitTenders : undefined, note, date, allocations, sendWhatsApp: sendWa }),
+        body: JSON.stringify({ studentId, method: useSplit ? undefined : method, tenders: useSplit ? splitTenders : undefined, note, manualReceiptNo: manualNo.trim() || undefined, date, allocations, sendWhatsApp: sendWa }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       // Reload so this new payment is in the account — the confirmation popup's
       // "Print receipts" button prints it on demand (no auto-print).
       await reloadAccount();
+      setManualNo(''); // a book serial belongs to one receipt only
       setDone({ receiptNo: data.receiptNo, id: data.id });
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to record payment'); }
     finally { setBusy(false); }
@@ -761,7 +764,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
     };
     const method = payMethodText(pay);
     const dt = (pay.paidAt || '').slice(0, 10);
-    const stu = `<b>${esc(account.student.name)}</b> · ${esc(shortClass(account.student.className) || '—')}<br>${esc(pay.receiptNo)} · ${dt} · ${esc(method)}`;
+    const bookNo = pay.manualReceiptNo ? ` · Book ${esc(pay.manualReceiptNo)}` : '';
+    const stu = `<b>${esc(account.student.name)}</b> · ${esc(shortClass(account.student.className) || '—')}<br>${esc(pay.receiptNo)}${bookNo} · ${dt} · ${esc(method)}`;
     const allocs = ((pay.allocations || []) as { amount: number; label: string }[]).filter((a) => a.amount > 0);
     const feeAl = allocs.filter((a) => !/uniform/i.test(a.label));
     const uniAl = allocs.filter((a) => /uniform/i.test(a.label));
@@ -780,8 +784,11 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tfoot><tr><td>Total balance</td><td class="r">${rup(balTotal)}</td></tr></tfoot>
         </table>` : '';
 
-    const feeSlip = feeAl.length ? `
-      <div class="slip">
+    // One A5 page. `copy` is the PARENT / OFFICE label printed in the corner.
+    const footFor = (copy: string) => (copy === 'OFFICE COPY' ? 'Office copy — retain in file.' : 'Please keep this receipt for your records.');
+    const feePage = (copy: string) => !feeAl.length ? '' : `
+      <div class="page">
+        <div class="copytag">${copy}</div>
         <div class="sch">${esc(brand.schoolName)}</div>
         <div class="ttl">Fee Receipt</div>
         <div class="meta">${stu}</div>
@@ -791,11 +798,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tfoot><tr><td>Total paid</td><td class="r">${rup(sum(feeAl))}</td></tr></tfoot>
         </table>
         ${balBlock}
-        <div class="foot">Thank you.</div>
-      </div>` : '';
-
-    const uniSlip = uniAl.length ? `
-      <div class="slip">
+        <div class="sign"><span>Received with thanks</span><span class="sig">Authorised signatory</span></div>
+        <div class="foot">${footFor(copy)}</div>
+      </div>`;
+    const uniPage = (copy: string) => !uniAl.length ? '' : `
+      <div class="page">
+        <div class="copytag">${copy}</div>
         <div class="ttl big">Uniform Receipt</div>
         <div class="meta">${stu}</div>
         <table>
@@ -803,46 +811,48 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tbody>${body(uniAl, shortName)}</tbody>
           <tfoot><tr><td>Total paid</td><td class="r">${rup(sum(uniAl))}</td></tr></tfoot>
         </table>
-        <div class="foot">Thank you.</div>
-      </div>` : '';
+        <div class="sign"><span>Received with thanks</span><span class="sig">Authorised signatory</span></div>
+        <div class="foot">${footFor(copy)}</div>
+      </div>`;
 
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title><style>
-      @page{ size:80mm auto; margin:5mm } *{box-sizing:border-box}
-      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;width:72mm}
-      .slip{ padding-bottom:6px }
-      .sch{text-align:center;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.3px}
-      .ttl{text-align:center;font-size:10px;color:#555;margin:1px 0 6px;text-transform:uppercase;letter-spacing:1px}
-      .ttl.big{font-size:13px;font-weight:700;color:#111}
-      .meta{font-size:11px;line-height:1.5;border-top:1px dashed #999;border-bottom:1px dashed #999;padding:5px 0;margin-bottom:5px}
+    // Two copies of everything — parent takes one, the office files the other.
+    // Each is its own A5 page in a single print job (one dialog, N sheets).
+    const pages = [
+      feePage('PARENT COPY'), feePage('OFFICE COPY'),
+      uniPage('PARENT COPY'), uniPage('OFFICE COPY'),
+    ].filter(Boolean);
+    if (!pages.length) { setError('Nothing to print on this receipt.'); return; }
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${esc(pay.receiptNo)}</title><style>
+      @page{ size:A5 portrait; margin:10mm } *{box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}
+      .page{ position:relative; padding:2mm; page-break-after:always }
+      .page:last-child{ page-break-after:auto }
+      .copytag{ position:absolute; top:-2mm; right:-2mm; font-size:10px; font-weight:700; letter-spacing:1px; color:#fff; background:#7C3AED; padding:4px 9px; border-radius:0 0 0 6px }
+      .sch{text-align:center;font-weight:700;font-size:17px;text-transform:uppercase;letter-spacing:.3px}
+      .ttl{text-align:center;font-size:12px;color:#555;margin:2px 0 10px;text-transform:uppercase;letter-spacing:2px}
+      .ttl.big{font-size:16px;font-weight:700;color:#111;letter-spacing:1px}
+      .meta{font-size:13px;line-height:1.6;border-top:1px dashed #999;border-bottom:1px dashed #999;padding:8px 0;margin-bottom:8px}
       .meta b{font-weight:700}
-      table{width:100%;border-collapse:collapse;font-size:11px}
-      th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.3px;color:#666;border-bottom:1px solid #000;padding:2px 0}
-      td{padding:3px 0;border-bottom:1px dotted #ccc;vertical-align:top}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#666;border-bottom:1px solid #000;padding:4px 0}
+      td{padding:5px 0;border-bottom:1px dotted #ccc;vertical-align:top}
       td.r,th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:6px}
       td.b{font-weight:700}
-      tfoot td{border-top:1px solid #000;border-bottom:none;font-weight:700;padding-top:5px}
-      table.bal{margin-top:8px}
+      tfoot td{border-top:1px solid #000;border-bottom:none;font-weight:700;padding-top:7px;font-size:14px}
+      table.bal{margin-top:12px}
       td.due{color:#C7322E;font-weight:700}
-      .foot{margin-top:8px;font-size:10px;text-align:center;color:#555}
+      .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:28px;font-size:11px;color:#555}
+      .sign .sig{border-top:1px solid #999;padding-top:3px}
+      .foot{margin-top:12px;font-size:11px;text-align:center;color:#555}
     </style></head><body>
-      <div class="stage"></div>
+      ${pages.join('')}
       <script>
-        // Print each receipt as its OWN job so a thermal auto-cutter cuts between
-        // them — the school-fee receipt and the uniform receipt come out separately.
-        var SLIPS = ${JSON.stringify([feeSlip, uniSlip].filter(Boolean))};
-        var stage = document.querySelector('.stage');
-        var i = 0;
-        function step() {
-          if (i >= SLIPS.length) { setTimeout(function(){ try{ window.close(); }catch(e){} }, 300); return; }
-          stage.innerHTML = SLIPS[i]; i++;
-          window.focus(); window.print();
-        }
-        window.onafterprint = function(){ setTimeout(step, 500); };
-        window.onload = function(){ if (SLIPS.length) step(); else { stage.innerHTML = '<div class="foot">No fees to show.</div>'; } };
+        window.onload = function(){ window.focus(); window.print(); setTimeout(function(){ try{ window.close(); }catch(e){} }, 400); };
       </script>
     </body></html>`;
     const w = window.open('', '_blank');
-    if (!w) { setError('Please allow pop-ups to print the slip.'); return; }
+    if (!w) { setError('Please allow pop-ups to print the receipt.'); return; }
     w.document.write(html); w.document.close();
   };
 
@@ -1169,7 +1179,10 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
             })()}
 
             <div className="mt-3">
-              <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
+                <Field label="Book receipt no. (optional)"><Input value={manualNo} onChange={(e) => setManualNo(e.target.value)} placeholder="Manual book serial — if written by hand" /></Field>
+              </div>
               {opts?.feeReceiptWhatsapp === 'OFF' ? (
                 <div className="mt-3 flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                   <Icon name="MessageCircleOff" size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />

@@ -19,6 +19,7 @@ export async function GET() {
       phone,
       templates,
       recipients: settings.waAdminRecipients ?? process.env.WHATSAPP_ADMIN_RECIPIENTS ?? '',
+      attendanceRecipients: settings.attendanceStatusRecipients ?? '',
       dailyEnabled: settings.waDailyEnabled,
       weeklyEnabled: settings.waWeeklyEnabled,
       weeklyTemplate: process.env.WHATSAPP_TEMPLATE_NAME || 'weekly_attendance_report',
@@ -40,10 +41,13 @@ export async function PATCH(req: NextRequest) {
       // normalise: keep digits + commas
       data.waAdminRecipients = b.recipients.split(',').map((x: string) => x.replace(/[^\d+]/g, '')).filter(Boolean).join(',');
     }
+    if (typeof b.attendanceRecipients === 'string') {
+      data.attendanceStatusRecipients = b.attendanceRecipients.split(',').map((x: string) => x.replace(/[^\d+]/g, '')).filter(Boolean).join(',');
+    }
     if (typeof b.dailyEnabled === 'boolean') data.waDailyEnabled = b.dailyEnabled;
     if (typeof b.weeklyEnabled === 'boolean') data.waWeeklyEnabled = b.weeklyEnabled;
     const s = await prisma.settings.upsert({ where: { id: 'singleton' }, update: data, create: { id: 'singleton', ...data } });
-    return NextResponse.json({ ok: true, recipients: s.waAdminRecipients });
+    return NextResponse.json({ ok: true, recipients: s.waAdminRecipients, attendanceRecipients: s.attendanceStatusRecipients ?? '' });
   } catch (err) {
     const { status, body } = authErrorResponse(err);
     return NextResponse.json(body, { status });

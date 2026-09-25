@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
-import { getActiveYear, studentsForFeeReminder } from '@/lib/services/fees';
+import { getActiveYear, studentsForFeeReminder, type FeeReminderRecency } from '@/lib/services/fees';
 import { sendPushToUsers, parentUserIdsForAudience } from '@/lib/push';
 import { broadcastNotice } from '@/lib/services/announce';
 import { whatsappConfigured } from '@/lib/services/whatsapp';
@@ -60,10 +60,12 @@ export async function POST(req: NextRequest) {
         audience = 'STUDENT';
       } else {
         const year = await getActiveYear();
+        const recency = (['none', '1m', '3m', 'never'].includes(b.recency) ? b.recency : 'none') as FeeReminderRecency;
         const { studentIds: ids } = await studentsForFeeReminder(year.id, {
           mode: scope === 'above' ? 'above' : scope === 'overdue' ? 'overdue' : 'all',
           minBalance: Number(b.minBalance) || 0,
           classId: b.classId || undefined,
+          recency,
         });
         if (ids.length === 0) return NextResponse.json({ error: 'No students match that filter — nothing to send' }, { status: 400 });
         audience = 'STUDENT';

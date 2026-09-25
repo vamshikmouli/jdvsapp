@@ -28,10 +28,12 @@ export const STAFF_NAV: NavGroup[] = [
   {
     label: 'Super Tools',
     items: [
-      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: 'STUDENTS_MANAGE' }, // admin-only by default; hidden for teacher/accountant
-      { id: 'admission-extract', label: 'Admission extract', icon: 'FileText', perm: 'STUDENTS_MANAGE' },
-      { id: 'study-certificate', label: 'Study certificate', icon: 'FileCheck', perm: 'STUDENTS_MANAGE' },
-      { id: 'rural-certificate', label: 'Rural certificate', icon: 'Trees', perm: 'STUDENTS_MANAGE' },
+      // Each is individually grantable; the STUDENTS_MANAGE fallback keeps admins
+      // (who already hold it) seeing the tools with no data migration.
+      { id: 'hall-tickets', label: 'Hall tickets', icon: 'Ticket', perm: ['HALL_TICKETS_ACCESS', 'STUDENTS_MANAGE'] },
+      { id: 'admission-extract', label: 'Admission extract', icon: 'FileText', perm: ['ADMISSION_EXTRACT_ACCESS', 'STUDENTS_MANAGE'] },
+      { id: 'study-certificate', label: 'Study certificate', icon: 'FileCheck', perm: ['STUDY_CERTIFICATE_ACCESS', 'STUDENTS_MANAGE'] },
+      { id: 'rural-certificate', label: 'Rural certificate', icon: 'Trees', perm: ['RURAL_CERTIFICATE_ACCESS', 'STUDENTS_MANAGE'] },
     ],
   },
   {

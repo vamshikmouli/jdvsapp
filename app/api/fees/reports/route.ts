@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
 import { getActiveYear, getReports } from '@/lib/services/fees';
 
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'FEES_VIEW')) {
+    if (!session || !canAny(session, ['FEES_REPORTS', 'SETTINGS_MANAGE'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);

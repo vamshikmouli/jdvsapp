@@ -31,7 +31,7 @@ interface StaffRow {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STAFF_MANAGE')) {
+    if (!session || !can(session, 'STAFF_CREATE')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

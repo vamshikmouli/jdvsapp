@@ -1,7 +1,8 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/lib/hooks/usePermissions';
 import { Button, Card, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
@@ -32,14 +33,15 @@ interface StaffOption {
 const emptyForm = { id: '', name: '', room: '', group: 'PRIMARY' as SchoolClass['group'], teacherIds: [] as string[] };
 
 export default function ClassesPage() {
-  const { data: session } = useSession();
-  const perms = ((session?.user as any)?.perms as string[]) || [];
-  const canManage = perms.includes('CLASSES_MANAGE');
-  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const { can } = usePermissions();
+  // "Manage" UI shows when the user has any class write ability; the API still
+  // enforces the specific create / update / delete permission per action.
+  const canManage = can('CLASSES_CREATE') || can('CLASSES_UPDATE') || can('CLASSES_DELETE');
+  const canExport = can('REPORTS_EXPORT') || can('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);
-    try { await downloadBackup('classes'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try { await downloadBackup('classes'); } catch (e) { toast.error(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -153,9 +155,12 @@ export default function ClassesPage() {
         throw new Error(err.error || `Failed (${res.status})`);
       }
       setFormOpen(false);
+      toast.success(editing ? 'Class updated.' : 'Class added.');
       await fetchClasses();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to save class');
+      const m = err instanceof Error ? err.message : 'Failed to save class';
+      setFormError(m);
+      toast.error(m);
     } finally {
       setSaving(false);
     }

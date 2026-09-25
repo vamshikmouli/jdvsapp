@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Modal, Field, Input, Select, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
@@ -87,7 +88,7 @@ export default function AttendancePage() {
       a.href = url; a.download = `attendance-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       setExportOpen(false);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
   // Friendly attendance upload: a name-based Excel with a Status dropdown fills
@@ -307,9 +308,12 @@ export default function AttendancePage() {
       }
 
       setMessage(`Attendance saved · ${counts.present} of ${total} present — ${cls?.name} ${currentSession?.label || ''}`);
+      toast.success(`Attendance saved · ${counts.present} of ${total} present.`);
       loadOverview();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Failed to save');
+      const m = err instanceof Error ? err.message : 'Failed to save';
+      setMessage(m);
+      toast.error(m);
     } finally {
       setSaving(false);
     }
@@ -325,7 +329,10 @@ export default function AttendancePage() {
     if (res.ok) {
       setLocked(false);
       setMessage('Session reopened — you can edit marks.');
+      toast.info('Session reopened — you can edit marks.');
       loadOverview();
+    } else {
+      toast.error('Could not reopen the session.');
     }
   };
 
@@ -548,6 +555,31 @@ export default function AttendancePage() {
           </div>
         )}
       </Card>
+
+      {/* Submit bar below the list — so there's no need to scroll back up after
+          marking. Mirrors the header button's submit / submitted / reopen state. */}
+      {canMark && total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs">
+          <span className="text-sm text-slate-500">
+            {locked
+              ? 'Attendance submitted for this session.'
+              : allMarked
+                ? 'All students marked — ready to submit.'
+                : `${counts.unmarked} student${counts.unmarked === 1 ? '' : 's'} still unmarked.`}
+          </span>
+          {locked ? (
+            isAdmin ? (
+              <Button kind="primary" icon="LockOpen" onClick={reopen}>Reopen session</Button>
+            ) : (
+              <Button kind="primary" icon="CheckCircle2" disabled>Submitted</Button>
+            )
+          ) : (
+            <Button kind="primary" icon="Check" onClick={save} disabled={!canSave || saving}>
+              {saving ? 'Submitting…' : 'Submit attendance'}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Hidden file picker for the friendly attendance import */}
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={pickImport} />

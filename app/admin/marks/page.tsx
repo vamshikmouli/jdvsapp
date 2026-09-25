@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal, Drawer } from '@/components/Primitives';
@@ -32,7 +33,7 @@ export default function MarksPage() {
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);
-    try { await downloadBackup('marks'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try { await downloadBackup('marks'); } catch (e) { toast.error(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -215,7 +216,7 @@ function SubjectsTab() {
   const del = async (s: Subject) => {
     if (!confirm(`Delete subject "${s.name}"?`)) return;
     const r = await fetch(`/api/subjects?id=${s.id}`, { method: 'DELETE' });
-    if (!r.ok) alert((await r.json().catch(() => ({}))).error || 'Failed to delete');
+    if (!r.ok) toast.error((await r.json().catch(() => ({}))).error || 'Failed to delete');
     load();
   };
   const move = async (i: number, dir: -1 | 1) => {
@@ -382,7 +383,7 @@ function AssessmentsTab() {
   const del = async (a: Assessment) => {
     if (!confirm(`Archive assessment "${a.name}"? It's hidden from entry, setup and reports but kept (marks preserved) and restorable.`)) return;
     const r = await fetch(`/api/assessments?id=${a.id}`, { method: 'DELETE' });
-    if (!r.ok) alert((await r.json().catch(() => ({}))).error || 'Failed to archive');
+    if (!r.ok) toast.error((await r.json().catch(() => ({}))).error || 'Failed to archive');
     load();
   };
   const restore = async (a: Assessment) => { await fetch(`/api/assessments?id=${a.id}&restore=1`, { method: 'DELETE' }); load(); };

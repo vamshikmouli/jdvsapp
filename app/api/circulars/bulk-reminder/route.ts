@@ -3,9 +3,9 @@ import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
-import { getActiveYear, getStudentAccount, studentsForFeeReminder } from '@/lib/services/fees';
+import { getActiveYear, getReminderAccounts, studentsForFeeReminder, type FeeReminderRecency } from '@/lib/services/fees';
 import { feeMoney } from '@/lib/fees';
-import { sendPushToUsers, parentUserIdsForStudents } from '@/lib/push';
+import { sendPushToUsers } from '@/lib/push';
 import { sendTextTemplate, feeWaRecipients, whatsappConfigured } from '@/lib/services/whatsapp';
 
 const cleanClass = (name: string | null) => (name ? name.replace(/\s?STD$/i, '') : '');
@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     if (studentIds.length === 0 && b.feeScope) {
       const mode = b.feeScope === 'school' ? 'all' : (b.mode === 'overdue' || b.mode === 'above' ? b.mode : 'all');
       const classId = b.feeScope === 'school' ? undefined : (b.classId || undefined);
-      const res = await studentsForFeeReminder(year.id, { mode, minBalance: Number(b.minBalance) || 0, classId });
+      // Don't re-chase families who paid a fee recently (buffer window).
+      const recency = (['none', '1m', '3m', 'never'].includes(b.recency) ? b.recency : 'none') as FeeReminderRecency;
+      const res = await studentsForFeeReminder(year.id, { mode, minBalance: Number(b.minBalance) || 0, classId, recency });
       studentIds.push(...res.studentIds);
     }
     if (studentIds.length === 0) return NextResponse.json({ error: 'No students match — nobody has a balance to remind.' }, { status: 400 });
@@ -65,8 +67,12 @@ export async function POST(req: NextRequest) {
     const feeTemplate = process.env.WHATSAPP_FEE_TEMPLATE || 'school_fee_reminder';
     const feeLang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 
+    // Batched account snapshots (3 queries total) instead of getStudentAccount per
+    // student — same summary math, so per-student balances are unchanged.
+    const accounts = await getReminderAccounts(year.id, studentIds);
+
     for (const sid of studentIds) {
-      const acc = await getStudentAccount(sid, year.id);
+      const acc = accounts.get(sid);
       if (!acc) { skippedMissing++; continue; }
       // Dues per head, Uniform excluded — the reminder total is the sum of these.
       const dueHeads = acc.summary.heads.filter((h) => h.balance > 0 && !isUniformHead(h.name, h.key));
@@ -95,7 +101,7 @@ export async function POST(req: NextRequest) {
 
       // Push to this student's parent with their own balance.
       try {
-        const parents = await parentUserIdsForStudents([sid]);
+        const parents = acc.student.guardianUserId ? [acc.student.guardianUserId] : [];
         const r = await sendPushToUsers(parents, {
           title: `Fee reminder: ${title}`,
           body: body.length > 160 ? body.slice(0, 157) + '…' : body,

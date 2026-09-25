@@ -9,6 +9,9 @@ const fmtDate = (d: string | null | undefined) =>
 const toDateInput = (d: string | null | undefined) => (d ? String(d).slice(0, 10) : '');
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
+// Institution name printed on the study certificate (editable per printout).
+const SCHOOL_NAME = 'Jnana Deepika School, Kyalanur';
+
 interface StudentHit {
   id: string; name: string; class?: { id: string; name: string } | null;
 }
@@ -19,16 +22,16 @@ interface StudentHit {
 interface Form {
   schoolName: string; admissionNo: string; name: string; relation: 'S/O' | 'D/O' | 'W/O';
   fatherName: string; village: string; taluk: string; district: string;
-  studiedAt: string; fromDate: string; toDate: string; fromStd: string; toStd: string;
+  studiedAt: string; fromYear: string; toYear: string; fromStd: string; toStd: string;
   passStd: string; dob: string; recordDate: string; leavingDate: string;
-  place: string; issueDate: string; principalName: string;
+  place: string; issueDate: string; principalName: string; tcNo: string; tcDate: string;
 }
 
 const emptyForm: Form = {
   schoolName: '', admissionNo: '', name: '', relation: 'S/O', fatherName: '',
-  village: '', taluk: '', district: '', studiedAt: '', fromDate: '', toDate: '',
+  village: '', taluk: '', district: '', studiedAt: '', fromYear: '', toYear: '',
   fromStd: '', toStd: '', passStd: '', dob: '', recordDate: '', leavingDate: '',
-  place: '', issueDate: todayInput(), principalName: '',
+  place: '', issueDate: todayInput(), principalName: '', tcNo: '', tcDate: '',
 };
 
 export default function StudyCertificatePage() {
@@ -37,6 +40,7 @@ export default function StudyCertificatePage() {
   const [results, setResults] = useState<StudentHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(emptyForm);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -65,8 +69,9 @@ export default function StudyCertificatePage() {
     const r = await fetch(`/api/students/${hit.id}`);
     if (!r.ok) return;
     const s = await r.json();
+    setPhotoUrl(s.photoUrl || null);
     setForm({
-      schoolName: schoolDefault.schoolName,
+      schoolName: SCHOOL_NAME,
       admissionNo: s.admissionNo || '',
       name: s.name,
       relation: s.gender === 'F' ? 'D/O' : 'S/O',
@@ -74,18 +79,20 @@ export default function StudyCertificatePage() {
       village: s.village || '',
       taluk: s.taluk || '',
       district: s.district || '',
-      studiedAt: schoolDefault.schoolName,
-      fromDate: toDateInput(s.joinedDate),
-      toDate: '',
-      fromStd: '',
-      toStd: s.class?.name || '',
-      passStd: '',
+      studiedAt: SCHOOL_NAME,
+      fromYear: s.studyFromYear || '',
+      toYear: s.studyToYear || '',
+      fromStd: s.studyFromStandard || '',
+      toStd: s.studyToStandard || s.class?.name || '',
+      passStd: s.studyToStandard || '',
       dob: toDateInput(s.dob),
       recordDate: toDateInput(s.joinedDate),
-      leavingDate: '',
+      leavingDate: toDateInput(s.schoolLeavingDate),
       place: '',
       issueDate: todayInput(),
       principalName: schoolDefault.principalName,
+      tcNo: s.tcNo || '',
+      tcDate: toDateInput(s.tcDate),
     });
     setSelected(true);
   };
@@ -144,14 +151,16 @@ export default function StudyCertificatePage() {
                 <Field label="Taluk"><Input value={form.taluk} onChange={(e) => set('taluk', e.target.value)} /></Field>
                 <Field label="District"><Input value={form.district} onChange={(e) => set('district', e.target.value)} /></Field>
                 <Field label="Studied at (school/college)"><Input value={form.studiedAt} onChange={(e) => set('studiedAt', e.target.value)} /></Field>
-                <Field label="From date"><Input type="date" value={form.fromDate} onChange={(e) => set('fromDate', e.target.value)} /></Field>
-                <Field label="To date"><Input type="date" value={form.toDate} onChange={(e) => set('toDate', e.target.value)} /></Field>
-                <Field label="From standard"><Input value={form.fromStd} onChange={(e) => set('fromStd', e.target.value)} placeholder="e.g. 1st" /></Field>
+                <Field label="Studied from (year)"><Input value={form.fromYear} onChange={(e) => set('fromYear', e.target.value)} placeholder="e.g. 2026-27" /></Field>
+                <Field label="Studied to (year)"><Input value={form.toYear} onChange={(e) => set('toYear', e.target.value)} placeholder="e.g. 2029-30" /></Field>
+                <Field label="From standard"><Input value={form.fromStd} onChange={(e) => set('fromStd', e.target.value)} placeholder="e.g. 8th" /></Field>
                 <Field label="To standard"><Input value={form.toStd} onChange={(e) => set('toStd', e.target.value)} placeholder="e.g. 10th" /></Field>
                 <Field label="Passed standard"><Input value={form.passStd} onChange={(e) => set('passStd', e.target.value)} placeholder="e.g. 10th" /></Field>
                 <Field label="Date of birth"><Input type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} /></Field>
                 <Field label="Record date"><Input type="date" value={form.recordDate} onChange={(e) => set('recordDate', e.target.value)} /></Field>
                 <Field label="Date of leaving"><Input type="date" value={form.leavingDate} onChange={(e) => set('leavingDate', e.target.value)} /></Field>
+                <Field label="T.C. number"><Input value={form.tcNo} onChange={(e) => set('tcNo', e.target.value)} placeholder="e.g. 123/2029-30" /></Field>
+                <Field label="T.C. date"><Input type="date" value={form.tcDate} onChange={(e) => set('tcDate', e.target.value)} /></Field>
                 <Field label="Place"><Input value={form.place} onChange={(e) => set('place', e.target.value)} placeholder="e.g. Kyalanur" /></Field>
                 <Field label="Issue date"><Input type="date" value={form.issueDate} onChange={(e) => set('issueDate', e.target.value)} /></Field>
                 <Field label="Headmaster / Principal name"><Input value={form.principalName} onChange={(e) => set('principalName', e.target.value)} /></Field>
@@ -167,7 +176,7 @@ export default function StudyCertificatePage() {
             ) : (
               <div className="bg-slate-100 rounded-lg p-4 overflow-x-auto">
                 <div className="scale-90 origin-top-left" style={{ width: '175mm' }}>
-                  <Certificate form={form} photoUrl={null} />
+                  <Certificate form={form} photoUrl={photoUrl} />
                 </div>
               </div>
             )}
@@ -177,7 +186,7 @@ export default function StudyCertificatePage() {
 
       {selected && (
         <div id="certificate" className="mt-6">
-          <Certificate form={form} photoUrl={null} />
+          <Certificate form={form} photoUrl={photoUrl} />
         </div>
       )}
     </>
@@ -231,9 +240,9 @@ function Certificate({ form, photoUrl }: { form: Form; photoUrl: string | null }
         </div>
         <div className="flex items-center flex-wrap gap-2">
           <span>School / College from</span>
-          <Box className="min-w-[110px] text-center font-normal">{fmtDate(form.fromDate)}</Box>
+          <Box className="min-w-[110px] text-center font-normal">{form.fromYear}</Box>
           <span>to</span>
-          <Box className="min-w-[110px] text-center font-normal">{fmtDate(form.toDate)}</Box>
+          <Box className="min-w-[110px] text-center font-normal">{form.toYear}</Box>
           <span>from</span>
           <Box className="min-w-[80px] text-center">{form.fromStd}</Box>
         </div>
@@ -255,6 +264,10 @@ function Certificate({ form, photoUrl }: { form: Form; photoUrl: string | null }
         <div className="flex items-center gap-2">
           <span className="whitespace-nowrap">Date of leaving School/College:</span>
           <Box className="min-w-[220px] text-center font-normal">{fmtDate(form.leavingDate)}</Box>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="whitespace-nowrap">T.C. No. &amp; Date:</span>
+          <Box className="min-w-[220px] text-center" red>{[form.tcNo, fmtDate(form.tcDate)].filter(Boolean).join(' · ')}</Box>
         </div>
         <div className="text-sm pt-1">This certificate issued according to records of our School/ College</div>
       </div>

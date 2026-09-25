@@ -46,6 +46,15 @@ async function updateDeliveryStatus(wamid: string | undefined, waStatus: string,
   }
 }
 
+// A WhatsApp reaction targets an earlier message by its wamid. It may live in the
+// two-way chat log (WaMessage) or in a template we sent (MessageDelivery), so update
+// both. `emoji` null means the parent removed their reaction.
+async function applyReaction(targetWamid: string | undefined, emoji: string | null) {
+  if (!targetWamid) return;
+  await prisma.waMessage.updateMany({ where: { waMessageId: targetWamid }, data: { reaction: emoji } });
+  await prisma.messageDelivery.updateMany({ where: { wamid: targetWamid }, data: { reaction: emoji } });
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const mode = sp.get('hub.mode');
@@ -74,15 +83,27 @@ export async function POST(req: NextRequest) {
             console.log('[WA-STATUS] log update error:', e?.message));
         }
         for (const msg of v.messages || []) {
-          const inText = msg.text?.body || msg.button?.text || msg.interactive?.list_reply?.title || msg.interactive?.button_reply?.title || '';
-          console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${inText}`);
+          // A reaction isn't a new message — it's an emoji the parent stuck on an
+          // earlier message. Attach it to that message (or clear it) and move on.
+          if (msg.type === 'reaction') {
+            console.log(`[WA-INBOUND] from=${msg.from} type=reaction emoji=${msg.reaction?.emoji || '(removed)'} on=${msg.reaction?.message_id}`);
+            await applyReaction(msg.reaction?.message_id, msg.reaction?.emoji || null)
+              .catch((e) => console.log('[WA-REACTION] apply error:', e?.message));
+            continue;
+          }
+          // Media messages (image/sticker/document/video/audio) carry a media id we
+          // fetch on demand via the media proxy; any caption is the message text.
+          const media = msg.image || msg.sticker || msg.document || msg.video || msg.audio;
+          const inText = msg.text?.body || msg.button?.text || msg.interactive?.list_reply?.title
+            || msg.interactive?.button_reply?.title || media?.caption || '';
+          console.log(`[WA-INBOUND] from=${msg.from} type=${msg.type} text=${inText}${media?.id ? ` media=${media.id}` : ''}`);
           // Reverse login-verification: the user sent us their one-time code.
           if (msg.type === 'text' && msg.text?.body && msg.from) {
             await matchInboundVerification(msg.from, msg.text.body).catch((e) => console.log('[WA-VERIFY] match error:', e?.message));
           }
           // Capture the reply so the office can see & answer it in-app (Communications → Replies).
           if (msg.from) {
-            await recordInboundMessage({ waMessageId: msg.id, from: msg.from, type: msg.type, text: inText || null })
+            await recordInboundMessage({ waMessageId: msg.id, from: msg.from, type: msg.type, text: inText || null, mediaId: media?.id || null })
               .catch((e) => console.log('[WA-INBOUND] store error:', e?.message));
           }
         }

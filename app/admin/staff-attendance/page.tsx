@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -49,9 +50,9 @@ export default function StaffAttendancePage() {
     try {
       const res = await fetch('/api/staff-attendance/cron/weekly-report', { method: 'POST' });
       const j = await res.json();
-      if (res.ok) alert(`WhatsApp reports (${j.month}): ${j.sent} sent, ${j.skipped} skipped, ${j.failed} failed.`);
-      else alert(`Could not send: ${j.error || 'error'}`);
-    } catch { alert('Could not send — network error.'); }
+      if (res.ok) toast.success(`WhatsApp reports (${j.month}): ${j.sent} sent, ${j.skipped} skipped, ${j.failed} failed.`);
+      else toast.error(`Could not send: ${j.error || 'error'}`);
+    } catch { toast.error('Could not send — network error.'); }
     setSending(false);
   };
 
@@ -281,8 +282,9 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || 'Failed');
+      toast.success('Saved.');
       onDone();
-    } catch (e: any) { setError(e?.message || 'Failed'); } finally { setBusy(false); }
+    } catch (e: any) { const m = e?.message || 'Failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   };
 
   return (
@@ -361,7 +363,8 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
                 const j = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(j.error || 'Failed');
                 const d = (j.details || [])[0];
-                alert(d?.status === 'sent' ? `Sent to ${row.name} on WhatsApp.` : `Not sent: ${d?.reason || d?.error || 'staff has no phone or is opted out'}`);
+                if (d?.status === 'sent') toast.success(`Sent to ${row.name} on WhatsApp.`);
+                else toast.error(`Not sent: ${d?.reason || d?.error || 'staff has no phone or is opted out'}`);
               } catch (e: any) { setError(e?.message || 'Failed'); } finally { setBusy(false); }
             }}>Send WhatsApp report now</Button>
           </div>

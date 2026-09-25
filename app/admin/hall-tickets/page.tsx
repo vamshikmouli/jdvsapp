@@ -8,11 +8,15 @@ const shortClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '—')
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
 
 interface AssessmentOpt { id: string; name: string; type: string; term: string | null }
-interface TTRow { subject: string; date: string; time: string }
+interface TTRow { date: string; day: string; subject: string; session: string; time: string; custom?: Record<string, string> }
 interface Config {
   title: string; examLabel: string; instructions: string;
   fields: { photo: boolean; admissionNo: boolean; class: boolean; section: boolean; roll: boolean; dob: boolean; father: boolean; mother: boolean; address: boolean };
   showTimetable: boolean; timetable: TTRow[];
+  // Which timetable columns to print (Subject is always shown).
+  ttColumns: { date: boolean; day: boolean; session: boolean; time: boolean; invigilatorSign: boolean };
+  // Extra columns the admin adds — printed between Time and Invigilator Sign.
+  customColumns: { id: string; label: string }[];
   signatories: string[]; perPage: 1 | 2;
 }
 
@@ -22,7 +26,9 @@ const DEFAULT_CONFIG: Config = {
   instructions: '1. Bring this hall ticket to every exam.\n2. Reach the exam hall 15 minutes early.\n3. Mobile phones are not allowed.\n4. Clear all dues before the exam.',
   fields: { photo: true, admissionNo: true, class: true, section: true, roll: false, dob: true, father: true, mother: false, address: false },
   showTimetable: true, timetable: [],
-  signatories: ['Class Teacher', 'Principal'], perPage: 2,
+  ttColumns: { date: true, day: true, session: true, time: true, invigilatorSign: true },
+  customColumns: [],
+  signatories: ['Class Teacher', 'Head Master', 'Principal'], perPage: 2,
 };
 
 export default function HallTicketsPage() {
@@ -77,10 +83,15 @@ export default function HallTicketsPage() {
   const assessment = assessments.find((a) => a.id === aId);
   const examTitle = cfg.examLabel || (assessment ? assessment.name + (assessment.term ? ` · ${assessment.term}` : '') : '');
 
-  const loadTimetableSubjects = () => set('timetable', classSubjects.map((s) => ({ subject: s.name, date: '', time: '' })));
-  const addTT = () => set('timetable', [...cfg.timetable, { subject: '', date: '', time: '' }]);
-  const setTT = (i: number, key: keyof TTRow, v: string) => set('timetable', cfg.timetable.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
+  const loadTimetableSubjects = () => set('timetable', classSubjects.map((s) => ({ date: '', day: '', subject: s.name, session: '', time: '' })));
+  const addTT = () => set('timetable', [...cfg.timetable, { date: '', day: '', subject: '', session: '', time: '' }]);
+  const setTT = (i: number, key: 'date' | 'day' | 'subject' | 'session' | 'time', v: string) => set('timetable', cfg.timetable.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
   const delTT = (i: number) => set('timetable', cfg.timetable.filter((_, j) => j !== i));
+  // Admin-added custom columns.
+  const setTTCustom = (i: number, colId: string, v: string) => set('timetable', cfg.timetable.map((r, j) => (j === i ? { ...r, custom: { ...(r.custom || {}), [colId]: v } } : r)));
+  const addCol = () => set('customColumns', [...cfg.customColumns, { id: `col${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, label: '' }]);
+  const renameCol = (ci: number, label: string) => set('customColumns', cfg.customColumns.map((c, j) => (j === ci ? { ...c, label } : c)));
+  const removeCol = (ci: number) => set('customColumns', cfg.customColumns.filter((_, j) => j !== ci));
 
   const ready = aId && cId && students && students.length > 0;
 
@@ -91,10 +102,21 @@ export default function HallTicketsPage() {
         @media print {
           body { visibility: hidden; }
           #tickets, #tickets * { visibility: visible; }
-          #tickets { position: absolute; left: 0; top: 0; width: 100%; }
+          /* Single vertical column: tickets stack top-to-bottom, never side by side.
+             display/width/float/column-count are pinned so no stray rule can lay
+             the cards out horizontally. */
+          #tickets { position: absolute; left: 0; top: 0; width: 100%; display: block; column-count: 1; }
           .no-print { display: none !important; }
-          .ht-card { box-shadow: none !important; page-break-inside: avoid; margin: 0 0 5mm 0; }
-          .ht-2up { height: 134mm; overflow: hidden; }   /* exactly two per A4 page */
+          .ht-card {
+            box-shadow: none !important;
+            display: block; width: 100%; float: none; clear: both;
+            break-inside: avoid; page-break-inside: avoid;
+            margin: 0 0 5mm 0;
+          }
+          /* 2-up sizing, but the card GROWS with content instead of clipping it —
+             a tall ticket just pushes its partner to the next page (page-break-inside
+             is avoided), so nothing is ever cut off the sheet. */
+          .ht-2up { min-height: 130mm; }
         }
       `}</style>
 
@@ -142,13 +164,36 @@ export default function HallTicketsPage() {
                   <Button size="sm" onClick={loadTimetableSubjects} disabled={!cId}>Load class subjects</Button>
                   <Button size="sm" icon="Plus" onClick={addTT}>Add row</Button>
                 </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 border-t border-slate-100 pt-2">
+                  <span className="text-slate-400">Columns:</span>
+                  {([['date', 'Date'], ['day', 'Day'], ['session', 'Session'], ['time', 'Time'], ['invigilatorSign', 'Invigilator sign']] as [keyof Config['ttColumns'], string][]).map(([k, label]) => (
+                    <label key={k} className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={cfg.ttColumns[k]} onChange={(e) => set('ttColumns', { ...cfg.ttColumns, [k]: e.target.checked })} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />{label}
+                    </label>
+                  ))}
+                </div>
+                <div className="border-t border-slate-100 pt-2 space-y-1.5">
+                  <div className="text-xs text-slate-400">Custom columns</div>
+                  {cfg.customColumns.map((col, ci) => (
+                    <div key={col.id} className="flex items-center gap-1.5">
+                      <Input value={col.label} onChange={(e) => renameCol(ci, e.target.value)} placeholder="Column name (e.g. Room, Marks, Portion)" className="flex-1" />
+                      <button onClick={() => removeCol(ci)} className="text-slate-300 hover:text-danger-600 p-1" title="Remove column"><Icon name="X" size={15} /></button>
+                    </div>
+                  ))}
+                  <Button size="sm" icon="Plus" onClick={addCol}>Add column</Button>
+                </div>
                 {cfg.timetable.length === 0 ? <p className="text-xs text-slate-400">Add the subjects with their date & time.</p> : (
                   <div className="space-y-1.5">
                     {cfg.timetable.map((r, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <Input value={r.subject} onChange={(e) => setTT(i, 'subject', e.target.value)} placeholder="Subject" className="flex-1" />
-                        <Input value={r.date} onChange={(e) => setTT(i, 'date', e.target.value)} placeholder="Date" className="w-24" />
-                        <Input value={r.time} onChange={(e) => setTT(i, 'time', e.target.value)} placeholder="Time" className="w-24" />
+                      <div key={i} className="flex flex-wrap items-center gap-1.5">
+                        {cfg.ttColumns.date && <Input value={r.date} onChange={(e) => setTT(i, 'date', e.target.value)} placeholder="Date" className="w-20" />}
+                        {cfg.ttColumns.day && <Input value={r.day ?? ''} onChange={(e) => setTT(i, 'day', e.target.value)} placeholder="Day" className="w-16" />}
+                        <Input value={r.subject} onChange={(e) => setTT(i, 'subject', e.target.value)} placeholder="Subject" className="flex-1 min-w-[7rem]" />
+                        {cfg.ttColumns.session && <Input value={r.session ?? ''} onChange={(e) => setTT(i, 'session', e.target.value)} placeholder="FN/AN" className="w-16" />}
+                        {cfg.ttColumns.time && <Input value={r.time} onChange={(e) => setTT(i, 'time', e.target.value)} placeholder="Time" className="w-20" />}
+                        {cfg.customColumns.map((col) => (
+                          <Input key={col.id} value={r.custom?.[col.id] ?? ''} onChange={(e) => setTTCustom(i, col.id, e.target.value)} placeholder={col.label || 'Value'} className="w-24" />
+                        ))}
                         <button onClick={() => delTT(i)} className="text-slate-300 hover:text-danger-600 p-1"><Icon name="X" size={15} /></button>
                       </div>
                     ))}
@@ -238,13 +283,26 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
         <div className="mt-3">
           <table className="w-full text-[12px] border border-slate-400 border-collapse">
             <thead><tr className="bg-slate-100">
+              {cfg.ttColumns.date && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Date</th>}
+              {cfg.ttColumns.day && <th className="border border-slate-400 px-2 py-1 text-left">Day</th>}
               <th className="border border-slate-400 px-2 py-1 text-left">Subject</th>
-              <th className="border border-slate-400 px-2 py-1 text-left w-28">Date</th>
-              <th className="border border-slate-400 px-2 py-1 text-left w-28">Time</th>
+              {cfg.ttColumns.session && <th className="border border-slate-400 px-2 py-1 text-left">Session</th>}
+              {cfg.ttColumns.time && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Time</th>}
+              {cfg.customColumns.map((col) => <th key={col.id} className="border border-slate-400 px-2 py-1 text-left">{col.label}</th>)}
+              {cfg.ttColumns.invigilatorSign && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap w-24">Invigilator Sign</th>}
             </tr></thead>
             <tbody>
               {cfg.timetable.map((r, i) => (
-                <tr key={i}><td className="border border-slate-400 px-2 py-1">{r.subject}</td><td className="border border-slate-400 px-2 py-1">{r.date}</td><td className="border border-slate-400 px-2 py-1">{r.time}</td></tr>
+                <tr key={i}>
+                  {cfg.ttColumns.date && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.date}</td>}
+                  {cfg.ttColumns.day && <td className="border border-slate-400 px-2 py-1">{r.day}</td>}
+                  <td className="border border-slate-400 px-2 py-1">{r.subject}</td>
+                  {cfg.ttColumns.session && <td className="border border-slate-400 px-2 py-1">{r.session}</td>}
+                  {cfg.ttColumns.time && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.time}</td>}
+                  {cfg.customColumns.map((col) => <td key={col.id} className="border border-slate-400 px-2 py-1">{r.custom?.[col.id] || ''}</td>)}
+                  {/* blank cell — the invigilator signs here per exam */}
+                  {cfg.ttColumns.invigilatorSign && <td className="border border-slate-400 px-2 py-1"></td>}
+                </tr>
               ))}
             </tbody>
           </table>

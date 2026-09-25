@@ -450,6 +450,7 @@ const KIND_LABEL: Record<string, string> = {
   ATTENDANCE_REMINDER: 'Attendance reminders',
   ATTENDANCE_ABSENCE: 'Absence & leave alerts',
   ATTENDANCE_MONTHLY: 'Monthly attendance',
+  ATTENDANCE_STATUS: 'Attendance status (classes)',
   ABSENCE_STREAK: '3+ day absentees',
   ANNOUNCEMENT: 'Announcements',
   STAFF_ATTENDANCE_REPORT: 'Attendance reports',
@@ -750,6 +751,8 @@ function ReminderDrawer({ classes, onClose, onSent }: { classes: ClassOpt[]; onC
   const [mode, setMode] = useState<'all' | 'overdue' | 'above'>('all');
   const [minBalance, setMinBalance] = useState('');
   const [classId, setClassId] = useState('');
+  // Recency buffer: skip families who paid a FEE recently. 'none' = no filter (default).
+  const [recency, setRecency] = useState<'none' | '1m' | '3m' | 'never'>('none');
   const [title, setTitle] = useState('Fee payment reminder');
   // Same personalized template as Fees → Notify parents (mirrors the approved
   // WhatsApp "school_fee_reminder"). Tokens are filled per student.
@@ -767,12 +770,12 @@ Please pay at the school office. Thank you.`);
   useEffect(() => {
     if (recipients !== 'dues') { setPreview(null); return; }
     const t = setTimeout(async () => {
-      const sp = new URLSearchParams({ mode, minBalance: minBalance || '0', ...(classId ? { classId } : {}) });
+      const sp = new URLSearchParams({ mode, minBalance: minBalance || '0', recency, ...(classId ? { classId } : {}) });
       const r = await fetch(`/api/circulars/fee-preview?${sp}`);
       if (r.ok) setPreview(await r.json());
     }, 300);
     return () => clearTimeout(t);
-  }, [recipients, mode, minBalance, classId]);
+  }, [recipients, mode, minBalance, classId, recency]);
 
   const send = async () => {
     setBusy(true); setError('');
@@ -780,7 +783,7 @@ Please pay at the school office. Thank you.`);
       // Personalized per student + WhatsApp to both parents (same flow as Fees → Notify parents).
       const res = await fetch('/api/circulars/bulk-reminder', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, body, feeScope: recipients === 'school' ? 'school' : 'dues', mode, minBalance: Number(minBalance) || 0, classId: classId || undefined }),
+        body: JSON.stringify({ title, body, feeScope: recipients === 'school' ? 'school' : 'dues', mode, minBalance: Number(minBalance) || 0, classId: classId || undefined, recency }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
@@ -853,6 +856,14 @@ Please pay at the school office. Thank you.`);
               </Select></Field>
               {mode === 'above' && <Field label="Min balance (₹)"><Input type="number" value={minBalance} onChange={(e) => setMinBalance(e.target.value)} placeholder="5000" /></Field>}
               <Field label="Class (optional)"><Select value={classId} onChange={(e) => setClassId(e.target.value)}><option value="">All classes</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
+              <Field label="Skip recent payers" hint="Don't remind families who paid a fee within this window">
+                <Select value={recency} onChange={(e) => setRecency(e.target.value as any)}>
+                  <option value="none">No — remind everyone with dues</option>
+                  <option value="1m">Not paid in the last 1 month</option>
+                  <option value="3m">Not paid in the last 3 months</option>
+                  <option value="never">Never paid a fee this year</option>
+                </Select>
+              </Field>
             </div>
             <div className="text-sm text-slate-600 bg-slate-50 rounded-md px-3 py-2">
               {preview ? <><b className="text-slate-900">{preview.count}</b> students will be reminded · <b className="text-danger-700">{feeMoney(preview.totalDue)}</b> total due</> : 'Calculating…'}

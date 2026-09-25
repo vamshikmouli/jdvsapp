@@ -36,7 +36,7 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STUDENTS_MANAGE')) {
+    if (!session || !can(session, 'STUDENTS_UPDATE')) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 });
     }
 
@@ -83,6 +83,14 @@ export async function PATCH(
         noOfDependents: body.noOfDependents != null && body.noOfDependents !== '' ? Number(body.noOfDependents) : null,
         joinedDate: body.joinedDate ? new Date(body.joinedDate) : null,
         status: body.status,
+        tcNo: body.tcNo || null,
+        tcDate: body.tcDate ? new Date(body.tcDate) : null,
+        schoolLeavingDate: body.schoolLeavingDate ? new Date(body.schoolLeavingDate) : null,
+        studyFromYear: body.studyFromYear || null,
+        studyToYear: body.studyToYear || null,
+        studyFromStandard: body.studyFromStandard || null,
+        studyToStandard: body.studyToStandard || null,
+        customFields: (body.customFields && typeof body.customFields === 'object') ? body.customFields : undefined,
       },
       include: { class: { select: { id: true, name: true } } },
     });
@@ -110,7 +118,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STUDENTS_MANAGE')) {
+    if (!session || !can(session, 'STUDENTS_DELETE')) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 });
     }
 

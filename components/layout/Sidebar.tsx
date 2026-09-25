@@ -7,7 +7,8 @@ import { signOut, useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { STAFF_NAV, ROLE_META } from '@/lib/navigation';
 import { useBranding } from '@/components/useBranding';
-import { Surface } from '@prisma/client';
+import { permAllows } from '@/lib/rbac/crud';
+import { Surface, Permission } from '@prisma/client';
 
 function initialsOf(name: string) {
   return name
@@ -66,10 +67,15 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
   const roleName = (session?.user as any)?.roleName || ROLE_META[surface]?.title || 'Staff';
   const meta = ROLE_META[surface] || ROLE_META.ADMIN;
 
-  // Show only the nav items this user has permission for (no perm = always shown)
+  // Show only the nav items this user has permission for (no perm = always shown).
+  // `perm` may be a single key or a list (any-of); permAllows honours the
+  // MANAGE⇄CRUD bridge so nav visibility matches what the APIs actually allow.
+  const permSet = new Set(perms as Permission[]);
+  const allowed = (need: Permission | Permission[] | undefined) =>
+    !need || (Array.isArray(need) ? need.some((p) => permAllows(permSet, p)) : permAllows(permSet, need));
   const groups = STAFF_NAV.map((g) => ({
     ...g,
-    items: g.items.filter((it) => !it.perm || perms.includes(it.perm)),
+    items: g.items.filter((it) => allowed(it.perm)),
   })).filter((g) => g.items.length > 0);
 
   const hrefFor = (id: string) => `/admin/${id}`;

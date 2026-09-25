@@ -1,7 +1,8 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/lib/hooks/usePermissions';
 import {
   Button,
   Card,
@@ -24,6 +25,8 @@ import {
   type SortState,
 } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { CustomFieldsModal } from './CustomFieldsModal';
+import { parseCustomFieldDefs, type CustomFieldDef } from '@/lib/customFields';
 import { downloadBackup } from '@/lib/utils';
 import { parseContactTargets, normalizeContactTargets, contactTargetsLabel, type ContactTarget } from '@/lib/contactTargets';
 import * as XLSX from 'xlsx';
@@ -69,6 +72,14 @@ interface Student {
   noOfDependents?: number | null;
   joinedDate?: string | null;
   status: 'ACTIVE' | 'INACTIVE';
+  tcNo?: string | null;
+  tcDate?: string | null;
+  schoolLeavingDate?: string | null;
+  studyFromYear?: string | null;
+  studyToYear?: string | null;
+  studyFromStandard?: string | null;
+  studyToStandard?: string | null;
+  customFields?: Record<string, string> | null;
 }
 
 const emptyForm = {
@@ -77,7 +88,7 @@ const emptyForm = {
   name: '',
   classId: '',
   roll: '',
-  gender: 'M' as 'M' | 'F',
+  gender: '' as '' | 'M' | 'F',
   dob: '',
   religion: '',
   category: '',
@@ -102,6 +113,15 @@ const emptyForm = {
   noOfDependents: '',
   joinedDate: '',
   status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
+  // Transfer / Study certificate
+  tcNo: '',
+  tcDate: '',
+  schoolLeavingDate: '',
+  studyFromYear: '',
+  studyToYear: '',
+  studyFromStandard: '',
+  studyToStandard: '10th',
+  customFields: {} as Record<string, string>,
 };
 
 function shortClassName(name: string) {
@@ -109,14 +129,16 @@ function shortClassName(name: string) {
 }
 
 export default function StudentsPage() {
-  const { data: session } = useSession();
-  const perms = ((session?.user as any)?.perms as string[]) || [];
-  const canManage = perms.includes('STUDENTS_MANAGE');
-  const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
+  const { can } = usePermissions();
+  const canCreate = can('STUDENTS_CREATE');
+  const canUpdate = can('STUDENTS_UPDATE');
+  const canDelete = can('STUDENTS_DELETE');
+  const canManage = canCreate || canUpdate || canDelete; // any student write ability
+  const canExport = can('REPORTS_EXPORT') || can('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);
-    try { await downloadBackup('students'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try { await downloadBackup('students'); } catch (e) { toast.error(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
 
   const [students, setStudents] = useState<Student[]>([]);
@@ -133,6 +155,22 @@ export default function StudentsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [showMore, setShowMore] = useState(false);            // "Add more details" expander
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [idPreview, setIdPreview] = useState('');             // live "Will be created as JDVS…"
+  const [activeYearLabel, setActiveYearLabel] = useState(''); // e.g. "2026-27" — drives the leaving-date default
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([]);
+  const [fieldsOpen, setFieldsOpen] = useState(false);       // "Custom fields" manager modal
+  const canManageFields = can('SETTINGS_MANAGE');
+  const setCustom = (id: string, v: string) => setForm((f) => ({ ...f, customFields: { ...f.customFields, [id]: v } }));
+  const clearErr = (k: string) => setFieldErrors((x) => (x[k] ? { ...x, [k]: '' } : x));
+  const errRing = (k: string) => (fieldErrors[k] ? 'ring-1 ring-danger-400' : '');
+  // Default school-leaving date = 10 April of the academic year's END year (2026-27 → 2027-04-10).
+  const leavingDefault = (yearLabel: string) => {
+    const m = String(yearLabel).match(/(\d{4})/);
+    if (!m) return '';
+    return `${Number(m[1]) + 1}-04-10`;
+  };
 
   // Delete state
   const [deleting, setDeleting] = useState<Student | null>(null);
@@ -146,7 +184,7 @@ export default function StudentsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetResult, setResetResult] = useState<{ name: string; tempPin: string } | null>(null);
   const resetParentPin = async (student: Student) => {
-    if (!student.guardianUserId) { alert('No parent login linked to this student.'); return; }
+    if (!student.guardianUserId) { toast.error('No parent login linked to this student.'); return; }
     if (!confirm(`Reset the parent login PIN for ${student.name}'s family? They get a temporary PIN and must set a new one on next login. This signs them out of all devices.`)) return;
     setResetting(true);
     try {
@@ -155,7 +193,7 @@ export default function StudentsPage() {
       if (!res.ok) throw new Error(j.error || 'Reset failed');
       setResetResult({ name: j.name, tempPin: j.tempPin });
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Reset failed');
+      toast.error(e instanceof Error ? e.message : 'Reset failed');
     } finally { setResetting(false); }
   };
 
@@ -188,6 +226,16 @@ export default function StudentsPage() {
 
   useEffect(() => {
     fetchClasses();
+    // Active academic year → default school-leaving date + "studied from" year.
+    fetch('/api/years').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      const yl = d?.years || [];
+      const active = yl.find((y: any) => y.isActive) || yl[0];
+      if (active?.label) setActiveYearLabel(active.label);
+    }).catch(() => {});
+    // Admin-defined custom fields — rendered dynamically on the form.
+    fetch('/api/settings/student-fields').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d?.fields) setCustomFieldDefs(parseCustomFieldDefs(d.fields));
+    }).catch(() => {});
   }, [fetchClasses]);
 
   useEffect(() => {
@@ -213,9 +261,28 @@ export default function StudentsPage() {
   // --- Form handlers ---
   const openAdd = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, schoolLeavingDate: leavingDefault(activeYearLabel), studyFromYear: activeYearLabel });
     setFormError('');
+    setFieldErrors({});
+    setIdPreview('');
+    setShowMore(false);
     setFormOpen(true);
+  };
+
+  // Class drives the auto roll + the student-ID preview.
+  const onClassChange = async (classId: string) => {
+    setForm((f) => ({ ...f, classId }));
+    clearErr('classId');
+    setIdPreview('');
+    if (!classId || editing) return; // don't auto-touch roll/ID when editing
+    try {
+      const r = await fetch(`/api/students/next-roll?classId=${classId}`);
+      if (r.ok) {
+        const d = await r.json();
+        setForm((f) => ({ ...f, roll: f.roll || d.roll || '' }));
+        setIdPreview(d.studentId || '');
+      }
+    } catch { /* preview is best-effort */ }
   };
 
   const openEdit = (s: Student) => {
@@ -251,8 +318,19 @@ export default function StudentsPage() {
       noOfDependents: s.noOfDependents != null ? String(s.noOfDependents) : '',
       joinedDate: s.joinedDate ? String(s.joinedDate).slice(0, 10) : '',
       status: s.status,
+      tcNo: s.tcNo || '',
+      tcDate: s.tcDate ? String(s.tcDate).slice(0, 10) : '',
+      schoolLeavingDate: s.schoolLeavingDate ? String(s.schoolLeavingDate).slice(0, 10) : '',
+      studyFromYear: s.studyFromYear || '',
+      studyToYear: s.studyToYear || '',
+      studyFromStandard: s.studyFromStandard || '',
+      studyToStandard: s.studyToStandard || '10th',
+      customFields: (s.customFields && typeof s.customFields === 'object' ? s.customFields : {}) as Record<string, string>,
     });
     setFormError('');
+    setFieldErrors({});
+    setIdPreview('');
+    setShowMore(true); // editing: show all fields
     setFormOpen(true);
   };
 
@@ -276,12 +354,22 @@ export default function StudentsPage() {
   };
 
   const saveStudent = async () => {
+    // Inline, per-field validation — messages show under each field, not in a banner.
+    const errs: Record<string, string> = {};
+    if (!form.classId) errs.classId = 'Select a class';
+    if (!form.name.trim()) errs.name = 'Enter the full name';
+    if (form.gender !== 'M' && form.gender !== 'F') errs.gender = 'Select gender';
+    const hasContact =
+      (form.fatherName.trim() && form.fatherPhone.trim()) ||
+      (form.motherName.trim() && form.motherPhone.trim()) ||
+      (form.altGuardianName.trim() && form.altGuardianPhone.trim());
+    if (!hasContact) errs.contact = 'Enter at least one contact (father, mother or guardian) with both name and phone';
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return; // all mandatory fields are above the fold
+
     setSaving(true);
     setFormError('');
     try {
-      if (!form.name.trim()) throw new Error('Student name is required');
-      if (!form.fatherName.trim() && !form.motherName.trim()) throw new Error('Enter at least a father or mother name');
-
       const payload = {
         id: form.id || undefined,
         admissionNo: form.admissionNo.trim() || null,
@@ -313,6 +401,14 @@ export default function StudentsPage() {
         noOfDependents: form.noOfDependents.trim() || null,
         joinedDate: form.joinedDate || null,
         status: form.status,
+        tcNo: form.tcNo.trim() || null,
+        tcDate: form.tcDate || null,
+        schoolLeavingDate: form.schoolLeavingDate || null,
+        studyFromYear: form.studyFromYear.trim() || null,
+        studyToYear: form.studyToYear.trim() || null,
+        studyFromStandard: form.studyFromStandard.trim() || null,
+        studyToStandard: form.studyToStandard.trim() || null,
+        customFields: form.customFields,
       };
 
       const res = await fetch(
@@ -329,9 +425,12 @@ export default function StudentsPage() {
       }
 
       setFormOpen(false);
+      toast.success(editing ? 'Student updated.' : 'Student added.');
       await Promise.all([fetchStudents(), fetchClasses()]);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to save student');
+      const m = err instanceof Error ? err.message : 'Failed to save student';
+      setFormError(m);
+      toast.error(m);
     } finally {
       setSaving(false);
     }
@@ -385,11 +484,12 @@ export default function StudentsPage() {
               </div>
             ))}
         </div>
-        {(canExport || canManage) && (
+        {(canExport || canManage || canManageFields) && (
           <div className="flex items-center gap-2 flex-wrap">
+            {canManageFields && <Button icon="SlidersHorizontal" onClick={() => setFieldsOpen(true)}>Custom fields</Button>}
             {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
-            {canManage && <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>}
-            {canManage && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add student</Button>}
+            {canCreate && <Button icon="Upload" onClick={() => setImportOpen(true)}>Import</Button>}
+            {canCreate && <Button kind="primary" icon="UserPlus" onClick={openAdd}>Add student</Button>}
           </div>
         )}
       </div>
@@ -654,133 +754,72 @@ export default function StudentsPage() {
             {formError}
           </div>
         )}
-        {/* Photo */}
+
+        {/* Photo — top of the form, optional */}
         <div className="flex items-center gap-4 mb-5">
           <div className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
-            {form.photoUrl ? (
-              <img src={form.photoUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <Icon name="ImagePlus" size={26} className="text-slate-300" />
-            )}
+            {form.photoUrl ? (<img src={form.photoUrl} alt="" className="w-full h-full object-cover" />) : (<Icon name="ImagePlus" size={26} className="text-slate-300" />)}
           </div>
           <div>
             <div className="flex items-center gap-3">
               <label className="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-700 cursor-pointer">
                 <Icon name="Upload" size={15} /> {uploading ? 'Uploading…' : form.photoUrl ? 'Change photo' : 'Upload photo'}
-                <input type="file" accept="image/*" className="hidden" disabled={uploading}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+                <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
               </label>
               <label className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-purple-700 cursor-pointer">
                 <Icon name="Camera" size={15} /> Camera
-                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
               </label>
             </div>
-            {form.photoUrl && (
-              <button type="button" onClick={() => setForm({ ...form, photoUrl: '' })} className="block text-xs text-slate-400 hover:text-danger-600 mt-1">Remove</button>
-            )}
-            <p className="text-[11px] text-slate-400 mt-1">JPG/PNG, up to 5 MB. You can crop before saving.</p>
+            {form.photoUrl && (<button type="button" onClick={() => setForm({ ...form, photoUrl: '' })} className="block text-xs text-slate-400 hover:text-danger-600 mt-1">Remove</button>)}
+            <p className="text-[11px] text-slate-400 mt-1">Optional · JPG/PNG up to 5 MB. You can crop before saving.</p>
           </div>
         </div>
 
-        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Student details</div>
+        {/* ---------- Mandatory ---------- */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Full name">
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Student name" />
-          </Field>
-          {!editing && (
-            <Field label="Student ID" hint="Leave blank to auto-generate">
-              <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="JD2026-0001" />
-            </Field>
-          )}
-          <Field label="Admission no." hint="Written in the admission register">
-            <Input value={form.admissionNo} onChange={(e) => setForm({ ...form, admissionNo: e.target.value })} placeholder="e.g. 76/2025-26" />
-          </Field>
-          <Field label="Admission date">
-            <Input type="date" value={form.joinedDate} onChange={(e) => setForm({ ...form, joinedDate: e.target.value })} />
-          </Field>
-          <Field label="Class">
-            <Select value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>
-              <option value="">Unassigned</option>
+          <Field label="Class" error={fieldErrors.classId}>
+            <Select value={form.classId} onChange={(e) => onClassChange(e.target.value)} className={errRing('classId')}>
+              <option value="">Select class…</option>
               {classes.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </Select>
           </Field>
-          <Field label="Roll no">
-            <Input value={form.roll} onChange={(e) => setForm({ ...form, roll: e.target.value })} placeholder="01" />
+          <Field label="Full name" error={fieldErrors.name}>
+            <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); clearErr('name'); }} placeholder="Student name" className={errRing('name')} />
           </Field>
-          <Field label="Gender">
-            <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value as 'M' | 'F' })}>
+          <Field label="Roll no" hint={editing ? undefined : 'Auto-filled from the class — change only if you know it'}>
+            <Input value={form.roll} onChange={(e) => setForm({ ...form, roll: e.target.value })} placeholder="auto" />
+          </Field>
+          <Field label="Gender" error={fieldErrors.gender}>
+            <Select value={form.gender} onChange={(e) => { setForm({ ...form, gender: e.target.value as '' | 'M' | 'F' }); clearErr('gender'); }} className={errRing('gender')}>
+              <option value="">Select…</option>
               <option value="M">Boy</option>
               <option value="F">Girl</option>
             </Select>
           </Field>
-          <Field label="Date of birth">
-            <Input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} />
-          </Field>
-          <Field label="Religion">
-            <Input value={form.religion} onChange={(e) => setForm({ ...form, religion: e.target.value })} placeholder="Hindu / Muslim / Christian…" />
-          </Field>
-          <Field label="Category">
-            <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              <option value="">—</option>
-              <option value="General">General</option>
-              <option value="OBC">OBC</option>
-              <option value="SC">SC</option>
-              <option value="ST">ST</option>
-              <option value="EWS">EWS</option>
-            </Select>
-          </Field>
-          <Field label="Caste">
-            <Input value={form.caste} onChange={(e) => setForm({ ...form, caste: e.target.value })} placeholder="Caste" />
-          </Field>
-          <Field label="Place of birth">
-            <Input value={form.placeOfBirth} onChange={(e) => setForm({ ...form, placeOfBirth: e.target.value })} placeholder="Town / city" />
-          </Field>
-          <Field label="Mother tongue">
-            <Input value={form.motherTongue} onChange={(e) => setForm({ ...form, motherTongue: e.target.value })} placeholder="Telugu / Kannada / Hindi…" />
-          </Field>
-          <Field label="Aadhar number">
-            <Input value={form.aadharNumber} onChange={(e) => setForm({ ...form, aadharNumber: e.target.value })} placeholder="XXXX XXXX XXXX" />
-          </Field>
-          <Field label="Previous school">
-            <Input value={form.previousSchool} onChange={(e) => setForm({ ...form, previousSchool: e.target.value })} placeholder="Name of previous school" />
-          </Field>
-          <Field label="Status">
-            <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </Select>
-          </Field>
         </div>
+        {!editing && idPreview && (
+          <p className="mt-2 text-xs text-slate-500">Student ID will be <span className="font-mono font-semibold text-slate-700">{idPreview}</span></p>
+        )}
 
-        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2 mt-5">Parents / guardian</div>
+        {/* Parent / guardian — at least one name + phone */}
+        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 mt-5">Parent / guardian</div>
+        <p className="text-[11px] text-slate-400 mb-2">Enter at least one — a login is created for each contact with a name + phone (username &amp; PIN = the phone number; siblings share by number).</p>
+        {fieldErrors.contact && <p className="text-xs text-danger-600 mb-2">{fieldErrors.contact}</p>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Father name">
-            <Input value={form.fatherName} onChange={(e) => setForm({ ...form, fatherName: e.target.value })} placeholder="Father's name" />
-          </Field>
-          <Field label="Father phone">
-            <Input value={form.fatherPhone} onChange={(e) => setForm({ ...form, fatherPhone: e.target.value })} placeholder="98xxxxxxxx" />
-          </Field>
-          <Field label="Mother name">
-            <Input value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} placeholder="Mother's name" />
-          </Field>
-          <Field label="Mother phone">
-            <Input value={form.motherPhone} onChange={(e) => setForm({ ...form, motherPhone: e.target.value })} placeholder="98xxxxxxxx" />
-          </Field>
-          <Field label="Guardian name" hint="Only if the contact isn't a parent">
-            <Input value={form.altGuardianName} onChange={(e) => setForm({ ...form, altGuardianName: e.target.value })} placeholder="Guardian's name" />
-          </Field>
-          <Field label="Guardian phone">
-            <Input value={form.altGuardianPhone} onChange={(e) => setForm({ ...form, altGuardianPhone: e.target.value })} placeholder="98xxxxxxxx" />
-          </Field>
+          <Field label="Father name"><Input value={form.fatherName} onChange={(e) => { setForm({ ...form, fatherName: e.target.value }); clearErr('contact'); }} placeholder="Father's name" className={errRing('contact')} /></Field>
+          <Field label="Father phone"><Input value={form.fatherPhone} onChange={(e) => { setForm({ ...form, fatherPhone: e.target.value }); clearErr('contact'); }} placeholder="98xxxxxxxx" className={errRing('contact')} /></Field>
+          <Field label="Mother name"><Input value={form.motherName} onChange={(e) => { setForm({ ...form, motherName: e.target.value }); clearErr('contact'); }} placeholder="Mother's name" className={errRing('contact')} /></Field>
+          <Field label="Mother phone"><Input value={form.motherPhone} onChange={(e) => { setForm({ ...form, motherPhone: e.target.value }); clearErr('contact'); }} placeholder="98xxxxxxxx" className={errRing('contact')} /></Field>
+          <Field label="Guardian name" hint="Only if the contact isn't a parent"><Input value={form.altGuardianName} onChange={(e) => { setForm({ ...form, altGuardianName: e.target.value }); clearErr('contact'); }} placeholder="Guardian's name" className={errRing('contact')} /></Field>
+          <Field label="Guardian phone"><Input value={form.altGuardianPhone} onChange={(e) => { setForm({ ...form, altGuardianPhone: e.target.value }); clearErr('contact'); }} placeholder="98xxxxxxxx" className={errRing('contact')} /></Field>
           <div className="sm:col-span-2">
-            <Field label="Send to" hint="Tick anyone who should get the parent login and fee reminders & receipts on WhatsApp. Pick one or more.">
+            <Field label="Send to" hint="Tick anyone who should get fee reminders & receipts on WhatsApp. Pick one or more.">
               {(() => {
                 const sel = parseContactTargets(form.smsFor);
                 const toggle = (t: ContactTarget) => {
                   const has = sel.includes(t);
                   const next = has ? sel.filter((x) => x !== t) : [...sel, t];
-                  // Keep at least one selected; store the canonical CSV.
                   setForm({ ...form, smsFor: normalizeContactTargets((next.length ? next : [t]).join(',')) });
                 };
                 return (
@@ -803,32 +842,122 @@ export default function StudentsPage() {
               })()}
             </Field>
           </div>
-          <Field label="Village">
-            <Input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} placeholder="Village name" />
-          </Field>
-          <Field label="Taluk">
-            <Input value={form.taluk} onChange={(e) => setForm({ ...form, taluk: e.target.value })} placeholder="Taluk" />
-          </Field>
-          <Field label="District">
-            <Input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} placeholder="District" />
-          </Field>
-          <Field label="Annual income">
-            <Input type="number" value={form.annualIncome} onChange={(e) => setForm({ ...form, annualIncome: e.target.value })} placeholder="₹ per year" />
-          </Field>
-          <Field label="No. of dependents">
-            <Input type="number" value={form.noOfDependents} onChange={(e) => setForm({ ...form, noOfDependents: e.target.value })} placeholder="0" />
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="Address">
-              <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} placeholder="Home address"
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
-            </Field>
-          </div>
         </div>
-        {!editing && (
-          <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded-md p-3 mt-4">
-            <Icon name="Info" size={14} className="mt-0.5 flex-shrink-0 text-slate-400" />
-            <span>A parent login is created from the “SMS / login to” number (father or mother). Username &amp; initial password are that phone number; siblings share one login.</span>
+
+        {/* ---------- More details (optional) ---------- */}
+        <button type="button" onClick={() => setShowMore((v) => !v)} className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-purple-600 hover:text-purple-700">
+          <Icon name={showMore ? 'ChevronDown' : 'ChevronRight'} size={16} /> {showMore ? 'Hide extra details' : 'Add more details'}
+        </button>
+
+        {showMore && (
+          <div className="mt-4 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {!editing && (
+                <Field label="Student ID" hint="Leave blank to auto-generate">
+                  <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="JDVS260507" />
+                </Field>
+              )}
+              <Field label="Admission no." hint="Written in the admission register">
+                <Input value={form.admissionNo} onChange={(e) => setForm({ ...form, admissionNo: e.target.value })} placeholder="e.g. 76/2025-26" />
+              </Field>
+              <Field label="Admission date">
+                <Input type="date" value={form.joinedDate} onChange={(e) => setForm({ ...form, joinedDate: e.target.value })} />
+              </Field>
+              <Field label="Date of birth">
+                <Input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} />
+              </Field>
+              <Field label="Religion">
+                <Input value={form.religion} onChange={(e) => setForm({ ...form, religion: e.target.value })} placeholder="Hindu / Muslim / Christian…" />
+              </Field>
+              <Field label="Category">
+                <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  <option value="">—</option>
+                  <option value="General">General</option>
+                  <option value="OBC">OBC</option>
+                  <option value="SC">SC</option>
+                  <option value="ST">ST</option>
+                  <option value="EWS">EWS</option>
+                </Select>
+              </Field>
+              <Field label="Caste">
+                <Input value={form.caste} onChange={(e) => setForm({ ...form, caste: e.target.value })} placeholder="Caste" />
+              </Field>
+              <Field label="Place of birth">
+                <Input value={form.placeOfBirth} onChange={(e) => setForm({ ...form, placeOfBirth: e.target.value })} placeholder="Town / city" />
+              </Field>
+              <Field label="Mother tongue">
+                <Input value={form.motherTongue} onChange={(e) => setForm({ ...form, motherTongue: e.target.value })} placeholder="Telugu / Kannada / Hindi…" />
+              </Field>
+              <Field label="Aadhar number">
+                <Input value={form.aadharNumber} onChange={(e) => setForm({ ...form, aadharNumber: e.target.value })} placeholder="XXXX XXXX XXXX" />
+              </Field>
+              <Field label="Previous school">
+                <Input value={form.previousSchool} onChange={(e) => setForm({ ...form, previousSchool: e.target.value })} placeholder="Name of previous school" />
+              </Field>
+              <Field label="Status">
+                <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                </Select>
+              </Field>
+              <Field label="Village">
+                <Input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} placeholder="Village name" />
+              </Field>
+              <Field label="Taluk">
+                <Input value={form.taluk} onChange={(e) => setForm({ ...form, taluk: e.target.value })} placeholder="Taluk" />
+              </Field>
+              <Field label="District">
+                <Input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} placeholder="District" />
+              </Field>
+              <Field label="Annual income">
+                <Input type="number" value={form.annualIncome} onChange={(e) => setForm({ ...form, annualIncome: e.target.value })} placeholder="₹ per year" />
+              </Field>
+              <Field label="No. of dependents">
+                <Input type="number" value={form.noOfDependents} onChange={(e) => setForm({ ...form, noOfDependents: e.target.value })} placeholder="0" />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Address">
+                  <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} placeholder="Home address"
+                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
+                </Field>
+              </div>
+            </div>
+
+            {/* Transfer / Study certificate — used by the certificate generators */}
+            <div>
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Transfer / study certificate</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="TC number"><Input value={form.tcNo} onChange={(e) => setForm({ ...form, tcNo: e.target.value })} placeholder="e.g. 123/2029-30" /></Field>
+                <Field label="TC date"><Input type="date" value={form.tcDate} onChange={(e) => setForm({ ...form, tcDate: e.target.value })} /></Field>
+                <Field label="Date of school leaving" hint="Defaults to 10 April of the admission year's end"><Input type="date" value={form.schoolLeavingDate} onChange={(e) => setForm({ ...form, schoolLeavingDate: e.target.value })} /></Field>
+                <div className="hidden sm:block" />
+                <Field label="Studied from (year)"><Input value={form.studyFromYear} onChange={(e) => setForm({ ...form, studyFromYear: e.target.value })} placeholder="2026-27" /></Field>
+                <Field label="Studied to (year)"><Input value={form.studyToYear} onChange={(e) => setForm({ ...form, studyToYear: e.target.value })} placeholder="2029-30" /></Field>
+                <Field label="From standard"><Input value={form.studyFromStandard} onChange={(e) => setForm({ ...form, studyFromStandard: e.target.value })} placeholder="8th" /></Field>
+                <Field label="To standard"><Input value={form.studyToStandard} onChange={(e) => setForm({ ...form, studyToStandard: e.target.value })} placeholder="10th" /></Field>
+              </div>
+            </div>
+
+            {/* Admin-defined custom fields */}
+            {customFieldDefs.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Custom fields</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {customFieldDefs.map((cf) => (
+                    <Field key={cf.id} label={cf.label}>
+                      {cf.type === 'select' ? (
+                        <Select value={form.customFields[cf.id] || ''} onChange={(e) => setCustom(cf.id, e.target.value)}>
+                          <option value="">—</option>
+                          {(cf.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                        </Select>
+                      ) : (
+                        <Input type={cf.type === 'number' ? 'number' : cf.type === 'date' ? 'date' : 'text'} value={form.customFields[cf.id] || ''} onChange={(e) => setCustom(cf.id, e.target.value)} />
+                      )}
+                    </Field>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Drawer>
@@ -843,7 +972,7 @@ export default function StudentsPage() {
         footer={
           <div className="flex justify-end gap-2">
             <Button onClick={() => setViewing(null)}>Close</Button>
-            {canManage && viewing && (
+            {canUpdate && viewing && (
               <Button kind="primary" icon="Pencil" onClick={() => { const v = viewing; setViewing(null); openEdit(v); }}>
                 Edit
               </Button>
@@ -890,7 +1019,7 @@ export default function StudentsPage() {
             <DetailRow label="Annual income" value={viewing.annualIncome != null ? `₹${viewing.annualIncome.toLocaleString('en-IN')}` : null} />
             <DetailRow label="No. of dependents" value={viewing.noOfDependents != null ? String(viewing.noOfDependents) : null} />
             <DetailRow label="Address" value={viewing.address} />
-            {canManage && viewing.guardianUserId && (
+            {canUpdate && viewing.guardianUserId && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <Button kind="secondary" icon="KeyRound" disabled={resetting} onClick={() => resetParentPin(viewing!)}>
                   {resetting ? 'Resetting…' : 'Reset parent login PIN'}
@@ -903,6 +1032,9 @@ export default function StudentsPage() {
       </Drawer>
 
       {/* Crop the chosen/captured photo to a square before uploading */}
+      {/* Custom fields manager (admin) */}
+      <CustomFieldsModal open={fieldsOpen} onClose={() => setFieldsOpen(false)} initial={customFieldDefs} onSaved={setCustomFieldDefs} />
+
       {cropFile && (
         <PhotoCropModal
           file={cropFile}

@@ -181,6 +181,7 @@ export async function getStudentAccount(studentId: string, yearId: string) {
     payments: payments.map((p) => ({
       id: p.id,
       receiptNo: p.receiptNo,
+      manualReceiptNo: p.manualReceiptNo ?? null,
       method: p.method,
       tenders: (p.tenders as { method: string; amount: number }[] | null) ?? null,
       total: p.total,
@@ -207,6 +208,58 @@ export async function getStudentAccount(studentId: string, yearId: string) {
       createdAt: c.createdAt.toISOString(),
     })),
   };
+}
+
+/**
+ * Batched, read-only account snapshots for MANY students in one year — three queries
+ * total instead of getStudentAccount's ~4 per student (avoids the N+1 in bulk fee
+ * reminders). Uses the SAME aggregation (toChargeRow → applyConcessions →
+ * aggregateAccount) so the balance/heads are identical to getStudentAccount; skips
+ * payment history (reminders don't need it). Returns a map keyed by studentId.
+ */
+export async function getReminderAccounts(yearId: string, studentIds: string[]): Promise<Map<string, {
+  student: {
+    id: string; name: string; className: string | null;
+    fatherName: string | null; fatherPhone: string | null; motherName: string | null; motherPhone: string | null;
+    altGuardianName: string | null; altGuardianPhone: string | null; guardianName: string | null; guardianPhone: string | null;
+    smsFor: string | null; whatsappEnabled: boolean | null; feeWaTo: string | null; feeContactPhone: string | null; village: string | null;
+    guardianUserId: string | null;
+  };
+  summary: AccountSummary;
+}>> {
+  const ids = Array.from(new Set(studentIds));
+  const out = new Map<string, any>();
+  if (!ids.length) return out;
+  const [students, enrollments, assignments] = await Promise.all([
+    prisma.student.findMany({ where: { id: { in: ids } }, include: { class: { select: { name: true } } } }),
+    prisma.enrollment.findMany({ where: { yearId, studentId: { in: ids } }, include: { class: { select: { name: true } } } }),
+    prisma.studentFeeAssignment.findMany({
+      where: { yearId, studentId: { in: ids } },
+      include: { charges: { include: chargeInclude }, concessions: { include: { feeType: { select: { key: true, name: true } } } } },
+    }),
+  ]);
+  const enrByStu = new Map(enrollments.map((e) => [e.studentId, e]));
+  const asgByStu = new Map(assignments.map((a) => [a.studentId, a]));
+  for (const st of students) {
+    const asg = asgByStu.get(st.id);
+    const rows: ChargeRow[] = applyConcessions((asg?.charges || []).map(toChargeRow), approvedConcessionMap((asg?.concessions || []) as any));
+    const summary: AccountSummary = aggregateAccount(rows);
+    const enr = enrByStu.get(st.id);
+    out.set(st.id, {
+      student: {
+        id: st.id, name: st.name,
+        className: enr?.class?.name ?? st.class?.name ?? null,
+        fatherName: st.fatherName, fatherPhone: st.fatherPhone,
+        motherName: st.motherName, motherPhone: st.motherPhone,
+        altGuardianName: st.altGuardianName, altGuardianPhone: st.altGuardianPhone,
+        guardianName: st.guardianName, guardianPhone: st.guardianPhone,
+        smsFor: st.smsFor, whatsappEnabled: st.whatsappEnabled, feeWaTo: st.feeWaTo, feeContactPhone: st.feeContactPhone, village: st.village,
+        guardianUserId: st.guardianUserId,
+      },
+      summary,
+    });
+  }
+  return out;
 }
 
 // The family (siblings sharing one parent) for the Multi Collect screen — each
@@ -377,6 +430,7 @@ export async function recordPayment(input: {
   yearId: string;
   method: PayMethod;
   note?: string | null;
+  manualReceiptNo?: string | null; // serial from the physical carbon receipt book
   collectedById?: string | null;
   date?: string | null; // payment date (yyyy-mm-dd); defaults to now
   allocations: { chargeId: string; amount: number }[];
@@ -471,6 +525,7 @@ export async function recordPayment(input: {
         studentId: input.studentId,
         yearId: input.yearId,
         receiptNo,
+        manualReceiptNo: input.manualReceiptNo?.trim() || null,
         method,
         tenders: tendersJson === null ? undefined : (tendersJson as any),
         total,
@@ -527,6 +582,7 @@ export async function getReceipt(paymentId: string) {
   const acct = await getStudentAccount(p.studentId, p.yearId);
   return {
     receiptNo: p.receiptNo,
+    manualReceiptNo: p.manualReceiptNo ?? null,
     paidAt: p.paidAt.toISOString(),
     method: p.method,
     total: p.total,
@@ -1621,9 +1677,44 @@ export async function autoAssignClassFees(studentId: string, classId: string, ye
  * mode 'all' = any balance>0; 'above' = balance>=minBalance; 'overdue' = has a
  * past-due installment still unpaid. Returns ids + count + total due (snapshot).
  */
+// How recently a family paid a FEE decides whether we still chase them. The buffer
+// windows below are presets: '1m'/'3m' skip anyone who paid a fee within the last
+// 1/3 months; 'never' targets only students with NO fee payment this year; 'none'
+// applies no recency filter (the original behaviour).
+export type FeeReminderRecency = 'none' | '1m' | '3m' | 'never';
+
+const isUniformFeeType = (name?: string | null, key?: string | null) => key === 'uniform' || /uniform/i.test(name || '');
+const monthsAgo = (m: number) => { const d = new Date(); d.setMonth(d.getMonth() - m); return d; };
+
+/**
+ * Most recent non-voided FEE payment date per student for the year. Uniform-only
+ * allocations are ignored (a uniform purchase doesn't count as "paying fees"), so a
+ * family that just bought uniform is still chased for their tuition dues.
+ */
+async function lastFeePaymentDates(yearId: string, studentIds: string[]): Promise<Map<string, Date>> {
+  if (!studentIds.length) return new Map();
+  const allocs = await prisma.paymentAllocation.findMany({
+    where: { payment: { yearId, voided: false, studentId: { in: studentIds } } },
+    select: {
+      payment: { select: { studentId: true, paidAt: true } },
+      feeCharge: { select: { feeType: { select: { key: true, name: true } } } },
+    },
+  });
+  const map = new Map<string, Date>();
+  for (const al of allocs) {
+    const ft = al.feeCharge.feeType;
+    if (isUniformFeeType(ft.name, ft.key)) continue; // uniform purchase → not "paid fees"
+    const sid = al.payment.studentId;
+    const at = al.payment.paidAt;
+    const cur = map.get(sid);
+    if (!cur || at.getTime() > cur.getTime()) map.set(sid, at);
+  }
+  return map;
+}
+
 export async function studentsForFeeReminder(
   yearId: string,
-  opts: { mode: 'all' | 'overdue' | 'above'; minBalance?: number; classId?: string }
+  opts: { mode: 'all' | 'overdue' | 'above'; minBalance?: number; classId?: string; recency?: FeeReminderRecency }
 ) {
   const assignments = await prisma.studentFeeAssignment.findMany({
     where: { yearId, ...(opts.classId ? { student: { classId: opts.classId } } : {}) },
@@ -1635,8 +1726,8 @@ export async function studentsForFeeReminder(
   });
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const studentIds: string[] = [];
-  let totalDue = 0;
+  // First pass: everyone who still owes and matches the balance mode.
+  const candidates: { id: string; balance: number }[] = [];
   for (const a of assignments) {
     if (a.student.status !== 'ACTIVE') continue;
     const rows = applyConcessions(a.charges.map(toChargeRow), approvedConcessionMap(a.concessions as any));
@@ -1646,8 +1737,25 @@ export async function studentsForFeeReminder(
     if (opts.mode === 'all') match = true;
     else if (opts.mode === 'above') match = sum.totalBalance >= (opts.minBalance || 0);
     else match = rows.some((r) => r.installmentNo != null && r.balance > 0 && r.dueDate != null && new Date(r.dueDate).getTime() < today.getTime());
-    if (match) { studentIds.push(a.student.id); totalDue += sum.totalBalance; }
+    if (match) candidates.push({ id: a.student.id, balance: sum.totalBalance });
   }
+
+  // Second pass: recency filter — don't re-chase families who paid a fee recently.
+  const recency = opts.recency || 'none';
+  let survivors = candidates;
+  if (recency !== 'none' && candidates.length) {
+    const lastPaid = await lastFeePaymentDates(yearId, candidates.map((c) => c.id));
+    const cutoff = recency === 'never' ? null : monthsAgo(recency === '1m' ? 1 : 3);
+    survivors = candidates.filter((c) => {
+      const last = lastPaid.get(c.id);
+      if (recency === 'never') return !last;                 // only those who never paid a fee this year
+      if (!last) return true;                                // never paid → remind
+      return last.getTime() < cutoff!.getTime();             // paid, but before the window → remind
+    });
+  }
+
+  const studentIds = survivors.map((c) => c.id);
+  const totalDue = survivors.reduce((t, c) => t + c.balance, 0);
   return { studentIds, count: studentIds.length, totalDue };
 }
 

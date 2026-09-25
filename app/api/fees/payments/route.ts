@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { studentId, method, note, date, allocations, newItems } = body || {};
+    const { studentId, method, note, date, allocations, newItems, manualReceiptNo } = body || {};
     const allocList = Array.isArray(allocations) ? allocations : [];
     const itemList = Array.isArray(newItems) ? newItems : [];
     if (!studentId || (allocList.length === 0 && itemList.length === 0)) {
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       method: primaryMethod,
       tenders: tenders.length ? tenders : undefined,
       note: note || null,
+      manualReceiptNo: manualReceiptNo ? String(manualReceiptNo).trim().slice(0, 40) : null,
       date: date ? String(date) : null,
       collectedById: (session.user as any)?.staffId || (session.user as any)?.id || null,
       allocations: allocList.map((a: any) => ({ chargeId: a.chargeId, amount: Math.round(Number(a.amount) || 0) })),

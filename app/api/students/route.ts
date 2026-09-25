@@ -81,20 +81,39 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STUDENTS_MANAGE')) {
+    if (!session || !can(session, 'STUDENTS_CREATE')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     const body = await req.json();
     const year = await getActiveYear();
 
-    // System student ID: JDVS+YY+CC+RR (snapshot at admission). Falls back to a
-    // timestamp id only when class/roll are missing so creation never fails.
-    // NOT the same as "Admission No." — that's the number written by hand in
-    // the school's physical admission register, stored separately below.
+    // ---- Mandatory fields (also checked client-side; this is the trust boundary) ----
+    if (!body.classId) return NextResponse.json({ error: 'Class is required', field: 'classId' }, { status: 400 });
+    if (!String(body.name || '').trim()) return NextResponse.json({ error: 'Full name is required', field: 'name' }, { status: 400 });
+    if (body.gender !== 'M' && body.gender !== 'F') return NextResponse.json({ error: 'Gender is required', field: 'gender' }, { status: 400 });
+    const hasContact =
+      (String(body.fatherName || '').trim() && String(body.fatherPhone || '').trim()) ||
+      (String(body.motherName || '').trim() && String(body.motherPhone || '').trim()) ||
+      (String(body.altGuardianName || '').trim() && String(body.altGuardianPhone || '').trim());
+    if (!hasContact) return NextResponse.json({ error: 'Enter at least one contact (father, mother or guardian) with both a name and a phone number', field: 'contact' }, { status: 400 });
+
+    // Roll auto-assigns from the class when not given — staff needn't remember it.
+    let roll = String(body.roll ?? '').replace(/\D/g, '');
+    if (!roll) {
+      const rows = await prisma.student.findMany({ where: { classId: body.classId, status: 'ACTIVE' }, select: { roll: true } });
+      let max = 0;
+      for (const r of rows) { const n = parseInt(String(r.roll || '').replace(/\D/g, ''), 10); if (Number.isFinite(n) && n > max) max = n; }
+      roll = String(max + 1).padStart(2, '0');
+    }
+
+    // System student ID: JDVS+YY+CC+RR — always structured, never a timestamp.
+    // NOT the same as "Admission No." (the handwritten register number, stored below).
     let studentId = String(body.id || '').trim();
     if (!studentId) {
-      studentId = (await generateAdmissionNo({ classId: body.classId, roll: body.roll, yearId: year.id })) || `JD${Date.now()}`;
+      const generated = await generateAdmissionNo({ classId: body.classId, roll, yearId: year.id });
+      if (!generated) return NextResponse.json({ error: 'Could not generate a student ID — please check the class and roll number.' }, { status: 400 });
+      studentId = generated;
     }
 
     // Names are stored in uppercase (student + parents).
@@ -109,13 +128,26 @@ export async function POST(req: NextRequest) {
     const primary = pickPrimaryContact(body);
     const guardianUserId = primary.phone ? await ensureParentUser(primary.name, primary.phone) : null;
 
+    // Provision a login for EACH contact that has a name + phone (deduped by phone).
+    // The child is linked to the primary via guardianUserId; the other logins exist
+    // for later linking.
+    for (const c of [
+      { name: body.fatherName, phone: body.fatherPhone },
+      { name: body.motherName, phone: body.motherPhone },
+      { name: body.altGuardianName, phone: body.altGuardianPhone },
+    ]) {
+      const nm = String(c.name || '').trim();
+      const ph = String(c.phone || '').trim();
+      if (nm && ph) { try { await ensureParentUser(nm, ph); } catch (e) { console.error('ensureParentUser (contact)', e); } }
+    }
+
     const student = await prisma.student.create({
       data: {
         id: studentId,
         admissionNo: body.admissionNo || null,
         name: body.name,
         classId: body.classId || null,
-        roll: body.roll || null,
+        roll: roll || null,
         gender: body.gender,
         dob: body.dob ? new Date(body.dob) : null,
         religion: body.religion || null,
@@ -144,6 +176,14 @@ export async function POST(req: NextRequest) {
         noOfDependents: body.noOfDependents != null && body.noOfDependents !== '' ? Number(body.noOfDependents) : null,
         joinedDate: body.joinedDate ? new Date(body.joinedDate) : null,
         status: 'ACTIVE',
+        tcNo: body.tcNo || null,
+        tcDate: body.tcDate ? new Date(body.tcDate) : null,
+        schoolLeavingDate: body.schoolLeavingDate ? new Date(body.schoolLeavingDate) : null,
+        studyFromYear: body.studyFromYear || null,
+        studyToYear: body.studyToYear || null,
+        studyFromStandard: body.studyFromStandard || null,
+        studyToStandard: body.studyToStandard || null,
+        customFields: (body.customFields && typeof body.customFields === 'object') ? body.customFields : undefined,
       },
     });
 

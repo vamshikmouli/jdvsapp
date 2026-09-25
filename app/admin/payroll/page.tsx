@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/lib/hooks/usePermissions';
 import { Button, Chip, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { toast } from '@/lib/toast';
 
 interface RunSummary { id: string; periodMonth: string; status: string; creditOn: string; staffCount: number; netTotal: number; paidCount: number }
 interface Item {
@@ -43,7 +45,9 @@ const avatarColor = (s: string) => AV[[...s].reduce((a, c) => a + c.charCodeAt(0
 export default function PayrollPage() {
   const { data: session } = useSession();
   const perms = ((session?.user as any)?.perms as string[]) || [];
-  const canManage = perms.includes('PAYROLL_MANAGE');
+  const { can } = usePermissions();
+  // Management UI shows for any payroll write ability; API enforces the exact op.
+  const canManage = can('PAYROLL_CREATE') || can('PAYROLL_UPDATE') || can('PAYROLL_DELETE');
   const canView = canManage || perms.includes('PAYROLL_VIEW');
 
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -92,7 +96,8 @@ export default function PayrollPage() {
       const j = await res.json();
       if (!res.ok) { if (j.runId) setSelId(j.runId); throw new Error(j.error || 'Failed'); }
       await loadRuns(); setSelId(j.id);
-    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+      toast.success('Payroll generated.');
+    } catch (e: any) { setError(e.message); toast.error(e.message || 'Failed to generate payroll'); } finally { setBusy(false); }
   };
 
   const runAction = async (action: string) => {
@@ -106,12 +111,14 @@ export default function PayrollPage() {
       if (!res.ok) throw new Error(j.error || 'Failed');
       if (action === 'delete') { setSelId(''); setDetail(null); await loadRuns(); }
       else { await loadDetail(detail.id); await loadRuns(); }
-    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+      toast.success(action === 'delete' ? 'Payroll run deleted.' : action === 'payAll' ? 'All rows marked paid.' : 'Payroll updated.');
+    } catch (e: any) { setError(e.message); toast.error(e.message || 'Failed'); } finally { setBusy(false); }
   };
 
   const patchItem = async (id: string, body: any) => {
     const res = await fetch(`/api/payroll/item/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok) { const updated: Item = await res.json(); setDetail((d) => d ? { ...d, items: d.items.map((it) => it.id === id ? updated : it) } : d); loadRuns(); }
+    if (res.ok) { const updated: Item = await res.json(); setDetail((d) => d ? { ...d, items: d.items.map((it) => it.id === id ? updated : it) } : d); loadRuns(); toast.success('Saved.'); }
+    else { const e = await res.json().catch(() => ({})); toast.error(e.error || 'Could not save.'); }
   };
 
   // Manual salary pay-order — move a staff up/down. Saves staff.payOrder = 1..N
@@ -131,7 +138,7 @@ export default function PayrollPage() {
         body: JSON.stringify({ order: items.map((it) => it.staffId) }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Failed to save order'); }
-    } catch (e: any) { setError(e.message); if (detail) await loadDetail(detail.id); }
+    } catch (e: any) { setError(e.message); toast.error(e.message || 'Could not save order'); if (detail) await loadDetail(detail.id); }
     finally { setSavingOrder(false); }
   };
 

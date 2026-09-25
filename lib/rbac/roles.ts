@@ -8,6 +8,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { prisma } from '@/lib/db';
+import { permAllows } from '@/lib/rbac/crud';
 import type { Permission, Surface } from '@prisma/client';
 
 export type { Permission, Surface };
@@ -36,18 +37,16 @@ export function rbac(session: SessionLike): SessionUserRBAC | null {
   };
 }
 
-/** Does this session hold the given permission? */
+/** Does this session hold the given permission (honouring the MANAGE⇄CRUD bridge)? */
 export function can(session: SessionLike, permission: Permission): boolean {
   const r = rbac(session);
   if (!r) return false;
-  return r.perms.includes(permission);
+  return permAllows(r.perms, permission);
 }
 
 /** Does this session hold ANY of the given permissions? */
 export function canAny(session: SessionLike, permissions: Permission[]): boolean {
-  const r = rbac(session);
-  if (!r) return false;
-  return permissions.some((p) => r.perms.includes(p));
+  return permissions.some((p) => can(session, p));
 }
 
 /** Which surface (dashboard/shell) does this session belong to? */

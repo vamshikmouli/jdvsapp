@@ -49,7 +49,7 @@ export async function GET() {
 // Builds a PayrollItem per active staff from that month's attendance.
 export async function POST(req: NextRequest) {
   try {
-    const session = await requirePermission('PAYROLL_MANAGE');
+    const session = await requirePermission('PAYROLL_CREATE');
     const adminId = (session.user as any)?.id as string | undefined;
     const { periodMonth } = await req.json();
     if (!/^\d{4}-\d{2}$/.test(periodMonth || '')) {

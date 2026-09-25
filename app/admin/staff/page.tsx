@@ -1,7 +1,9 @@
 'use client';
 
+import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/lib/hooks/usePermissions';
 import { Button, Card, Avatar, EmptyState, Modal, Drawer, Field, Input, Select, DetailRow, Chip, Skeleton, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
 import { downloadBackup } from '@/lib/utils';
 import { Icon } from '@/components/Icon';
@@ -52,12 +54,14 @@ const emptyForm = {
 export default function StaffPage() {
   const { data: session } = useSession();
   const perms = ((session?.user as any)?.perms as string[]) || [];
-  const canManage = perms.includes('STAFF_MANAGE');
+  const { can } = usePermissions();
+  // Management UI shows for any staff write ability; API enforces the exact op.
+  const canManage = can('STAFF_CREATE') || can('STAFF_UPDATE') || can('STAFF_DELETE');
   const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);
-    try { await downloadBackup('staff'); } catch (e) { alert(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
+    try { await downloadBackup('staff'); } catch (e) { toast.error(e instanceof Error ? e.message : 'Export failed'); } finally { setExporting(false); }
   };
   const [staffImportOpen, setStaffImportOpen] = useState(false);
 
@@ -87,7 +91,7 @@ export default function StaffPage() {
   const [resetResult, setResetResult] = useState<{ name: string; tempPin: string } | null>(null);
 
   const resetPin = async (member: StaffMember) => {
-    if (!member.userId) { alert('This staff member has no login to reset.'); return; }
+    if (!member.userId) { toast.error('This staff member has no login to reset.'); return; }
     if (!confirm(`Reset login PIN for ${member.name}? They’ll get a temporary PIN and must set a new one on next login. This signs them out of all devices.`)) return;
     setResetting(member.id);
     try {
@@ -96,7 +100,7 @@ export default function StaffPage() {
       if (!res.ok) throw new Error(j.error || 'Reset failed');
       setResetResult({ name: j.name, tempPin: j.tempPin });
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Reset failed');
+      toast.error(e instanceof Error ? e.message : 'Reset failed');
     } finally { setResetting(null); }
   };
 

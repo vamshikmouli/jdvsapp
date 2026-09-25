@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 //   { action: 'approve' | 'reopen' | 'payAll' | 'delete' }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await requirePermission('PAYROLL_MANAGE');
+    const session = await requirePermission('PAYROLL_UPDATE');
     const adminId = (session.user as any)?.id as string | undefined;
     const { action } = await req.json();
     const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
