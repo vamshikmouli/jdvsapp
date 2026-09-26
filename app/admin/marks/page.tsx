@@ -621,10 +621,11 @@ function ExamScheduleTab() {
   useEffect(() => {
     (async () => {
       const [a, c, s, cs] = await Promise.all([fetch('/api/assessments'), fetch('/api/classes'), fetch('/api/subjects'), fetch('/api/class-subjects')]);
-      if (a.ok) setAssessments(await a.json());
+      // /api/assessments → { items }, /api/class-subjects → { map }, /api/subjects → raw array.
+      if (a.ok) setAssessments((await a.json()).items || []);
       if (c.ok) setClasses(await c.json());
-      if (s.ok) setSubjects(await s.json());
-      if (cs.ok) setCsMap(await cs.json());
+      if (s.ok) setSubjects((await s.json()).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name })));
+      if (cs.ok) setCsMap((await cs.json()).map || {});
     })();
   }, []);
 
@@ -646,6 +647,21 @@ function ExamScheduleTab() {
   const addRow = () => setRows((rs) => [...rs, emptyRow()]);
   const delRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
   const loadSubjects = () => setRows(classSubjects.map((s) => ({ ...emptyRow(), subject: s.name })));
+
+  // Copy another class's saved schedule (same exam) into the editor — for classes
+  // that share a timetable. The operator reviews and Saves to the current class.
+  const copyFromClass = async (fromId: string) => {
+    if (!aId || !fromId) return;
+    try {
+      const r = await fetch(`/api/assessments/schedule?assessmentId=${aId}&classId=${fromId}`);
+      const d = await r.json().catch(() => ({}));
+      const src: ExamRow[] = Array.isArray(d.rows) ? d.rows : [];
+      if (src.length === 0) { toast.info('That class has no saved schedule for this exam yet.'); return; }
+      setRows(src.map((r) => ({ subject: r.subject || '', date: r.date || '', day: r.day || '', session: r.session || '', time: r.time || '' })));
+      const from = classes.find((c) => c.id === fromId);
+      toast.success(`Copied ${src.length} row${src.length === 1 ? '' : 's'} from ${from ? shortClass(from.name) : 'class'} — review and Save.`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not copy'); }
+  };
 
   const save = async () => {
     if (!aId || !cId) return;
@@ -675,9 +691,13 @@ function ExamScheduleTab() {
         <div className="mt-4"><Skeleton height={120} /></div>
       ) : (
         <div className="mt-4 space-y-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={loadSubjects} disabled={classSubjects.length === 0}>Load class subjects</Button>
             <Button size="sm" icon="Plus" onClick={addRow}>Add row</Button>
+            <Select value="" onChange={(e) => { copyFromClass(e.target.value); e.target.value = ''; }} className="w-auto text-[13px]">
+              <option value="">Copy from class…</option>
+              {classes.filter((c) => c.id !== cId).map((c) => <option key={c.id} value={c.id}>{shortClass(c.name)}</option>)}
+            </Select>
           </div>
           {rows.length === 0 ? (
             <p className="text-xs text-slate-400">No rows yet — load the class subjects or add rows, then fill date & time.</p>
