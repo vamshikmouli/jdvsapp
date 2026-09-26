@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, Button, Card, Field, Input, Select, EmptyState } from '@/components/Primitives';
+import { usePermissions } from '@/lib/hooks/usePermissions';
+import { toast } from '@/lib/toast';
 
 const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-') : '';
@@ -40,6 +42,10 @@ export default function AdmissionExtractPage() {
   const [selected, setSelected] = useState(false);
   const [form, setForm] = useState<Form>(emptyForm);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // Full student record, so "Save to student" merges edits in without wiping other fields.
+  const [studentRaw, setStudentRaw] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const { can } = usePermissions();
 
   useEffect(() => {
     (async () => {
@@ -66,6 +72,7 @@ export default function AdmissionExtractPage() {
     const r = await fetch(`/api/students/${hit.id}`);
     if (!r.ok) return;
     const s = await r.json();
+    setStudentRaw(s);
     const addressLine = [s.village, s.taluk ? `${s.taluk} (T)` : '', s.district ? `${s.district} (D)` : ''].filter(Boolean).join(', ');
     setForm({
       schoolName: schoolDefault.schoolName,
@@ -80,16 +87,58 @@ export default function AdmissionExtractPage() {
       motherTongue: s.motherTongue || '',
       fatherAddress: [s.fatherName, addressLine || s.address].filter(Boolean).join('\n'),
       previousSchool: s.previousSchool || '',
-      previousStandard: '',
-      tcNumber: '',
-      tcDate: '',
+      // "Study of last classes" — the standard range from the student's study record
+      // (e.g. "8th to 10th"). Falls back to a single standard, then the current class.
+      previousStandard: [s.studyFromStandard, s.studyToStandard].filter(Boolean).join(' to ') || s.studyToStandard || '',
+      tcNumber: s.tcNo || '',
+      tcDate: toDateInput(s.tcDate),
       admittedClass: s.class?.name || '',
       admissionDate: toDateInput(s.joinedDate),
-      place: '',
+      place: 'Kyalanur',
       extractDate: todayInput(),
       principalName: schoolDefault.principalName,
     });
     setSelected(true);
+  };
+
+  // Save the fields that map to real student columns back to the student record.
+  // Combined display fields (cast & religion, father address) are left as-is; the
+  // "Study of last classes" range is split back into From/To standard.
+  const saveToStudent = async () => {
+    if (!studentRaw) return;
+    setSaving(true);
+    try {
+      // "8th to 10th" → From = 8th, To = 10th; a single value → To standard.
+      let studyFromStandard = studentRaw.studyFromStandard ?? null;
+      let studyToStandard = studentRaw.studyToStandard ?? null;
+      const ps = form.previousStandard.trim();
+      if (ps) {
+        const parts = ps.split(/\s+to\s+/i);
+        if (parts.length === 2) { studyFromStandard = parts[0].trim() || null; studyToStandard = parts[1].trim() || null; }
+        else { studyToStandard = ps; }
+      }
+      const body = {
+        ...studentRaw,
+        name: form.name.trim(),
+        gender: form.gender,
+        dob: form.dob || null,
+        fatherName: form.fatherName.trim() || null,
+        annualIncome: form.annualIncome,
+        noOfDependents: form.noOfDependents,
+        motherTongue: form.motherTongue.trim() || null,
+        previousSchool: form.previousSchool.trim() || null,
+        studyFromStandard, studyToStandard,
+        tcNo: form.tcNumber.trim() || null,
+        tcDate: form.tcDate || null,
+        joinedDate: form.admissionDate || null,
+      };
+      const r = await fetch(`/api/students/${studentRaw.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Failed to save');
+      setStudentRaw(d);
+      toast.success('Student record updated.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not update the student'); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -105,7 +154,12 @@ export default function AdmissionExtractPage() {
       `}</style>
 
       <PageHeader eyebrow="Students" title="Admission extract" meta="Generate a printable admission extract in the school register's format."
-        actions={selected ? <Button kind="primary" icon="Printer" onClick={() => window.print()}>Print</Button> : undefined} />
+        actions={selected ? (
+          <div className="flex items-center gap-2">
+            {can('STUDENTS_UPDATE') && <Button icon="Save" onClick={saveToStudent} disabled={saving}>{saving ? 'Saving…' : 'Save to student'}</Button>}
+            <Button kind="primary" icon="Printer" onClick={() => window.print()}>Print</Button>
+          </div>
+        ) : undefined} />
 
       <div className="no-print mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-1 space-y-4">

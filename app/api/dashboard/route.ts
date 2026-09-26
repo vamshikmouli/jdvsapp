@@ -146,13 +146,21 @@ export async function GET() {
     // Names of absent / on-leave students (for dashboard hover tooltips)
     const flaggedStudents = await prisma.student.findMany({
       where: { id: { in: [...absentIds, ...leaveIds] } },
-      select: { id: true, name: true, class: { select: { name: true } } },
+      select: { id: true, name: true, class: { select: { name: true, order: true } } },
     });
-    const nameOf = new Map(
-      flaggedStudents.map((s) => [s.id, s.class ? `${s.name} (${s.class.name.replace(/\s?STD$/, '')})` : s.name])
+    const infoOf = new Map(
+      flaggedStudents.map((s) => [s.id, {
+        display: s.class ? `${s.name} (${s.class.name.replace(/\s?STD$/, '')})` : s.name,
+        order: s.class?.order ?? 999, // class order (1st…10th, KG in sequence), unassigned last
+        name: s.name,
+      }])
     );
-    const absentNames = absentIds.map((id) => nameOf.get(id) || '').filter(Boolean).sort();
-    const leaveNames = leaveIds.map((id) => nameOf.get(id) || '').filter(Boolean).sort();
+    // Sort by class, then by name within the class (not alphabetically by name).
+    const byClass = (ids: string[]) => ids.map((id) => infoOf.get(id)).filter(Boolean)
+      .sort((a, b) => a!.order - b!.order || a!.name.localeCompare(b!.name))
+      .map((x) => x!.display);
+    const absentNames = byClass(absentIds);
+    const leaveNames = byClass(leaveIds);
 
     // --- Today's sessions overview (per class: morning/afternoon taken?) ---
     const classes = await prisma.schoolClass.findMany({
