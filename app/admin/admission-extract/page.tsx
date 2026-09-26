@@ -198,7 +198,7 @@ export default function AdmissionExtractPage() {
                 <Field label="Father name"><Input value={form.fatherName} onChange={(e) => set('fatherName', e.target.value)} /></Field>
                 <Field label="Annual income"><Input type="number" value={form.annualIncome} onChange={(e) => set('annualIncome', e.target.value)} /></Field>
                 <Field label="No. of dependents"><Input type="number" value={form.noOfDependents} onChange={(e) => set('noOfDependents', e.target.value)} /></Field>
-                <Field label="Cast & religion"><Input value={form.castReligion} onChange={(e) => set('castReligion', e.target.value)} /></Field>
+                <Field label="Caste & religion"><Input value={form.castReligion} onChange={(e) => set('castReligion', e.target.value)} /></Field>
                 <Field label="Mother tongue"><Input value={form.motherTongue} onChange={(e) => set('motherTongue', e.target.value)} /></Field>
                 <Field label="Father address">
                   <textarea value={form.fatherAddress} onChange={(e) => set('fatherAddress', e.target.value)} rows={2}
@@ -272,7 +272,7 @@ function Extract({ form }: { form: Form }) {
           <Row no={6} kn="ತಂದೆಯ ಹೆಸರು" en="Father Name" value={form.fatherName} />
           <Row no={7} kn="ವಾರ್ಷಿಕ ವರಮಾನ" en="Annual Income" value={form.annualIncome ? Number(form.annualIncome).toLocaleString('en-IN') : ''} />
           <Row no={8} kn="ಆಶ್ರಿತರ ಸಂಖ್ಯೆ" en="No. of Dependents" value={form.noOfDependents} />
-          <Row no={9} kn="ಜಾತಿ ಮತ್ತು ಮತ" en="Cast & Religion" value={form.castReligion} />
+          <Row no={9} kn="ಜಾತಿ ಮತ್ತು ಮತ" en="Caste & Religion" value={form.castReligion} />
           <Row no={10} kn="ಮಾತೃ ಭಾಷೆ" en="Mother Tongue" value={form.motherTongue} />
           <Row no={11} kn="ತಂದೆಯ ವಿಳಾಸ" en="Father Address" value={<span className="whitespace-pre-line">{form.fatherAddress}</span>} />
           <Row no={12} kn="ಓದುತ್ತಿದ್ದ ಹಿಂದಿನ ಶಾಲೆ" en="Study of Last School" value={form.previousSchool} />

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { PageHeader, Button, Card, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { toast } from '@/lib/toast';
 
 const shortClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '—');
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
@@ -84,6 +85,19 @@ export default function HallTicketsPage() {
   const examTitle = cfg.examLabel || (assessment ? assessment.name + (assessment.term ? ` · ${assessment.term}` : '') : '');
 
   const loadTimetableSubjects = () => set('timetable', classSubjects.map((s) => ({ date: '', day: '', subject: s.name, session: '', time: '' })));
+  // Pull the exam timetable saved for this assessment + class in Marks → Exam schedule.
+  const loadExamSchedule = async () => {
+    if (!aId || !cId) return;
+    try {
+      const r = await fetch(`/api/assessments/schedule?assessmentId=${aId}&classId=${cId}`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Failed to load');
+      const rows = Array.isArray(d.rows) ? d.rows : [];
+      if (rows.length === 0) { toast.info('No exam schedule saved for this exam & class yet (set it in Marks → Exam schedule).'); return; }
+      set('timetable', rows.map((r: any) => ({ date: r.date || '', day: r.day || '', subject: r.subject || '', session: r.session || '', time: r.time || '' })));
+      toast.success(`Loaded ${rows.length} exam row${rows.length === 1 ? '' : 's'}.`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to load schedule'); }
+  };
   const addTT = () => set('timetable', [...cfg.timetable, { date: '', day: '', subject: '', session: '', time: '' }]);
   const setTT = (i: number, key: 'date' | 'day' | 'subject' | 'session' | 'time', v: string) => set('timetable', cfg.timetable.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
   const delTT = (i: number) => set('timetable', cfg.timetable.filter((_, j) => j !== i));
@@ -161,6 +175,7 @@ export default function HallTicketsPage() {
             {cfg.showTimetable && (
               <div className="space-y-2">
                 <div className="flex gap-2">
+                  <Button size="sm" icon="CalendarClock" onClick={loadExamSchedule} disabled={!aId || !cId}>Load exam schedule</Button>
                   <Button size="sm" onClick={loadTimetableSubjects} disabled={!cId}>Load class subjects</Button>
                   <Button size="sm" icon="Plus" onClick={addTT}>Add row</Button>
                 </div>

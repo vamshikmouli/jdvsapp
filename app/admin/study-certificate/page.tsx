@@ -125,8 +125,6 @@ export default function StudyCertificatePage() {
         studyToYear: form.toYear.trim() || null,
         studyFromStandard: form.fromStd.trim() || null,
         studyToStandard: form.toStd.trim() || null,
-        tcNo: form.tcNo.trim() || null,
-        tcDate: form.tcDate || null,
       };
       const r = await fetch(`/api/students/${studentRaw.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
@@ -204,8 +202,6 @@ export default function StudyCertificatePage() {
                 <Field label="Date of birth"><Input type="date" value={form.dob} onChange={(e) => set('dob', e.target.value)} /></Field>
                 <Field label="Record date"><Input type="date" value={form.recordDate} onChange={(e) => set('recordDate', e.target.value)} /></Field>
                 <Field label="Date of leaving"><Input type="date" value={form.leavingDate} onChange={(e) => set('leavingDate', e.target.value)} /></Field>
-                <Field label="T.C. number"><Input value={form.tcNo} onChange={(e) => set('tcNo', e.target.value)} placeholder="e.g. 123/2029-30" /></Field>
-                <Field label="T.C. date"><Input type="date" value={form.tcDate} onChange={(e) => set('tcDate', e.target.value)} /></Field>
                 <Field label="Place"><Input value={form.place} onChange={(e) => set('place', e.target.value)} placeholder="e.g. Kyalanur" /></Field>
                 <Field label="Issue date"><Input type="date" value={form.issueDate} onChange={(e) => set('issueDate', e.target.value)} /></Field>
                 <Field label="Headmaster / Principal name"><Input value={form.principalName} onChange={(e) => set('principalName', e.target.value)} /></Field>
@@ -309,10 +305,6 @@ function Certificate({ form, photoUrl }: { form: Form; photoUrl: string | null }
         <div className="flex items-center gap-2">
           <span className="whitespace-nowrap">Date of leaving School/College:</span>
           <Box className="min-w-[220px] text-center font-normal">{fmtDate(form.leavingDate)}</Box>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap">T.C. No. &amp; Date:</span>
-          <Box className="min-w-[220px] text-center" red>{[form.tcNo, fmtDate(form.tcDate)].filter(Boolean).join(' · ')}</Box>
         </div>
         <div className="text-sm pt-1">This certificate issued according to records of our School/ College</div>
       </div>

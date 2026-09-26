@@ -8,7 +8,7 @@ import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import { EntryTab, ApprovalsTab } from './entry-ui';
 
-type Tab = 'entry' | 'approvals' | 'subjects' | 'classmap' | 'assessments' | 'grades';
+type Tab = 'entry' | 'approvals' | 'subjects' | 'classmap' | 'assessments' | 'schedule' | 'grades';
 
 const ALL_TABS: { id: Tab; label: string; icon: string; perm: string }[] = [
   { id: 'entry', label: 'Entry', icon: 'PencilLine', perm: 'MARKS_ENTER' },
@@ -16,6 +16,7 @@ const ALL_TABS: { id: Tab; label: string; icon: string; perm: string }[] = [
   { id: 'subjects', label: 'Subjects', icon: 'BookOpen', perm: 'MARKS_SETUP' },
   { id: 'classmap', label: 'Class subjects', icon: 'Network', perm: 'MARKS_SETUP' },
   { id: 'assessments', label: 'Assessments', icon: 'ClipboardList', perm: 'MARKS_SETUP' },
+  { id: 'schedule', label: 'Exam schedule', icon: 'CalendarClock', perm: 'MARKS_SETUP' },
   { id: 'grades', label: 'Grade scale', icon: 'Award', perm: 'MARKS_SETUP' },
 ];
 
@@ -103,6 +104,7 @@ export default function MarksPage() {
         {tab === 'subjects' && <SubjectsTab />}
         {tab === 'classmap' && <ClassMapTab />}
         {tab === 'assessments' && <AssessmentsTab />}
+        {tab === 'schedule' && <ExamScheduleTab />}
         {tab === 'grades' && <GradesTab />}
       </div>
 
@@ -597,6 +599,110 @@ function GradesTab() {
           <Button kind="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save scale'}</Button>
         </div>
       </div>
+    </Card>
+  );
+}
+
+/* ---------------- Exam schedule (timetable per assessment × class) ---------------- */
+interface ExamRow { subject: string; date: string; day: string; session: string; time: string }
+const emptyRow = (): ExamRow => ({ subject: '', date: '', day: '', session: '', time: '' });
+
+function ExamScheduleTab() {
+  const [assessments, setAssessments] = useState<{ id: string; name: string; term: string | null }[]>([]);
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([]);
+  const [csMap, setCsMap] = useState<Record<string, string[]>>({});
+  const [aId, setAId] = useState('');
+  const [cId, setCId] = useState('');
+  const [rows, setRows] = useState<ExamRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const [a, c, s, cs] = await Promise.all([fetch('/api/assessments'), fetch('/api/classes'), fetch('/api/subjects'), fetch('/api/class-subjects')]);
+      if (a.ok) setAssessments(await a.json());
+      if (c.ok) setClasses(await c.json());
+      if (s.ok) setSubjects(await s.json());
+      if (cs.ok) setCsMap(await cs.json());
+    })();
+  }, []);
+
+  const classSubjects = useMemo(() => { const ids = csMap[cId] || []; return subjects.filter((s) => ids.includes(s.id)); }, [csMap, cId, subjects]);
+  const shortClass = (n: string) => n.replace(/\s?STD$/i, '');
+
+  // Load the saved schedule whenever the assessment/class changes.
+  useEffect(() => {
+    if (!aId || !cId) { setRows([]); return; }
+    setLoading(true);
+    fetch(`/api/assessments/schedule?assessmentId=${aId}&classId=${cId}`)
+      .then((r) => (r.ok ? r.json() : { rows: [] }))
+      .then((d) => setRows(Array.isArray(d.rows) ? d.rows : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [aId, cId]);
+
+  const setRow = (i: number, patch: Partial<ExamRow>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, emptyRow()]);
+  const delRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+  const loadSubjects = () => setRows(classSubjects.map((s) => ({ ...emptyRow(), subject: s.name })));
+
+  const save = async () => {
+    if (!aId || !cId) return;
+    setSaving(true);
+    try {
+      const r = await fetch('/api/assessments/schedule', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessmentId: aId, classId: cId, rows }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Failed to save');
+      toast.success('Exam schedule saved.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Card title="Exam schedule">
+      <p className="text-xs text-slate-500 mb-3 -mt-1">Set the exam date &amp; time per subject for a class. Hall tickets load this for printing.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
+        <Field label="Exam (assessment)"><Select value={aId} onChange={(e) => setAId(e.target.value)}><option value="">Select…</option>{assessments.map((a) => <option key={a.id} value={a.id}>{a.name}{a.term ? ` · ${a.term}` : ''}</option>)}</Select></Field>
+        <Field label="Class"><Select value={cId} onChange={(e) => setCId(e.target.value)}><option value="">Select…</option>{classes.map((c) => <option key={c.id} value={c.id}>{shortClass(c.name)}</option>)}</Select></Field>
+      </div>
+
+      {!aId || !cId ? (
+        <p className="text-sm text-slate-400 mt-4">Pick an exam and class to set its timetable.</p>
+      ) : loading ? (
+        <div className="mt-4"><Skeleton height={120} /></div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          <div className="flex gap-2">
+            <Button size="sm" onClick={loadSubjects} disabled={classSubjects.length === 0}>Load class subjects</Button>
+            <Button size="sm" icon="Plus" onClick={addRow}>Add row</Button>
+          </div>
+          {rows.length === 0 ? (
+            <p className="text-xs text-slate-400">No rows yet — load the class subjects or add rows, then fill date & time.</p>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="hidden sm:flex gap-1.5 text-[11px] text-slate-400 px-0.5">
+                <span className="w-20">Date</span><span className="w-16">Day</span><span className="flex-1">Subject</span><span className="w-16">Session</span><span className="w-24">Time</span><span className="w-6" />
+              </div>
+              {rows.map((r, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-1.5">
+                  <Input value={r.date} onChange={(e) => setRow(i, { date: e.target.value })} placeholder="Date" className="w-20" />
+                  <Input value={r.day} onChange={(e) => setRow(i, { day: e.target.value })} placeholder="Day" className="w-16" />
+                  <Input value={r.subject} onChange={(e) => setRow(i, { subject: e.target.value })} placeholder="Subject" className="flex-1 min-w-[7rem]" />
+                  <Input value={r.session} onChange={(e) => setRow(i, { session: e.target.value })} placeholder="FN/AN" className="w-16" />
+                  <Input value={r.time} onChange={(e) => setRow(i, { time: e.target.value })} placeholder="Time" className="w-24" />
+                  <button onClick={() => delRow(i)} className="text-slate-300 hover:text-danger-600 p-1"><Icon name="X" size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button kind="primary" icon="Check" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save schedule'}</Button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

@@ -1249,6 +1249,9 @@ model Assessment {
   order              Int            @default(0)
   defaultMax         Int            @default(100)
   publishedToParents Boolean        @default(false)
+  // Exam timetable per class: { [classId]: [{ subject, date, day, session, time }] }.
+  // Set in Marks → Exam schedule; Hall tickets load it for printing.
+  examSchedule       Json?
   markSheets         MarkSheet[]
   subjectMaxes       AssessmentSubject[]
   archived           Boolean        @default(false) // soft-delete: hidden until restored
