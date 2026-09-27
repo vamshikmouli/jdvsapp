@@ -9,6 +9,7 @@ const SINGLETON = 'singleton';
 const EDITABLE = [
   'schoolName',
   'logoUrl',
+  'signatureUrl',
   'principalName',
   'address',
   'phone',

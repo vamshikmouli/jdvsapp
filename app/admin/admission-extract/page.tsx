@@ -35,7 +35,7 @@ const emptyForm: Form = {
 };
 
 export default function AdmissionExtractPage() {
-  const [schoolDefault, setSchoolDefault] = useState({ schoolName: '', principalName: '' });
+  const [schoolDefault, setSchoolDefault] = useState({ schoolName: '', principalName: '', signatureUrl: '' as string | null });
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<StudentHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -50,7 +50,7 @@ export default function AdmissionExtractPage() {
   useEffect(() => {
     (async () => {
       const r = await fetch('/api/settings');
-      if (r.ok) { const d = await r.json(); setSchoolDefault({ schoolName: d.schoolName || '', principalName: d.principalName || '' }); }
+      if (r.ok) { const d = await r.json(); setSchoolDefault({ schoolName: d.schoolName || '', principalName: d.principalName || '', signatureUrl: d.signatureUrl || null }); }
     })();
   }, []);
 
@@ -225,7 +225,7 @@ export default function AdmissionExtractPage() {
             ) : (
               <div className="bg-slate-100 rounded-lg p-4 overflow-x-auto">
                 <div className="scale-90 origin-top-left" style={{ width: '175mm' }}>
-                  <Extract form={form} />
+                  <Extract form={form} signatureUrl={schoolDefault.signatureUrl} />
                 </div>
               </div>
             )}
@@ -235,7 +235,13 @@ export default function AdmissionExtractPage() {
 
       {selected && (
         <div id="extract" className="mt-6">
-          <Extract form={form} />
+          <Extract form={form} signatureUrl={schoolDefault.signatureUrl} />
+        </div>
+      )}
+
+      {selected && (
+        <div className="no-print fixed bottom-6 right-6 z-40">
+          <Button kind="primary" icon="Printer" onClick={() => window.print()}>Print</Button>
         </div>
       )}
     </>
@@ -255,7 +261,7 @@ function Row({ no, kn, en, value }: { no: number; kn: string; en: string; value:
   );
 }
 
-function Extract({ form }: { form: Form }) {
+function Extract({ form, signatureUrl }: { form: Form; signatureUrl: string | null }) {
   return (
     <div className="bg-white border-2 border-red-700 p-4" style={{ width: '194mm' }}>
       <div className="text-center border-b-2 border-red-700 pb-2 mb-3">
@@ -289,6 +295,7 @@ function Extract({ form }: { form: Form }) {
           <div>ದಿನಾಂಕ / Date: <span className="font-semibold">{fmtDate(form.extractDate)}</span></div>
         </div>
         <div className="text-center text-sm">
+          {signatureUrl && <img src={signatureUrl} alt="" className="h-12 w-auto object-contain mx-auto mb-1" />}
           <div className="w-48 border-t-2 border-red-700 pt-1">
             ಮುಖ್ಯೋಪಾಧ್ಯಾಯರ ಸಹಿ / Signature of the Headmaster
             {form.principalName && <div className="text-xs text-slate-500 mt-0.5">{form.principalName}</div>}

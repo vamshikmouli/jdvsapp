@@ -17,6 +17,7 @@ interface SessionDef {
 interface Settings {
   schoolName: string;
   logoUrl: string | null;
+  signatureUrl: string | null;
   principalName: string | null;
   address: string | null;
   phone: string | null;
@@ -94,6 +95,8 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [sigUploading, setSigUploading] = useState(false);
+  const sigInputRef = useRef<HTMLInputElement>(null);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -131,6 +134,25 @@ export default function SettingsPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
     } finally { setLogoUploading(false); }
+  };
+
+  const uploadSignature = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setSigUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'logos');
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'Upload failed');
+      set({ signatureUrl: j.url });
+      toast.info('Signature uploaded. Click Save to apply.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally { setSigUploading(false); }
   };
 
   // --- session list editing ---
@@ -233,6 +255,29 @@ export default function SettingsPage() {
                       </div>
                       <span className="text-xs text-slate-400">PNG/JPG, square works best. Remember to Save.</span>
                       <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={uploadLogo} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Digital signature</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-28 h-16 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                    {settings.signatureUrl
+                      ? <img src={settings.signatureUrl} alt="Signature" className="w-full h-full object-contain" />
+                      : <Icon name="PenLine" size={22} className="text-slate-300" />}
+                  </div>
+                  {canManage && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex gap-2">
+                        <Button kind="secondary" icon="Upload" disabled={sigUploading} onClick={() => sigInputRef.current?.click()}>
+                          {sigUploading ? 'Uploading…' : settings.signatureUrl ? 'Replace signature' : 'Upload signature'}
+                        </Button>
+                        {settings.signatureUrl && <Button kind="tertiary" onClick={() => set({ signatureUrl: null })}>Remove</Button>}
+                      </div>
+                      <span className="text-xs text-slate-400">Head Master's signature — prints on hall tickets &amp; certificates. Transparent PNG works best. Remember to Save.</span>
+                      <input ref={sigInputRef} type="file" accept="image/*" className="hidden" onChange={uploadSignature} />
                     </div>
                   )}
                 </div>

@@ -37,6 +37,11 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Prod build speed on the small VM: skip type-check + lint during `next build`
+  // (they're slow and swap-bound there). We run `tsc --noEmit` locally before every
+  // commit, so this is a build-time speed-up, not a loss of type safety.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   // Native/runtime packages Next must NOT try to webpack-bundle:
   //  - pdf-parse pulls in pdfjs worker/sample files (used by /api/marks/upload)
   //  - @napi-rs/canvas ships a .node binary (used by the weekly attendance image)

@@ -24,12 +24,12 @@ interface Config {
 const DEFAULT_CONFIG: Config = {
   title: 'HALL TICKET',
   examLabel: '',
-  instructions: '1. Bring this hall ticket to every exam.\n2. Reach the exam hall 15 minutes early.\n3. Mobile phones are not allowed.\n4. Clear all dues before the exam.',
+  instructions: '',
   fields: { photo: true, admissionNo: true, class: true, section: true, roll: false, dob: true, father: true, mother: false, address: false },
   showTimetable: true, timetable: [],
   ttColumns: { date: true, day: true, session: true, time: true, invigilatorSign: true },
   customColumns: [],
-  signatories: ['Class Teacher', 'Head Master', 'Principal'], perPage: 2,
+  signatories: ['Head Master'], perPage: 2,
 };
 
 export default function HallTicketsPage() {
@@ -37,7 +37,7 @@ export default function HallTicketsPage() {
   const [classes, setClasses] = useState<any[]>([]);
   const [csMap, setCsMap] = useState<Record<string, string[]>>({});
   const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([]);
-  const [school, setSchool] = useState<{ schoolName: string; address: string | null; phone: string | null } | null>(null);
+  const [school, setSchool] = useState<{ schoolName: string; address: string | null; phone: string | null; signatureUrl: string | null } | null>(null);
 
   const [aId, setAId] = useState(''); const [cId, setCId] = useState(''); const [secId, setSecId] = useState('');
   const [students, setStudents] = useState<any[] | null>(null);
@@ -47,7 +47,20 @@ export default function HallTicketsPage() {
 
   // Load saved config (per device).
   useEffect(() => {
-    try { const s = localStorage.getItem('hallTicketConfig'); if (s) setCfg({ ...DEFAULT_CONFIG, ...JSON.parse(s) }); } catch {}
+    try {
+      const s = localStorage.getItem('hallTicketConfig');
+      if (!s) return;
+      const parsed = JSON.parse(s);
+      // Migrate the old 3-signatory default to Head Master only (leaves custom labels alone).
+      if (Array.isArray(parsed.signatories) && parsed.signatories.join(',') === 'Class Teacher,Head Master,Principal') {
+        parsed.signatories = ['Head Master'];
+      }
+      // Clear the old default instructions block (keep any custom instructions).
+      if (typeof parsed.instructions === 'string' && parsed.instructions.startsWith('1. Bring this hall ticket to every exam.')) {
+        parsed.instructions = '';
+      }
+      setCfg({ ...DEFAULT_CONFIG, ...parsed });
+    } catch {}
   }, []);
   const save = (next: Config) => { setCfg(next); try { localStorage.setItem('hallTicketConfig', JSON.stringify(next)); } catch {} };
   const set = <K extends keyof Config>(k: K, v: Config[K]) => save({ ...cfg, [k]: v });
@@ -62,7 +75,7 @@ export default function HallTicketsPage() {
       setClasses(c.ok ? await c.json() : []);
       setSubjects((s.ok ? await s.json() : []).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name })));
       setCsMap(m.ok ? (await m.json()).map : {});
-      if (st.ok) { const d = await st.json(); setSchool({ schoolName: d.schoolName, address: d.address, phone: d.phone }); }
+      if (st.ok) { const d = await st.json(); setSchool({ schoolName: d.schoolName, address: d.address, phone: d.phone, signatureUrl: d.signatureUrl || null }); }
     })();
   }, []);
 
@@ -115,7 +128,7 @@ export default function HallTicketsPage() {
         @page { size: A4 portrait; margin: 8mm; }
         @media print {
           body { visibility: hidden; }
-          #tickets, #tickets * { visibility: visible; }
+          #tickets, #tickets * { visibility: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           /* Single vertical column: tickets stack top-to-bottom, never side by side.
              display/width/float/column-count are pinned so no stray rule can lay
              the cards out horizontally. */
@@ -245,6 +258,12 @@ export default function HallTicketsPage() {
           ))}
         </div>
       )}
+
+      {ready && (
+        <div className="no-print fixed bottom-6 right-6 z-40">
+          <Button kind="primary" icon="Printer" onClick={() => window.print()}>Print {students!.length}</Button>
+        </div>
+      )}
     </>
   );
 }
@@ -332,10 +351,14 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
         </div>
       )}
 
-      {/* signatures */}
-      <div className="flex justify-between items-end mt-auto pt-5">
+      {/* signatures — right-aligned, with blank space above the line to actually sign.
+          The Head Master's digital signature (from Settings) prints above their line. */}
+      <div className="flex justify-end items-end gap-10 mt-auto pt-14">
         {cfg.signatories.map((s, i) => (
-          <div key={i} className="text-center text-[11px] text-slate-600"><div className="border-t border-slate-500 w-28 pt-0.5">{s}</div></div>
+          <div key={i} className="text-center text-[11px] text-slate-600">
+            {school?.signatureUrl && /head\s*master/i.test(s) && <img src={school.signatureUrl} alt="" className="h-10 w-auto object-contain mx-auto mb-0.5" />}
+            <div className="border-t border-slate-500 w-36 pt-0.5">{s}</div>
+          </div>
         ))}
       </div>
     </div>

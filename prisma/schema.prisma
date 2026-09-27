@@ -742,6 +742,9 @@ model Settings {
   // School profile
   schoolName      String  @default("Jnana Deepika Vidhya Samsthe")
   logoUrl         String?
+  // Head Master's digital signature image — printed above signature lines everywhere
+  // (hall tickets, study/admission/rural certificates).
+  signatureUrl    String?
   principalName   String?
   address         String?
   phone           String?

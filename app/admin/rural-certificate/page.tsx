@@ -36,7 +36,7 @@ const emptyForm: Form = {
 };
 
 export default function RuralCertificatePage() {
-  const [schoolDefault, setSchoolDefault] = useState({ schoolName: '', principalName: '' });
+  const [schoolDefault, setSchoolDefault] = useState({ schoolName: '', principalName: '', signatureUrl: '' as string | null });
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<StudentHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -47,7 +47,7 @@ export default function RuralCertificatePage() {
   useEffect(() => {
     (async () => {
       const r = await fetch('/api/settings');
-      if (r.ok) { const d = await r.json(); setSchoolDefault({ schoolName: d.schoolName || '', principalName: d.principalName || '' }); }
+      if (r.ok) { const d = await r.json(); setSchoolDefault({ schoolName: d.schoolName || '', principalName: d.principalName || '', signatureUrl: d.signatureUrl || null }); }
     })();
   }, []);
 
@@ -161,7 +161,7 @@ export default function RuralCertificatePage() {
             ) : (
               <div className="bg-slate-100 rounded-lg p-4 overflow-x-auto">
                 <div className="scale-90 origin-top-left" style={{ width: '175mm' }}>
-                  <RuralCertificate form={form} />
+                  <RuralCertificate form={form} signatureUrl={schoolDefault.signatureUrl} />
                 </div>
               </div>
             )}
@@ -171,7 +171,13 @@ export default function RuralCertificatePage() {
 
       {selected && (
         <div id="rural-cert" className="mt-6">
-          <RuralCertificate form={form} />
+          <RuralCertificate form={form} signatureUrl={schoolDefault.signatureUrl} />
+        </div>
+      )}
+
+      {selected && (
+        <div className="no-print fixed bottom-6 right-6 z-40">
+          <Button kind="primary" icon="Printer" onClick={() => window.print()}>Print</Button>
         </div>
       )}
     </>
@@ -186,7 +192,7 @@ function Line({ children, className = '', minWidth = 140 }: { children: React.Re
   );
 }
 
-function RuralCertificate({ form }: { form: Form }) {
+function RuralCertificate({ form, signatureUrl }: { form: Form; signatureUrl: string | null }) {
   return (
     <div className="bg-white border-4 border-dotted border-red-600 p-8" style={{ width: '190mm' }}>
       <div className="text-xs text-slate-600 leading-snug mb-2 space-y-0.5">
@@ -257,7 +263,8 @@ function RuralCertificate({ form }: { form: Form }) {
         </div>
         <div className="text-center">
           <div>(ಸಹಿ )</div>
-          <div className="font-semibold mt-10 border-t border-slate-800 pt-1 w-56">ಮುಖ್ಯೋಪಾಧ್ಯಾಯ</div>
+          {signatureUrl && <img src={signatureUrl} alt="" className="h-12 w-auto object-contain mx-auto" />}
+          <div className={`font-semibold ${signatureUrl ? 'mt-1' : 'mt-10'} border-t border-slate-800 pt-1 w-56`}>ಮುಖ್ಯೋಪಾಧ್ಯಾಯ</div>
           <div className="text-sm">ಮೇಲು ರುಜು</div>
           {form.headmasterName && <div className="text-xs text-slate-500">{form.headmasterName}</div>}
         </div>
