@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server';
 // Each /admin route requires a permission (or none = any signed-in staff).
 // `perm` may be a list — holding ANY one of them grants access.
 const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
+  // More-specific prefix first (first match wins).
+  { prefix: '/admin/attendance/register', perm: ['ATTENDANCE_REGISTER', 'SETTINGS_MANAGE'] },
   { prefix: '/admin/attendance', perm: 'ATTENDANCE_VIEW' },
   { prefix: '/admin/students', perm: 'STUDENTS_VIEW' },
   { prefix: '/admin/hall-tickets', perm: 'STUDENTS_MANAGE' },
@@ -19,7 +21,7 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/users', perm: 'USERS_MANAGE' },
   { prefix: '/admin/roles', perm: 'ROLES_MANAGE' },
   { prefix: '/admin/communications', perm: 'NOTICES_MANAGE' },
-  { prefix: '/admin/marks', perm: 'MARKS_VIEW' },
+  { prefix: '/admin/marks', perm: ['MARKS_VIEW', 'MARKS_ENTER', 'MARKS_APPROVE', 'MARKS_SETUP', 'MARKS_SUBJECTS', 'MARKS_CLASSMAP', 'MARKS_ASSESSMENTS', 'MARKS_SCHEDULE', 'MARKS_GRADES'] },
   { prefix: '/admin/payroll', perm: 'PAYROLL_VIEW' },
   { prefix: '/admin/stocks', perm: ['STOCK_VIEW', 'SETTINGS_MANAGE'] },
   { prefix: '/admin/promotions', perm: 'SETTINGS_MANAGE' },

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
+import { MARKS_READ_ANY } from '@/lib/rbac/permissions';
 
 // GET /api/grade-bands — the configurable grade scale (high → low).
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const bands = await prisma.gradeBand.findMany({ orderBy: [{ order: 'asc' }, { minPercent: 'desc' }] });
   return NextResponse.json(bands);
 }
@@ -16,7 +17,7 @@ export async function GET() {
 // Body: { bands: [{ label, minPercent, maxPercent }] }
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_GRADES')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   const raw = Array.isArray(b.bands) ? b.bands : [];
   const bands = raw

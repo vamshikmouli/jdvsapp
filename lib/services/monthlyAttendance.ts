@@ -98,6 +98,14 @@ export async function getClassMonth(month: string, classId?: string | null): Pro
   });
   if (enr.length === 0) return { monthLabel, students: [] };
 
+  // School holidays this month — a declared holiday applies to students too, so
+  // any record on that day is shown as Holiday (not absent) and counted as Off.
+  const holidayRows = await prisma.holiday.findMany({
+    where: { date: { gte: monthStart, lte: monthEnd } },
+    select: { date: true },
+  });
+  const holidaySet = new Set(holidayRows.map((h) => iso(h.date)));
+
   const classIds = Array.from(new Set(enr.map((e) => e.classId)));
   const sessions = await prisma.attendanceSession.findMany({
     where: { date: { gte: monthStart, lte: monthEnd }, classId: { in: classIds } },
@@ -123,8 +131,10 @@ export async function getClassMonth(month: string, classId?: string | null): Pro
     let present = 0, absent = 0, leave = 0;
     const days: { date: string; status: string }[] = [];
     for (const [dk, statuses] of dayMap) {
-      const st = collapseDay(statuses);
+      // A declared holiday overrides whatever was marked: it's Off, never absent.
+      const st = holidaySet.has(dk) ? 'HOLIDAY' : collapseDay(statuses);
       days.push({ date: dk, status: st });
+      if (st === 'HOLIDAY') continue; // not counted in present/absent/leave
       if (st === 'PRESENT' || st === 'HALF_DAY') present++;
       else if (st === 'ABSENT') absent++;
       else leave++;

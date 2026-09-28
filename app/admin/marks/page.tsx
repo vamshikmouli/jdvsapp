@@ -6,31 +6,37 @@ import { useSession } from 'next-auth/react';
 import { PageHeader, Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal, Drawer } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
+import { permAllows } from '@/lib/rbac/crud';
+import type { Permission } from '@prisma/client';
 import { EntryTab, ApprovalsTab } from './entry-ui';
 
 type Tab = 'entry' | 'approvals' | 'subjects' | 'classmap' | 'assessments' | 'schedule' | 'grades';
 
-const ALL_TABS: { id: Tab; label: string; icon: string; perm: string }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: string; perm: Permission }[] = [
   { id: 'entry', label: 'Entry', icon: 'PencilLine', perm: 'MARKS_ENTER' },
   { id: 'approvals', label: 'Approvals', icon: 'CheckCircle2', perm: 'MARKS_APPROVE' },
-  { id: 'subjects', label: 'Subjects', icon: 'BookOpen', perm: 'MARKS_SETUP' },
-  { id: 'classmap', label: 'Class subjects', icon: 'Network', perm: 'MARKS_SETUP' },
-  { id: 'assessments', label: 'Assessments', icon: 'ClipboardList', perm: 'MARKS_SETUP' },
-  { id: 'schedule', label: 'Exam schedule', icon: 'CalendarClock', perm: 'MARKS_SETUP' },
-  { id: 'grades', label: 'Grade scale', icon: 'Award', perm: 'MARKS_SETUP' },
+  { id: 'subjects', label: 'Subjects', icon: 'BookOpen', perm: 'MARKS_SUBJECTS' },
+  { id: 'classmap', label: 'Class subjects', icon: 'Network', perm: 'MARKS_CLASSMAP' },
+  { id: 'assessments', label: 'Assessments', icon: 'ClipboardList', perm: 'MARKS_ASSESSMENTS' },
+  { id: 'schedule', label: 'Exam schedule', icon: 'CalendarClock', perm: 'MARKS_SCHEDULE' },
+  { id: 'grades', label: 'Grade scale', icon: 'Award', perm: 'MARKS_GRADES' },
 ];
 
 export default function MarksPage() {
   const { data: session } = useSession();
-  const perms = ((session?.user as any)?.perms as string[]) || [];
-  const tabs = useMemo(() => ALL_TABS.filter((t) => perms.includes(t.perm)), [perms.join(',')]);
+  const perms = ((session?.user as any)?.perms as Permission[]) || [];
+  // Honour the MARKS_SETUP umbrella so an existing role keeps every setup tab.
+  const tabs = useMemo(() => {
+    const set = new Set<Permission>(perms);
+    return ALL_TABS.filter((t) => permAllows(set, t.perm));
+  }, [perms.join(',')]);
   const [picked, setPicked] = useState<Tab | null>(null);
   const tab: Tab | undefined = picked && tabs.some((t) => t.id === picked) ? picked : tabs[0]?.id;
   const wide = tab === 'entry' || tab === 'approvals';
 
   // ----- Export / import (configuration + mark sheets + marks) -----
   const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
-  const canImport = perms.includes('MARKS_SETUP') || perms.includes('MARKS_APPROVE') || perms.includes('SETTINGS_MANAGE');
+  const canImport = permAllows(perms, 'MARKS_SETUP') || perms.includes('MARKS_APPROVE') || perms.includes('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);

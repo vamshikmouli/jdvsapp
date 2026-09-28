@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
+import { MARKS_READ_ANY } from '@/lib/rbac/permissions';
 import { getActiveYear } from '@/lib/services/fees';
 import type { AssessmentType } from '@prisma/client';
 
 // GET /api/assessments — assessments for the active year, with mark-sheet progress.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const year = await getActiveYear();
   const showArchived = new URL(req.url).searchParams.get('archived') === '1';
   const items = await prisma.assessment.findMany({
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
 // POST /api/assessments — create an assessment in the active year.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_ASSESSMENTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   const name = String(b.name || '').trim();
   const type: AssessmentType = b.type === 'SUMMATIVE' ? 'SUMMATIVE' : 'FORMATIVE';
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 // PATCH /api/assessments — edit fields or toggle publishedToParents.
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_ASSESSMENTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   if (!b?.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   await prisma.assessment.update({
@@ -67,7 +68,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE /api/assessments?id= — remove an assessment (cascades its mark sheets).
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_ASSESSMENTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const sp = new URL(req.url).searchParams;
   const id = sp.get('id');
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });

@@ -8,6 +8,7 @@ import { sendTextTemplate, sendImageTemplate, uploadWhatsAppMedia, feeWaRecipien
 import { renderReceiptImage, receiptImageAvailable } from '@/lib/services/receiptImage';
 import { prisma } from '@/lib/db';
 import { PAY_METHODS, feeMoney } from '@/lib/fees';
+import QRCode from 'qrcode';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 import { logActivity } from '@/lib/activity';
 import type { PayMethod } from '@prisma/client';
@@ -119,10 +120,23 @@ export async function POST(req: NextRequest) {
             let mediaId: string | null = null;
             if (imgOk) {
               try {
-                const png = renderReceiptImage({
+                // Verification QR (same as the printed receipt) — scan to confirm it's genuine.
+                let qrPng: Buffer | undefined;
+                if (pay?.verifyToken) {
+                  try {
+                    const base = (process.env.NEXTAUTH_URL || 'https://jnanadeepika.app').replace(/\/$/, '');
+                    const url = `${base}/verify?r=${encodeURIComponent(result.receiptNo)}&t=${pay.verifyToken}`;
+                    qrPng = await QRCode.toBuffer(url, { margin: 1, width: 160, errorCorrectionLevel: 'M' });
+                  } catch { /* no QR if it fails */ }
+                }
+                // Balance after this payment (whole-year fee position) — same as the printed receipt.
+                const bal = acct.summary.totalBalance;
+                const png = await renderReceiptImage({
                   schoolName: brandName, title: 'Fee Receipt', studentName: acct.student.name, klass: cls, sub,
                   rows: feeAllocs.map((a) => [a.label, rs(a.amount)] as [string, string]),
-                  totalAmount: rs(feeTotal), note: `Receipt ${result.receiptNo}`,
+                  totalAmount: rs(feeTotal),
+                  balanceLabel: 'Balance due', balanceValue: bal > 0 ? rs(bal) : 'No dues',
+                  note: `Receipt ${result.receiptNo}`, qrPng,
                 });
                 mediaId = await uploadWhatsAppMedia(png);
               } catch (e) { console.error('wa fee image render', e); }

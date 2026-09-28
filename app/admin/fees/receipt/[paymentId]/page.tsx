@@ -5,9 +5,12 @@ import { useParams } from 'next/navigation';
 import { Button, Skeleton, EmptyState } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { feeMoney, PAY_METHOD_LABEL } from '@/lib/fees';
+import { useBranding } from '@/components/useBranding';
+import QRCode from 'qrcode';
 
 interface Receipt {
   receiptNo: string;
+  verifyToken?: string;
   manualReceiptNo?: string | null;
   paidAt: string;
   method: string;
@@ -77,6 +80,13 @@ export default function ReceiptPage() {
 }
 
 function ReceiptCopy({ r, copy }: { r: Receipt; copy: string }) {
+  const { signatureUrl } = useBranding();
+  const [qrUrl, setQrUrl] = useState('');
+  useEffect(() => {
+    if (!r.verifyToken) return;
+    const url = `${window.location.origin}/verify?r=${encodeURIComponent(r.receiptNo)}&t=${r.verifyToken}`;
+    QRCode.toDataURL(url, { margin: 0, width: 120 }).then(setQrUrl).catch(() => {});
+  }, [r.verifyToken, r.receiptNo]);
   return (
     <div className={`receipt-copy relative bg-white border border-slate-200 rounded-xl p-6 shadow-xs mb-6 print:mb-0 print:border-0 print:shadow-none print:rounded-none ${r.voided ? 'opacity-70' : ''}`}>
       <span className="absolute top-0 right-0 text-[10px] font-bold tracking-wider text-white bg-purple-600 px-2 py-1 rounded-bl-md rounded-tr-xl print:rounded-none">{copy}</span>
@@ -164,8 +174,12 @@ function ReceiptCopy({ r, copy }: { r: Receipt; copy: string }) {
       {r.note && <div className="text-xs text-slate-500 mb-3">Note: {r.note}</div>}
 
       <div className="flex items-end justify-between pt-8 mt-2 border-t border-slate-200 text-xs text-slate-500">
-        <div>{copy === 'OFFICE COPY' ? 'Office copy — retain in file.' : 'Please keep this receipt.'}</div>
+        <div className="flex items-center gap-2">
+          {qrUrl && <img src={qrUrl} alt="Verify" className="w-14 h-14" />}
+          <div>{copy === 'OFFICE COPY' ? 'Office copy — retain in file.' : 'Please keep this receipt.'}{qrUrl && <div className="text-[10px] text-slate-400">Scan to verify this receipt</div>}</div>
+        </div>
         <div className="text-center">
+          {signatureUrl && <img src={signatureUrl} alt="" className="h-9 w-auto object-contain mx-auto mb-0.5" />}
           <div className="border-t border-slate-300 w-32 pt-1">Authorised signatory</div>
         </div>
       </div>

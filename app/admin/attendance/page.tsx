@@ -68,6 +68,8 @@ export default function AttendancePage() {
   // Whether this user may change marks (view-only otherwise).
   const canMark = myPerms.includes('ATTENDANCE_MARK');
   const canSettings = myPerms.includes('SETTINGS_MANAGE');
+  // Monthly register is its own permission (admins keep it via SETTINGS_MANAGE).
+  const canRegister = myPerms.includes('ATTENDANCE_REGISTER') || myPerms.includes('SETTINGS_MANAGE');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const canExport = myPerms.includes('REPORTS_EXPORT') || myPerms.includes('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
@@ -173,6 +175,24 @@ export default function AttendancePage() {
   // Per-class marked status for the selected date: { classId: { [slotKey]: status } }
   const [overview, setOverview] = useState<Record<string, Record<string, string>>>({});
 
+  // School holidays (declared on the staff-attendance side, but school-wide): a
+  // declared holiday applies to students too — that day is Off, not absent, so we
+  // surface it here and block marking. { 'YYYY-MM-DD': name }
+  const [holidayMap, setHolidayMap] = useState<Record<string, string>>({});
+  const year = date.slice(0, 4);
+  useEffect(() => {
+    fetch(`/api/attendance/holidays?from=${year}-01-01&to=${year}-12-31`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { date: string; name: string }[]) => {
+        const m: Record<string, string> = {};
+        (Array.isArray(list) ? list : []).forEach((h) => { m[h.date] = h.name; });
+        setHolidayMap(m);
+      })
+      .catch(() => { /* non-fatal */ });
+  }, [year]);
+  const holidayName = holidayMap[date] || '';
+  const isHoliday = !!holidayName;
+
   // Load configured sessions from Settings
   const loadSettings = useCallback(async () => {
     try {
@@ -255,7 +275,7 @@ export default function AttendancePage() {
   };
 
   const markAllPresent = () => {
-    if (locked || !canMark) return;
+    if (locked || !canMark || isHoliday) return;
     const next: Record<string, Status> = {};
     roster.forEach((s) => (next[s.id] = 'PRESENT'));
     setMarks(next);
@@ -277,11 +297,12 @@ export default function AttendancePage() {
   const total = roster.length;
   const pct = total ? Math.round((counts.present / total) * 1000) / 10 : 0;
   const allMarked = total > 0 && counts.unmarked === 0;
-  const canSave = allMarked && !locked;
+  const canSave = allMarked && !locked && !isHoliday;
 
   const cls = classes.find((c) => c.id === classId);
 
   const save = async () => {
+    if (isHoliday) { toast.info(`${date} is a holiday (${holidayName}) — no attendance needed.`); return; }
     setSaving(true);
     setMessage('');
     try {
@@ -344,6 +365,11 @@ export default function AttendancePage() {
         meta={`${cls ? shortClassName(cls.name) : '—'} · ${currentSession?.label || ''} session${windowLabel ? ` · ${windowLabel}` : ''}`}
         actions={
           <>
+            {canRegister && (
+              <a href="/admin/attendance/register" target="_blank" rel="noopener" className="text-sm text-slate-500 hover:text-slate-700 inline-flex items-center gap-1 mr-1">
+                <Icon name="CalendarRange" size={16} /> Month register
+              </a>
+            )}
             {canSettings && (
               <Button icon="Settings" onClick={() => setSettingsOpen(true)}>Settings</Button>
             )}
@@ -354,7 +380,7 @@ export default function AttendancePage() {
               <Button icon="Upload" onClick={() => importInputRef.current?.click()}>Import</Button>
             )}
             {canMark && (
-              <Button icon="CheckCheck" onClick={markAllPresent} disabled={locked || total === 0}>
+              <Button icon="CheckCheck" onClick={markAllPresent} disabled={locked || total === 0 || isHoliday}>
                 Mark all present
               </Button>
             )}
@@ -446,6 +472,18 @@ export default function AttendancePage() {
           </div>
         </div>
       </div>
+
+      {/* Holiday banner — a school holiday applies to students too: the day is
+          Off, not absent, so marking is disabled. */}
+      {isHoliday && (
+        <div className="flex items-center gap-2.5 mt-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm text-purple-800">
+          <Icon name="PartyPopper" size={18} />
+          <div>
+            <span className="font-semibold">Holiday — {holidayName}.</span>{' '}
+            <span className="text-purple-700">Attendance isn’t taken today. Students are marked Off, not absent.</span>
+          </div>
+        </div>
+      )}
 
       {/* Compact summary strip */}
       <div className="flex flex-wrap items-center justify-between gap-3 mt-3 bg-white rounded-lg border border-slate-200 shadow-xs px-4 py-2">

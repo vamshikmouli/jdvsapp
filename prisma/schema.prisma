@@ -40,6 +40,7 @@ enum Permission {
   ATTENDANCE_VIEW
   ATTENDANCE_MARK
   ATTENDANCE_LOCK
+  ATTENDANCE_REGISTER     // monthly bulk register (full-screen grid)
   STAFF_ATTENDANCE_MARK   // self: punch IN/OUT (biometric/kiosk)
   STAFF_ATTENDANCE_VIEW   // see staff attendance board, history, reports
   STAFF_ATTENDANCE_MANAGE // regularize entries, reset a staff device/PIN
@@ -58,7 +59,12 @@ enum Permission {
   MARKS_VIEW // view marks/assessments
   MARKS_ENTER // teacher: enter & submit marks for assigned classes
   MARKS_APPROVE // admin: verify/approve submitted marks, edit, publish
-  MARKS_SETUP // admin: manage subjects, assessments, grade bands
+  MARKS_SETUP // umbrella: implies all the granular setup tabs below
+  MARKS_SUBJECTS // Subjects tab
+  MARKS_CLASSMAP // Class subjects tab
+  MARKS_ASSESSMENTS // Assessments tab
+  MARKS_SCHEDULE // Exam schedule tab
+  MARKS_GRADES // Grade scale tab
   ANALYTICS_VIEW
   REPORTS_EXPORT
   SETTINGS_MANAGE

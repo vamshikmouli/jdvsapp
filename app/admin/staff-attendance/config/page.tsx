@@ -200,7 +200,7 @@ function HolidaysCard() {
 
   return (
     <Card title="Holidays">
-      <p className="text-sm text-slate-600 mb-3">Declare any date a holiday for all staff. Staff with no punch that day show “Holiday”, not absent.</p>
+      <p className="text-sm text-slate-600 mb-3">Declare any date a holiday. Staff with no punch that day show “Holiday”, not absent — and it applies to students too: student attendance is closed for that day (Off, not absent).</p>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <div className="flex-1 min-w-[160px]"><Field label="Name"><Input value={name} placeholder="e.g. Founder’s Day" onChange={(e) => setName(e.target.value)} /></Field></div>

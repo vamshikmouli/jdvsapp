@@ -24,7 +24,7 @@ const clean = (rows: any): ExamRow[] => (Array.isArray(rows) ? rows : [])
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   // Readable by anyone who can see marks or generate hall tickets.
-  if (!session || !canAny(session, ['MARKS_VIEW', 'MARKS_SETUP', 'HALL_TICKETS_ACCESS', 'STUDENTS_MANAGE'])) {
+  if (!session || !canAny(session, ['MARKS_VIEW', 'MARKS_SETUP', 'MARKS_SCHEDULE', 'MARKS_ASSESSMENTS', 'HALL_TICKETS_ACCESS', 'STUDENTS_MANAGE'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const sp = new URL(req.url).searchParams;
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 // PUT /api/assessments/schedule  Body: { assessmentId, classId, rows: ExamRow[] }
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_SCHEDULE')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const assessmentId = String(b.assessmentId || '');
   const classId = String(b.classId || '');

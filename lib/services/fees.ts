@@ -25,6 +25,7 @@ import {
 } from '@/lib/feeStructure';
 import { itemsForFromMatrix, priceFromMatrix, type UniformMatrix } from '@/lib/uniformMatrix';
 import { deductUniformStock, reverseUniformStock } from '@/lib/services/uniformStock';
+import { receiptToken } from '@/lib/receiptVerify';
 import type { PayMethod } from '@prisma/client';
 
 // The editable uniform price matrix for a year (falls back to the static file).
@@ -182,6 +183,7 @@ export async function getStudentAccount(studentId: string, yearId: string) {
     payments: payments.map((p) => ({
       id: p.id,
       receiptNo: p.receiptNo,
+      verifyToken: receiptToken(p.receiptNo, studentId, p.total),
       manualReceiptNo: p.manualReceiptNo ?? null,
       method: p.method,
       tenders: (p.tenders as { method: string; amount: number }[] | null) ?? null,
@@ -590,6 +592,7 @@ export async function getReceipt(paymentId: string) {
   const acct = await getStudentAccount(p.studentId, p.yearId);
   return {
     receiptNo: p.receiptNo,
+    verifyToken: receiptToken(p.receiptNo, p.studentId, p.total),
     manualReceiptNo: p.manualReceiptNo ?? null,
     paidAt: p.paidAt.toISOString(),
     method: p.method,

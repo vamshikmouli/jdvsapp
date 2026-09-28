@@ -155,6 +155,11 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
                     onClick={() => { setGate(item.id); setGatePw(''); setGateErr(''); }} className={cls}>
                     {inner}
                   </button>
+                ) : item.newTab ? (
+                  // Full-screen tools open in a new browser tab so they get the whole window.
+                  <a key={item.id} href={hrefFor(item.id)} target="_blank" rel="noopener" onClick={onClose} title={`${item.label} (opens in a new tab)`} className={cls}>
+                    {inner}
+                  </a>
                 ) : (
                   <Link key={item.id} href={hrefFor(item.id)} onClick={onClose} title={item.label} className={cls}>
                     {inner}

@@ -44,6 +44,9 @@ export default function HallTicketsPage() {
   const [loadingRoster, setLoadingRoster] = useState(false);
 
   const [cfg, setCfg] = useState<Config>(DEFAULT_CONFIG);
+  // Raw text for the "Signature labels" field so typing spaces/commas isn't fought by
+  // re-parsing on every keystroke. Parsed into cfg.signatories for the printout.
+  const [sigText, setSigText] = useState(DEFAULT_CONFIG.signatories.join(', '));
 
   // Load saved config (per device).
   useEffect(() => {
@@ -62,6 +65,7 @@ export default function HallTicketsPage() {
         parsed.instructions = '';
       }
       setCfg({ ...DEFAULT_CONFIG, ...parsed });
+      setSigText((Array.isArray(parsed.signatories) ? parsed.signatories : DEFAULT_CONFIG.signatories).join(', '));
     } catch {}
   }, []);
   const save = (next: Config) => { setCfg(next); try { localStorage.setItem('hallTicketConfig', JSON.stringify(next)); } catch {} };
@@ -168,7 +172,7 @@ export default function HallTicketsPage() {
               <Field label="Title"><Input value={cfg.title} onChange={(e) => set('title', e.target.value)} /></Field>
               <Field label="Exam label" hint="Blank = uses the assessment name"><Input value={cfg.examLabel} onChange={(e) => set('examLabel', e.target.value)} placeholder={assessment?.name || 'e.g. Term 1 Examination'} /></Field>
               <Field label="Instructions"><textarea value={cfg.instructions} onChange={(e) => set('instructions', e.target.value)} rows={5} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none resize-y" /></Field>
-              <Field label="Signature labels" hint="Comma-separated"><Input value={cfg.signatories.join(', ')} onChange={(e) => set('signatories', e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} /></Field>
+              <Field label="Signature labels" hint="Comma-separated"><Input value={sigText} onChange={(e) => { setSigText(e.target.value); set('signatories', e.target.value.split(',').map((x) => x.trim()).filter(Boolean)); }} /></Field>
               <Field label="Tickets per page"><Select value={String(cfg.perPage)} onChange={(e) => set('perPage', Number(e.target.value) as 1 | 2)}><option value="2">2 per page</option><option value="1">1 per page</option></Select></Field>
             </div>
           </Card>
@@ -285,9 +289,9 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
 
   return (
     <div className="bg-white border-2 border-slate-800 rounded-lg p-4 h-full flex flex-col">
-      {/* header */}
-      <div className="text-center border-b-2 border-slate-800 pb-2">
-        <div className="text-lg font-bold uppercase text-slate-900">{school?.schoolName || 'School Name'}</div>
+      {/* header (no divider here — the single line sits under the exam label below) */}
+      <div className="text-center">
+        <div className="text-xl font-bold uppercase text-slate-900">{school?.schoolName || 'School Name'}</div>
         {school?.address && <div className="text-[11px] text-slate-600">{school.address}</div>}
         {school?.phone && <div className="text-[11px] text-slate-600">Ph: {school.phone}</div>}
         <div className="mt-1.5 inline-block bg-slate-800 text-white text-sm font-bold uppercase tracking-wide px-4 py-0.5 rounded">{cfg.title}</div>
@@ -302,10 +306,10 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
           {/* Name on the left, Class pushed to the right (same row) */}
           <div className="flex items-baseline justify-between gap-3">
             <div className="text-base font-bold text-slate-900">{student.name}</div>
-            {classVal && <div className="text-[13px] font-semibold text-slate-900 whitespace-nowrap">Class : {classVal}</div>}
+            {classVal && <div className="text-[14px] font-semibold text-slate-900 whitespace-nowrap">Class : {classVal}</div>}
           </div>
           {rows.length > 0 && (
-            <table className="text-[12px] mt-0.5">
+            <table className="text-[13px] mt-0.5">
               <tbody>
                 {rows.map(([k, v]) => (
                   <tr key={k}><td className="text-slate-500 pr-3 align-top whitespace-nowrap">{k}</td><td className="text-slate-900 font-medium">: {v}</td></tr>
@@ -324,27 +328,27 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
       {/* timetable */}
       {cfg.showTimetable && cfg.timetable.length > 0 && (
         <div className="mt-2">
-          <table className="w-full text-[11px] border border-slate-400 border-collapse">
+          <table className="w-full text-[12.5px] border border-slate-400 border-collapse">
             <thead><tr className="bg-slate-100">
-              {cfg.ttColumns.date && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap">Date</th>}
-              {cfg.ttColumns.day && <th className="border border-slate-400 px-2 py-0.5 text-left">Day</th>}
-              <th className="border border-slate-400 px-2 py-0.5 text-left">Subject</th>
-              {cfg.ttColumns.session && <th className="border border-slate-400 px-2 py-0.5 text-left">Session</th>}
-              {cfg.ttColumns.time && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap">Time</th>}
-              {cfg.customColumns.map((col) => <th key={col.id} className="border border-slate-400 px-2 py-0.5 text-left">{col.label}</th>)}
-              {cfg.ttColumns.invigilatorSign && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap w-24">Invigilator Sign</th>}
+              {cfg.ttColumns.date && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Date</th>}
+              {cfg.ttColumns.day && <th className="border border-slate-400 px-2 py-1 text-left">Day</th>}
+              <th className="border border-slate-400 px-2 py-1 text-left">Subject</th>
+              {cfg.ttColumns.session && <th className="border border-slate-400 px-2 py-1 text-left">Session</th>}
+              {cfg.ttColumns.time && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Time</th>}
+              {cfg.customColumns.map((col) => <th key={col.id} className="border border-slate-400 px-2 py-1 text-left">{col.label}</th>)}
+              {cfg.ttColumns.invigilatorSign && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap w-24">Invigilator Sign</th>}
             </tr></thead>
             <tbody>
               {cfg.timetable.map((r, i) => (
                 <tr key={i}>
-                  {cfg.ttColumns.date && <td className="border border-slate-400 px-2 py-0.5 whitespace-nowrap">{r.date}</td>}
-                  {cfg.ttColumns.day && <td className="border border-slate-400 px-2 py-0.5">{r.day}</td>}
-                  <td className="border border-slate-400 px-2 py-0.5">{r.subject}</td>
-                  {cfg.ttColumns.session && <td className="border border-slate-400 px-2 py-0.5">{r.session}</td>}
-                  {cfg.ttColumns.time && <td className="border border-slate-400 px-2 py-0.5 whitespace-nowrap">{r.time}</td>}
-                  {cfg.customColumns.map((col) => <td key={col.id} className="border border-slate-400 px-2 py-0.5">{r.custom?.[col.id] || ''}</td>)}
+                  {cfg.ttColumns.date && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.date}</td>}
+                  {cfg.ttColumns.day && <td className="border border-slate-400 px-2 py-1">{r.day}</td>}
+                  <td className="border border-slate-400 px-2 py-1">{r.subject}</td>
+                  {cfg.ttColumns.session && <td className="border border-slate-400 px-2 py-1">{r.session}</td>}
+                  {cfg.ttColumns.time && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.time}</td>}
+                  {cfg.customColumns.map((col) => <td key={col.id} className="border border-slate-400 px-2 py-1">{r.custom?.[col.id] || ''}</td>)}
                   {/* blank cell — the invigilator signs here per exam */}
-                  {cfg.ttColumns.invigilatorSign && <td className="border border-slate-400 px-2 py-0.5"></td>}
+                  {cfg.ttColumns.invigilatorSign && <td className="border border-slate-400 px-2 py-1"></td>}
                 </tr>
               ))}
             </tbody>
@@ -363,12 +367,16 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
       {/* signatures — right-aligned, with blank space above the line to actually sign.
           The Head Master's digital signature (from Settings) prints above their line. */}
       <div className="flex justify-end items-end gap-8 mt-auto pt-6">
-        {cfg.signatories.map((s, i) => (
-          <div key={i} className="text-center text-[11px] text-slate-600">
-            {school?.signatureUrl && /head\s*master/i.test(s) && <img src={school.signatureUrl} alt="" className="h-8 w-auto object-contain mx-auto" />}
-            <div className="border-t border-slate-500 w-32 pt-0.5">{s}</div>
-          </div>
-        ))}
+        {cfg.signatories.map((s, i) => {
+          const showSig = !!school?.signatureUrl && /head\s*master/i.test(s);
+          return (
+            <div key={i} className="text-center text-[12px] text-slate-700">
+              {showSig && <img src={school.signatureUrl} alt="" className="h-9 w-auto object-contain mx-auto" />}
+              {/* no underline when a digital signature is printed above the label */}
+              <div className={`w-32 pt-0.5 ${showSig ? '' : 'border-t border-slate-500'}`}>{s}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

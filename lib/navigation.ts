@@ -1,5 +1,6 @@
 import { Surface } from '@prisma/client';
 import { NavGroup } from './types';
+import { MARKS_READ_ANY } from './rbac/permissions';
 
 // Single staff navigation (admin shell). Items are filtered by the user's
 // permissions at render time — everyone sees the same UI, scoped to what they can do.
@@ -13,6 +14,8 @@ export const STAFF_NAV: NavGroup[] = [
     label: 'Attendance',
     items: [
       { id: 'attendance', label: 'Student attendance', icon: 'Calendar', perm: 'ATTENDANCE_VIEW' },
+      // Full-screen month grid — opens in a new tab, gated by its own perm (admins keep it via SETTINGS_MANAGE).
+      { id: 'attendance/register', label: 'Attendance register', icon: 'CalendarRange', perm: ['ATTENDANCE_REGISTER', 'SETTINGS_MANAGE'], newTab: true },
       { id: 'staff-attendance', label: 'Staff attendance', icon: 'CalendarClock', perm: 'STAFF_ATTENDANCE_VIEW' },
       { id: 'kiosk', label: 'Kiosk', icon: 'Tablet', perm: 'STAFF_ATTENDANCE_KIOSK' },
       { id: 'leave', label: 'Leave', icon: 'CalendarOff', perm: 'STAFF_ATTENDANCE_MARK' },
@@ -22,7 +25,8 @@ export const STAFF_NAV: NavGroup[] = [
   {
     label: 'Exams',
     items: [
-      { id: 'marks', label: 'Marks', icon: 'ClipboardList', perm: 'MARKS_VIEW' },
+      // Any marks permission (view, entry, approvals, or any single setup tab) opens the section.
+      { id: 'marks', label: 'Marks', icon: 'ClipboardList', perm: MARKS_READ_ANY },
     ],
   },
   {

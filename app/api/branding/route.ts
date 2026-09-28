@@ -8,10 +8,10 @@ export async function GET() {
   try {
     const s = await prisma.settings.findUnique({
       where: { id: 'singleton' },
-      select: { schoolName: true, logoUrl: true },
+      select: { schoolName: true, logoUrl: true, signatureUrl: true },
     });
-    return NextResponse.json({ schoolName: s?.schoolName || 'Jnana Deepika', logoUrl: s?.logoUrl || null });
+    return NextResponse.json({ schoolName: s?.schoolName || 'Jnana Deepika', logoUrl: s?.logoUrl || null, signatureUrl: s?.signatureUrl || null });
   } catch {
-    return NextResponse.json({ schoolName: 'Jnana Deepika', logoUrl: null });
+    return NextResponse.json({ schoolName: 'Jnana Deepika', logoUrl: null, signatureUrl: null });
   }
 }

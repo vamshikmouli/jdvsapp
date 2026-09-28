@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
+import { MARKS_READ_ANY } from '@/lib/rbac/permissions';
 import { getAssessmentSubjectMaxes, setAssessmentSubjectMaxes } from '@/lib/services/marks';
 
 // GET /api/assessment-subjects?assessmentId= — per-subject max marks for an assessment.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const assessmentId = new URL(req.url).searchParams.get('assessmentId') || '';
   if (!assessmentId) return NextResponse.json({ error: 'assessmentId required' }, { status: 400 });
   const data = await getAssessmentSubjectMaxes(assessmentId);
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
 // Body: { assessmentId, maxes: [{ subjectId, max }] }
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_ASSESSMENTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   const assessmentId = String(b.assessmentId || '');
   const maxes = Array.isArray(b.maxes) ? b.maxes : [];

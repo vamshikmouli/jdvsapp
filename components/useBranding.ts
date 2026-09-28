@@ -5,9 +5,10 @@ import { useEffect, useState } from 'react';
 export interface Branding {
   schoolName: string;
   logoUrl: string | null;
+  signatureUrl: string | null;
 }
 
-const FALLBACK: Branding = { schoolName: 'Jnana Deepika', logoUrl: null };
+const FALLBACK: Branding = { schoolName: 'Jnana Deepika', logoUrl: null, signatureUrl: null };
 
 // Module-level cache so the public /api/branding is fetched once per page load,
 // not once per component that needs the logo.
@@ -20,7 +21,7 @@ function load(): Promise<Branding> {
     inflight = fetch('/api/branding')
       .then((r) => r.json())
       .then((d) => {
-        cache = { schoolName: d?.schoolName || FALLBACK.schoolName, logoUrl: d?.logoUrl || null };
+        cache = { schoolName: d?.schoolName || FALLBACK.schoolName, logoUrl: d?.logoUrl || null, signatureUrl: d?.signatureUrl || null };
         return cache;
       })
       .catch(() => FALLBACK);

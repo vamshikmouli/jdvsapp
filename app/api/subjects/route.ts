@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
+import { MARKS_READ_ANY } from '@/lib/rbac/permissions';
 
 // GET /api/subjects — list all subjects (with how many classes use each).
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const subjects = await prisma.subject.findMany({
     orderBy: [{ order: 'asc' }, { name: 'asc' }],
     include: { _count: { select: { classes: true } } },
@@ -18,7 +19,7 @@ export async function GET() {
 // POST /api/subjects — create a subject.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_SUBJECTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   const name = String(b.name || '').trim();
   if (!name) return NextResponse.json({ error: 'Subject name is required' }, { status: 400 });
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
 // PATCH /api/subjects — edit name/code/active/order.
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_SUBJECTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
   if (!b?.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   await prisma.subject.update({
@@ -51,7 +52,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE /api/subjects?id= — remove a subject (cascades class links & mark sheets).
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_SETUP')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !can(session, 'MARKS_SUBJECTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const sheets = await prisma.markSheet.count({ where: { subjectId: id } });

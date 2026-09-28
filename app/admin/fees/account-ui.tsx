@@ -10,6 +10,7 @@ import { Icon } from '@/components/Icon';
 import { feeMoney, PAY_METHOD_LABEL, type AccountSummary } from '@/lib/fees';
 import { VILLAGE_VAN_FEES } from '@/lib/feeStructure';
 import { useBranding } from '@/components/useBranding';
+import QRCode from 'qrcode';
 
 export function shortClass(name: string | null) {
   return name ? name.replace(/\s?STD$/, '') : '—';
@@ -753,8 +754,17 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   // Print the receipt for ONE payment (this transaction only) — a Fee receipt (with
   // school name) and/or a Uniform receipt (student details, no school name, short codes).
   // Each is its own print job so a thermal auto-cutter cuts them apart. Reprintable any time.
-  const printReceipt = (pay: any) => {
+  const printReceipt = async (pay: any) => {
     if (!pay || !account) return;
+    // QR to the public verification page — proves the receipt is genuine when scanned.
+    let qr = '';
+    if (pay.verifyToken) {
+      try {
+        const url = `${window.location.origin}/verify?r=${encodeURIComponent(pay.receiptNo)}&t=${pay.verifyToken}`;
+        qr = await QRCode.toDataURL(url, { margin: 0, width: 132, errorCorrectionLevel: 'M' });
+      } catch { /* no QR if it fails */ }
+    }
+    const verifyHtml = qr ? `<div class="verify"><img class="qr" src="${qr}"/><div class="vtext">Scan to verify<br>this receipt is genuine</div></div>` : '';
     const esc = (t: string) => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const rup = (n: number) => '₹' + feeMoney(n).slice(1);
     const shortName = (label: string) => {
@@ -786,6 +796,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
 
     // One A5 page. `copy` is the PARENT / OFFICE label printed in the corner.
     const footFor = (copy: string) => (copy === 'OFFICE COPY' ? 'Office copy — retain in file.' : 'Please keep this receipt for your records.');
+    // Signature: the digital signature image (from Settings) above the signature line.
+    const signHtml = `<div class="sign"><span>Received with thanks</span><span class="sigcol">${brand.signatureUrl ? `<img class="sigimg" src="${esc(brand.signatureUrl)}"/>` : ''}<span class="sig">Authorised signatory</span></span></div>`;
     const feePage = (copy: string) => !feeAl.length ? '' : `
       <div class="page">
         <div class="copytag">${copy}</div>
@@ -798,7 +810,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tfoot><tr><td>Total paid</td><td class="r">${rup(sum(feeAl))}</td></tr></tfoot>
         </table>
         ${balBlock}
-        <div class="sign"><span>Received with thanks</span><span class="sig">Authorised signatory</span></div>
+        ${signHtml}
+        ${verifyHtml}
         <div class="foot">${footFor(copy)}</div>
       </div>`;
     const uniPage = (copy: string) => !uniAl.length ? '' : `
@@ -811,7 +824,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <tbody>${body(uniAl, shortName)}</tbody>
           <tfoot><tr><td>Total paid</td><td class="r">${rup(sum(uniAl))}</td></tr></tfoot>
         </table>
-        <div class="sign"><span>Received with thanks</span><span class="sig">Authorised signatory</span></div>
+        ${signHtml}
+        ${verifyHtml}
         <div class="foot">${footFor(copy)}</div>
       </div>`;
 
@@ -842,9 +856,14 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       tfoot td{border-top:1px solid #000;border-bottom:none;font-weight:700;padding-top:7px;font-size:14px}
       table.bal{margin-top:12px}
       td.due{color:#C7322E;font-weight:700}
-      .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:28px;font-size:11px;color:#555}
-      .sign .sig{border-top:1px solid #999;padding-top:3px}
-      .foot{margin-top:12px;font-size:11px;text-align:center;color:#555}
+      .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:20px;font-size:11px;color:#555}
+      .sigcol{text-align:center}
+      .sigimg{display:block;height:34px;width:auto;object-fit:contain;margin:0 auto 1px}
+      .sign .sig{border-top:1px solid #999;padding-top:3px;display:block}
+      .foot{margin-top:10px;font-size:11px;text-align:center;color:#555}
+      .verify{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:10px}
+      .verify .qr{width:52px;height:52px}
+      .verify .vtext{font-size:9px;color:#666;text-align:left;line-height:1.3}
     </style></head><body>
       ${pages.join('')}
       <script>

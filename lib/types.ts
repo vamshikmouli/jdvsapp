@@ -24,6 +24,8 @@ export interface NavItem {
   // list is given, ANY of them (e.g. a granular access perm OR a legacy umbrella
   // so admins keep access without a data migration).
   perm?: Permission | Permission[];
+  // Open in a new browser tab (for full-screen tools that need the whole window).
+  newTab?: boolean;
 }
 
 export interface NavGroup {

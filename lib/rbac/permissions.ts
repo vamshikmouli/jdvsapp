@@ -57,6 +57,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: 'ATTENDANCE_VIEW', label: 'View attendance', desc: 'See attendance records and reports' },
       { key: 'ATTENDANCE_MARK', label: 'Mark attendance', desc: 'Record present / absent / leave — saving finalizes (closes) the session' },
       { key: 'ATTENDANCE_LOCK', label: 'Reopen sessions', desc: 'Reopen a finalized session to allow corrections (admins by default; can be granted to teachers)' },
+      { key: 'ATTENDANCE_REGISTER', label: 'Monthly register', desc: 'Open the full-screen month register (bulk-mark a whole month, Present by default)' },
     ],
   },
   {
@@ -76,9 +77,14 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     icon: 'ClipboardList',
     permissions: [
       { key: 'MARKS_VIEW', label: 'View (read)', desc: 'View marks and assessments' },
-      { key: 'MARKS_ENTER', label: 'Enter marks', desc: 'Teacher: enter & submit marks for assigned classes' },
-      { key: 'MARKS_APPROVE', label: 'Approve / publish', desc: 'Admin: verify, edit and publish submitted marks' },
-      { key: 'MARKS_SETUP', label: 'Set up', desc: 'Manage subjects, assessments and grade bands' },
+      { key: 'MARKS_ENTER', label: 'Entry tab', desc: 'Teacher: enter & submit marks for assigned classes' },
+      { key: 'MARKS_APPROVE', label: 'Approvals tab', desc: 'Admin: verify, edit and publish submitted marks' },
+      { key: 'MARKS_SUBJECTS', label: 'Subjects tab', desc: 'Create and edit the subject list' },
+      { key: 'MARKS_CLASSMAP', label: 'Class subjects tab', desc: 'Map which subjects each class takes' },
+      { key: 'MARKS_ASSESSMENTS', label: 'Assessments tab', desc: 'Create FA/SA assessments and their subjects/max marks' },
+      { key: 'MARKS_SCHEDULE', label: 'Exam schedule tab', desc: 'Set exam dates/timings used on hall tickets' },
+      { key: 'MARKS_GRADES', label: 'Grade scale tab', desc: 'Define grade bands (A1, A2, …)' },
+      { key: 'MARKS_SETUP', label: 'Set up — all tabs (full)', desc: 'Legacy umbrella: grants every setup tab above (Subjects, Class subjects, Assessments, Exam schedule, Grade scale)' },
     ],
   },
   {
@@ -197,6 +203,18 @@ export const SURFACE_META: Record<Surface, SurfaceMeta> = {
 export const ALL_PERMISSIONS: Permission[] = PERMISSION_CATALOG.flatMap((g) =>
   g.permissions.map((p) => p.key)
 );
+
+// The per-tab marks-setup permissions (each gates one config tab + its write API).
+export const MARKS_SETUP_TABS: Permission[] = [
+  'MARKS_SUBJECTS', 'MARKS_CLASSMAP', 'MARKS_ASSESSMENTS', 'MARKS_SCHEDULE', 'MARKS_GRADES',
+];
+
+// Any marks permission — used to gate shared READ endpoints (subjects, class
+// subjects, assessments, grade bands) that several marks tabs depend on, so a
+// role granted just one tab can still load what that tab needs.
+export const MARKS_READ_ANY: Permission[] = [
+  'MARKS_VIEW', 'MARKS_ENTER', 'MARKS_APPROVE', 'MARKS_SETUP', ...MARKS_SETUP_TABS,
+];
 
 /**
  * The 4 built-in system roles (isSystem: true).

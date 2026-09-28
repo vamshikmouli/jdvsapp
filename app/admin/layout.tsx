@@ -53,6 +53,12 @@ export default function AdminLayout({
     return <div className="min-h-screen bg-slate-50">{children}</div>;
   }
 
+  // The monthly attendance register is a wide grid — give it the full window (no
+  // sidebar, no max-width shell) so all the day columns fit. Opened in a new tab.
+  if (pathname.startsWith('/admin/attendance/register')) {
+    return <div className="min-h-screen bg-slate-50 px-3 sm:px-5 py-4">{children}</div>;
+  }
+
   return (
     <div className="h-screen bg-slate-25">
       {/* Sidebar (off-canvas drawer on mobile, fixed on desktop) */}

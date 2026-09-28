@@ -6,10 +6,12 @@ import fs from 'fs';
 
 let FONT = '';
 let createCanvas: any = null;
+let loadImage: any = null;
 (() => {
   try {
     const canvasLib = require('@napi-rs/canvas');
     createCanvas = canvasLib.createCanvas;
+    loadImage = canvasLib.loadImage;
     const GlobalFonts = canvasLib.GlobalFonts;
     const reg: string[] = [
       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
@@ -40,14 +42,18 @@ export interface ReceiptImageData {
   sub: string;                      // receipt no · date · method (this transaction)
   rows: [string, string][];         // [item, amount paid] — THIS transaction only
   totalAmount: string;              // total paid in this receipt
+  balanceLabel?: string;            // e.g. "Balance due" / "Balance" — omit to hide the row
+  balanceValue?: string;            // e.g. "Rs. 8,000" / "No dues" (pre-formatted)
   note?: string;                    // optional footer line
+  qrPng?: Buffer;                   // optional QR (verification) PNG, drawn at the bottom
 }
 
 /** Render a per-transaction receipt PNG. Throws if no font is registered. */
-export function renderReceiptImage(d: ReceiptImageData): Buffer {
+export async function renderReceiptImage(d: ReceiptImageData): Promise<Buffer> {
   if (!FONT) throw new Error('No font registered for receipt image');
   const W = 620, PAD = 30, rowH = 30, bandH = 74;
-  const H = bandH + 30 + 40 + 28 + d.rows.length * rowH + 44 + (d.note ? 32 : 0) + PAD;
+  const hasBalance = !!(d.balanceLabel && d.balanceValue);
+  const H = bandH + 30 + 40 + 28 + d.rows.length * rowH + 44 + (hasBalance ? 30 : 0) + (d.note ? 32 : 0) + (d.qrPng ? 100 : 0) + PAD;
   const c = createCanvas(W, H);
   const g = c.getContext('2d');
   const F = (px: number, weight: 'normal' | 'bold' = 'normal') => { g.font = `${weight} ${px}px "${FONT}"`; };
@@ -99,7 +105,27 @@ export function renderReceiptImage(d: ReceiptImageData): Buffer {
   g.textAlign = 'right'; g.fillText(d.totalAmount, amtX - 8, y + 7);
   y += 38;
 
-  if (d.note) { F(12, 'bold'); g.textAlign = 'center'; g.fillStyle = MUTED; g.fillText(d.note, cx, y + 4); }
+  // Balance due (year fee position) — mirrors the printed receipt.
+  if (hasBalance) {
+    const cleared = /^(no dues|nil|cleared)/i.test(d.balanceValue!.trim());
+    F(13, 'bold'); g.textAlign = 'left'; g.fillStyle = INK; g.fillText(d.balanceLabel!, PAD + 2, y + 2);
+    F(13, 'bold'); g.textAlign = 'right'; g.fillStyle = cleared ? '#156D3B' : '#A4231F';
+    g.fillText(d.balanceValue!, amtX - 2, y + 2);
+    g.strokeStyle = LINE; g.lineWidth = 1; g.beginPath(); g.moveTo(PAD, y + 12); g.lineTo(W - PAD, y + 12); g.stroke();
+    y += 30;
+  }
+
+  if (d.note) { F(12, 'bold'); g.textAlign = 'center'; g.fillStyle = MUTED; g.fillText(d.note, cx, y + 4); y += 24; }
+
+  // Verification QR — scan to confirm the receipt is genuine.
+  if (d.qrPng && loadImage) {
+    try {
+      const img = await loadImage(d.qrPng);
+      const qs = 68, qx = cx - qs / 2, qy = y + 6;
+      g.drawImage(img, qx, qy, qs, qs);
+      F(10); g.textAlign = 'center'; g.fillStyle = MUTED; g.fillText('Scan to verify this receipt is genuine', cx, qy + qs + 14);
+    } catch { /* skip QR on failure */ }
+  }
 
   return c.toBuffer('image/png');
 }

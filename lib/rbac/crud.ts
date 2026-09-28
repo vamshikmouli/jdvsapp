@@ -15,6 +15,9 @@ export const MANAGE_IMPLIES: Partial<Record<Permission, Permission[]>> = {
   CLASSES_MANAGE: ['CLASSES_CREATE', 'CLASSES_UPDATE', 'CLASSES_DELETE'],
   STAFF_MANAGE: ['STAFF_CREATE', 'STAFF_UPDATE', 'STAFF_DELETE'],
   PAYROLL_MANAGE: ['PAYROLL_CREATE', 'PAYROLL_UPDATE', 'PAYROLL_DELETE'],
+  // MARKS_SETUP is the legacy umbrella for the per-tab marks-setup permissions —
+  // holding it grants every setup tab, so existing roles keep full setup access.
+  MARKS_SETUP: ['MARKS_SUBJECTS', 'MARKS_CLASSMAP', 'MARKS_ASSESSMENTS', 'MARKS_SCHEDULE', 'MARKS_GRADES'],
 };
 
 // Reverse index: each granular perm → the umbrella that also satisfies it.
