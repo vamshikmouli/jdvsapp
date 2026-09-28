@@ -111,8 +111,7 @@ export default function AttendanceRegisterPage() {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || 'Save failed');
-      const skipped = j.skippedLockedDays?.length ? ` · ${j.skippedLockedDays.length} locked day(s) skipped` : '';
-      toast.success(`Saved ${j.written} mark${j.written === 1 ? '' : 's'} across ${j.days} day(s)${skipped}.`);
+      toast.success(`Submitted ${j.written} mark${j.written === 1 ? '' : 's'} across ${j.days} day(s). No need to submit again in daily attendance.`);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -135,7 +134,7 @@ export default function AttendanceRegisterPage() {
             </Link>
             <Button icon="CheckCheck" onClick={allPresent} disabled={!data || loading}>All present</Button>
             <Button kind="primary" icon="Save" onClick={save} disabled={!data || loading || saving}>
-              {saving ? 'Saving…' : 'Save register'}
+              {saving ? 'Submitting…' : 'Save & submit'}
             </Button>
           </>
         }

@@ -6,6 +6,7 @@ import { Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { PushOptIn } from '@/components/PushOptIn';
 import { MonthlyLeavesCard } from '@/components/MonthlyLeavesCard';
+import { AttendanceCoverageCard } from '@/components/AttendanceCoverageCard';
 
 interface DashboardData {
   kpis: { studentsTotal: number; studentsActive: number; staffTotal: number; classesTotal: number };
@@ -267,6 +268,9 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
+
+          {/* ===== Monthly attendance coverage (per class × per day) ===== */}
+          <AttendanceCoverageCard />
 
           {/* ===== Trend + Today's sessions ===== */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">

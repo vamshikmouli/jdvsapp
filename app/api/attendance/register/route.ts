@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can, canAny, getClassScope } from '@/lib/rbac/roles';
+import { canAny, getClassScope } from '@/lib/rbac/roles';
 import { getActiveYear } from '@/lib/services/fees';
 import { parseSessions } from '@/lib/attendance/sessions';
 import type { AttendanceStatus } from '@prisma/client';
@@ -124,7 +124,6 @@ export async function PUT(req: NextRequest) {
     const monthStart = new Date(Date.UTC(yy, mm - 1, 1));
     const monthEnd = new Date(Date.UTC(yy, mm, 0, 23, 59, 59));
     const slot = await primarySlot();
-    const canReopen = can(session, 'ATTENDANCE_LOCK');
     const uid = (session.user as any).id;
 
     // Which days are off (Sunday or holiday) — never create sessions for them.
@@ -149,13 +148,15 @@ export async function PUT(req: NextRequest) {
     }
 
     let written = 0;
-    const skippedLockedDays: string[] = [];
     for (const [day, recs] of byDay) {
       if (!recs.length) continue;
       const date = new Date(Date.UTC(yy, mm - 1, day));
+      // The register IS the submission: create the day's session already finalized
+      // (locked), or finalize an existing one — so the daily marking page shows it
+      // as submitted and never asks to submit again. The register itself owns the
+      // lock, so it always overwrites (no lock-skip) to stay re-editable.
       let sess = await prisma.attendanceSession.findUnique({ where: { classId_date_slot: { classId, date, slot } } });
-      if (sess?.locked && !canReopen) { skippedLockedDays.push(iso(date)); continue; }
-      if (!sess) sess = await prisma.attendanceSession.create({ data: { classId, date, slot, takenById: uid } });
+      if (!sess) sess = await prisma.attendanceSession.create({ data: { classId, date, slot, takenById: uid, locked: true } });
       const sessionId = sess.id;
       await prisma.$transaction(
         recs.map((r) =>
@@ -166,10 +167,11 @@ export async function PUT(req: NextRequest) {
           }),
         ),
       );
+      if (!sess.locked) await prisma.attendanceSession.update({ where: { id: sessionId }, data: { locked: true } });
       written += recs.length;
     }
 
-    return NextResponse.json({ ok: true, written, days: byDay.size, skippedLockedDays });
+    return NextResponse.json({ ok: true, written, days: byDay.size });
   } catch (err) {
     console.error('attendance/register PUT', err);
     return NextResponse.json({ error: 'Failed to save register' }, { status: 500 });
