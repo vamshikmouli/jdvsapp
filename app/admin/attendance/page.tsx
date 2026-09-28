@@ -3,7 +3,7 @@
 import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, Modal, Field, Input, Select, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
+import { PageHeader, Button, Card, Modal, Drawer, Field, Input, Select, Avatar, EmptyState, Donut, Skeleton, TableRowSkeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -67,6 +67,8 @@ export default function AttendancePage() {
   const isAdmin = myPerms.includes('ATTENDANCE_LOCK');
   // Whether this user may change marks (view-only otherwise).
   const canMark = myPerms.includes('ATTENDANCE_MARK');
+  const canSettings = myPerms.includes('SETTINGS_MANAGE');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const canExport = myPerms.includes('REPORTS_EXPORT') || myPerms.includes('SETTINGS_MANAGE');
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -172,20 +174,19 @@ export default function AttendancePage() {
   const [overview, setOverview] = useState<Record<string, Record<string, string>>>({});
 
   // Load configured sessions from Settings
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/settings');
-        if (!res.ok) return;
-        const s = await res.json();
-        const list: SessionDef[] = Array.isArray(s.sessions) && s.sessions.length ? s.sessions : DEFAULT_SESSIONS;
-        setSessions(list);
-        setSlot((cur) => (list.some((x) => x.key === cur) ? cur : list[0].key));
-      } catch {
-        /* keep defaults */
-      }
-    })();
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) return;
+      const s = await res.json();
+      const list: SessionDef[] = Array.isArray(s.sessions) && s.sessions.length ? s.sessions : DEFAULT_SESSIONS;
+      setSessions(list);
+      setSlot((cur) => (list.some((x) => x.key === cur) ? cur : list[0].key));
+    } catch {
+      /* keep defaults */
+    }
   }, []);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   const currentSession = sessions.find((s) => s.key === slot) || sessions[0];
   const windowLabel = currentSession && currentSession.open && currentSession.close
@@ -343,6 +344,9 @@ export default function AttendancePage() {
         meta={`${cls ? shortClassName(cls.name) : '—'} · ${currentSession?.label || ''} session${windowLabel ? ` · ${windowLabel}` : ''}`}
         actions={
           <>
+            {canSettings && (
+              <Button icon="Settings" onClick={() => setSettingsOpen(true)}>Settings</Button>
+            )}
             {canExport && (
               <Button icon="Download" onClick={() => setExportOpen(true)}>Export</Button>
             )}
@@ -612,6 +616,95 @@ export default function AttendancePage() {
           </div>
         </div>
       </Modal>
+
+      {settingsOpen && <AttendanceSettingsDrawer onClose={() => setSettingsOpen(false)} onSaved={loadSettings} />}
     </>
+  );
+}
+
+// Small on/off switch (mirrors the one in Settings).
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-purple-500' : 'bg-slate-300'}`}>
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+}
+
+// Attendance settings, right where you use them: sessions + auto-lock + the WhatsApp
+// absence toggle. Reads/writes the same /api/settings as the Settings page.
+function AttendanceSettingsDrawer({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [sessions, setSessions] = useState<SessionDef[]>(DEFAULT_SESSIONS);
+  const [autoLock, setAutoLock] = useState(true);
+  const [notifyAbsence, setNotifyAbsence] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/settings');
+        if (r.ok) {
+          const s = await r.json();
+          if (Array.isArray(s.sessions) && s.sessions.length) setSessions(s.sessions);
+          setAutoLock(!!s.autoLock);
+          setNotifyAbsence(!!s.notifyAbsence);
+        }
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const editSession = (i: number, patch: Partial<SessionDef>) => setSessions((l) => l.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+  const addSession = () => setSessions((l) => [...l, { key: `s${Date.now().toString(36)}`, label: `Session ${l.length + 1}`, open: '', close: '' }]);
+  const removeSession = (i: number) => setSessions((l) => l.filter((_, j) => j !== i));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await fetch('/api/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessions, autoLock, notifyAbsence }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Failed to save');
+      toast.success('Attendance settings saved.');
+      onSaved(); onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Drawer open onClose={onClose} title="Attendance settings" subtitle="Sessions, auto-lock and parent alerts" width={520}
+      footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button kind="primary" onClick={save} disabled={saving || loading}>{saving ? 'Saving…' : 'Save'}</Button></div>}>
+      {loading ? <Skeleton height={220} /> : (
+        <div className="space-y-5">
+          <div>
+            <div className="text-sm font-medium text-slate-900 mb-2">Sessions</div>
+            <div className="space-y-2">
+              {sessions.map((s, i) => (
+                <div key={s.key} className="flex items-end gap-2">
+                  <Field label="Name" full><Input value={s.label} onChange={(e) => editSession(i, { label: e.target.value })} /></Field>
+                  <div className="w-24"><label className="block text-[11px] text-slate-400 mb-1">Opens</label><Input type="time" value={s.open} onChange={(e) => editSession(i, { open: e.target.value })} /></div>
+                  <div className="w-24"><label className="block text-[11px] text-slate-400 mb-1">Closes</label><Input type="time" value={s.close} onChange={(e) => editSession(i, { close: e.target.value })} /></div>
+                  <button onClick={() => removeSession(i)} disabled={sessions.length <= 1} className="text-slate-300 hover:text-danger-600 disabled:opacity-30 p-2"><Icon name="Trash2" size={16} /></button>
+                </div>
+              ))}
+              <Button size="sm" icon="Plus" onClick={addSession}>Add session</Button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div><div className="text-sm font-medium text-slate-900">Auto-lock sessions</div><p className="text-xs text-slate-500 mt-0.5">Lock a session automatically after its close time.</p></div>
+              <Toggle checked={autoLock} onChange={setAutoLock} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div><div className="text-sm font-medium text-slate-900">WhatsApp parents on absence</div><p className="text-xs text-slate-500 mt-0.5">Message the guardian when a student is marked absent or on leave (on submit). Turn off to stop these.</p></div>
+              <Toggle checked={notifyAbsence} onChange={setNotifyAbsence} />
+            </div>
+          </div>
+        </div>
+      )}
+    </Drawer>
   );
 }

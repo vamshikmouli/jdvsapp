@@ -51,9 +51,11 @@ export default function HallTicketsPage() {
       const s = localStorage.getItem('hallTicketConfig');
       if (!s) return;
       const parsed = JSON.parse(s);
-      // Migrate the old 3-signatory default to Head Master only (leaves custom labels alone).
-      if (Array.isArray(parsed.signatories) && parsed.signatories.join(',') === 'Class Teacher,Head Master,Principal') {
-        parsed.signatories = ['Head Master'];
+      // Head Master only by default: strip the old "Class Teacher" / "Principal" labels
+      // from any cached config (keeps genuinely custom labels; falls back to Head Master).
+      if (Array.isArray(parsed.signatories)) {
+        const cleaned = parsed.signatories.filter((x: any) => !/^(class teacher|principal)$/i.test(String(x).trim()));
+        parsed.signatories = cleaned.length ? cleaned : ['Head Master'];
       }
       // Clear the old default instructions block (keep any custom instructions).
       if (typeof parsed.instructions === 'string' && parsed.instructions.startsWith('1. Bring this hall ticket to every exam.')) {
@@ -270,9 +272,10 @@ export default function HallTicketsPage() {
 
 function HallTicket({ student, cfg, school, examTitle, preview }: { student: any; cfg: Config; school: any; examTitle: string; year?: string; preview?: boolean }) {
   const F = cfg.fields;
+  const classVal = F.class ? (shortClass(student.class?.name || null) || '') : '';
   const rows: [string, string][] = [];
   if (F.admissionNo) rows.push(['Student ID', student.id]);
-  if (F.class) rows.push(['Class', shortClass(student.class?.name || null) + (F.section && student.class ? '' : '')]);
+  // Class is shown to the right of the name (not as a row) to save vertical space.
   if (F.section && student.section?.name) rows.push(['Section', student.section.name]);
   if (F.roll && student.roll) rows.push(['Roll No', String(student.roll)]);
   if (F.dob && student.dob) rows.push(['Date of Birth', fmtDate(student.dob)]);
@@ -290,23 +293,29 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
         <div className="mt-1.5 inline-block bg-slate-800 text-white text-sm font-bold uppercase tracking-wide px-4 py-0.5 rounded">{cfg.title}</div>
       </div>
 
-      {/* exam */}
-      {examTitle && <div className="text-center text-sm font-semibold text-slate-800 mt-2">{examTitle}</div>}
+      {/* exam label — below the HALL TICKET badge, with a divider line under it */}
+      {examTitle && <div className="text-center text-sm font-semibold text-slate-800 mt-1.5 pb-1.5 border-b-2 border-slate-800">{examTitle}</div>}
 
       {/* student + photo */}
-      <div className="flex gap-4 mt-3">
+      <div className="flex gap-4 mt-2">
         <div className="flex-1">
-          <div className="text-base font-bold text-slate-900 mb-1.5">{student.name}</div>
-          <table className="text-[13px]">
-            <tbody>
-              {rows.map(([k, v]) => (
-                <tr key={k}><td className="text-slate-500 pr-3 py-0.5 align-top whitespace-nowrap">{k}</td><td className="text-slate-900 font-medium py-0.5">: {v}</td></tr>
-              ))}
-            </tbody>
-          </table>
+          {/* Name on the left, Class pushed to the right (same row) */}
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-base font-bold text-slate-900">{student.name}</div>
+            {classVal && <div className="text-[13px] font-semibold text-slate-900 whitespace-nowrap">Class : {classVal}</div>}
+          </div>
+          {rows.length > 0 && (
+            <table className="text-[12px] mt-0.5">
+              <tbody>
+                {rows.map(([k, v]) => (
+                  <tr key={k}><td className="text-slate-500 pr-3 align-top whitespace-nowrap">{k}</td><td className="text-slate-900 font-medium">: {v}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
         {F.photo && (
-          <div className="w-24 h-28 border border-slate-400 rounded flex items-center justify-center flex-shrink-0 overflow-hidden bg-slate-50">
+          <div className="w-20 h-24 border border-slate-400 rounded flex items-center justify-center flex-shrink-0 overflow-hidden bg-slate-50">
             {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : <span className="text-[10px] text-slate-400 text-center">Affix<br />Photo</span>}
           </div>
         )}
@@ -314,28 +323,28 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
 
       {/* timetable */}
       {cfg.showTimetable && cfg.timetable.length > 0 && (
-        <div className="mt-3">
-          <table className="w-full text-[12px] border border-slate-400 border-collapse">
+        <div className="mt-2">
+          <table className="w-full text-[11px] border border-slate-400 border-collapse">
             <thead><tr className="bg-slate-100">
-              {cfg.ttColumns.date && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Date</th>}
-              {cfg.ttColumns.day && <th className="border border-slate-400 px-2 py-1 text-left">Day</th>}
-              <th className="border border-slate-400 px-2 py-1 text-left">Subject</th>
-              {cfg.ttColumns.session && <th className="border border-slate-400 px-2 py-1 text-left">Session</th>}
-              {cfg.ttColumns.time && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap">Time</th>}
-              {cfg.customColumns.map((col) => <th key={col.id} className="border border-slate-400 px-2 py-1 text-left">{col.label}</th>)}
-              {cfg.ttColumns.invigilatorSign && <th className="border border-slate-400 px-2 py-1 text-left whitespace-nowrap w-24">Invigilator Sign</th>}
+              {cfg.ttColumns.date && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap">Date</th>}
+              {cfg.ttColumns.day && <th className="border border-slate-400 px-2 py-0.5 text-left">Day</th>}
+              <th className="border border-slate-400 px-2 py-0.5 text-left">Subject</th>
+              {cfg.ttColumns.session && <th className="border border-slate-400 px-2 py-0.5 text-left">Session</th>}
+              {cfg.ttColumns.time && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap">Time</th>}
+              {cfg.customColumns.map((col) => <th key={col.id} className="border border-slate-400 px-2 py-0.5 text-left">{col.label}</th>)}
+              {cfg.ttColumns.invigilatorSign && <th className="border border-slate-400 px-2 py-0.5 text-left whitespace-nowrap w-24">Invigilator Sign</th>}
             </tr></thead>
             <tbody>
               {cfg.timetable.map((r, i) => (
                 <tr key={i}>
-                  {cfg.ttColumns.date && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.date}</td>}
-                  {cfg.ttColumns.day && <td className="border border-slate-400 px-2 py-1">{r.day}</td>}
-                  <td className="border border-slate-400 px-2 py-1">{r.subject}</td>
-                  {cfg.ttColumns.session && <td className="border border-slate-400 px-2 py-1">{r.session}</td>}
-                  {cfg.ttColumns.time && <td className="border border-slate-400 px-2 py-1 whitespace-nowrap">{r.time}</td>}
-                  {cfg.customColumns.map((col) => <td key={col.id} className="border border-slate-400 px-2 py-1">{r.custom?.[col.id] || ''}</td>)}
+                  {cfg.ttColumns.date && <td className="border border-slate-400 px-2 py-0.5 whitespace-nowrap">{r.date}</td>}
+                  {cfg.ttColumns.day && <td className="border border-slate-400 px-2 py-0.5">{r.day}</td>}
+                  <td className="border border-slate-400 px-2 py-0.5">{r.subject}</td>
+                  {cfg.ttColumns.session && <td className="border border-slate-400 px-2 py-0.5">{r.session}</td>}
+                  {cfg.ttColumns.time && <td className="border border-slate-400 px-2 py-0.5 whitespace-nowrap">{r.time}</td>}
+                  {cfg.customColumns.map((col) => <td key={col.id} className="border border-slate-400 px-2 py-0.5">{r.custom?.[col.id] || ''}</td>)}
                   {/* blank cell — the invigilator signs here per exam */}
-                  {cfg.ttColumns.invigilatorSign && <td className="border border-slate-400 px-2 py-1"></td>}
+                  {cfg.ttColumns.invigilatorSign && <td className="border border-slate-400 px-2 py-0.5"></td>}
                 </tr>
               ))}
             </tbody>
@@ -353,11 +362,11 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
 
       {/* signatures — right-aligned, with blank space above the line to actually sign.
           The Head Master's digital signature (from Settings) prints above their line. */}
-      <div className="flex justify-end items-end gap-10 mt-auto pt-14">
+      <div className="flex justify-end items-end gap-8 mt-auto pt-6">
         {cfg.signatories.map((s, i) => (
           <div key={i} className="text-center text-[11px] text-slate-600">
-            {school?.signatureUrl && /head\s*master/i.test(s) && <img src={school.signatureUrl} alt="" className="h-10 w-auto object-contain mx-auto mb-0.5" />}
-            <div className="border-t border-slate-500 w-36 pt-0.5">{s}</div>
+            {school?.signatureUrl && /head\s*master/i.test(s) && <img src={school.signatureUrl} alt="" className="h-8 w-auto object-contain mx-auto" />}
+            <div className="border-t border-slate-500 w-32 pt-0.5">{s}</div>
           </div>
         ))}
       </div>

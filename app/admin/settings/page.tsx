@@ -424,8 +424,8 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-slate-900">Notify parents on absence</div>
-                      <p className="text-xs text-slate-500 mt-0.5">Send an alert to the guardian when a student is marked absent.</p>
+                      <div className="text-sm font-medium text-slate-900">WhatsApp parents on absence</div>
+                      <p className="text-xs text-slate-500 mt-0.5">Send a WhatsApp message to the guardian when a student is marked absent or on leave (on attendance submit). Turn off to stop these messages.</p>
                     </div>
                     <Toggle checked={settings.notifyAbsence} disabled={!canManage} onChange={(v) => set({ notifyAbsence: v })} />
                   </div>
