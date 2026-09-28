@@ -47,6 +47,8 @@ export default function AttendanceRegisterPage() {
   const [saving, setSaving] = useState(false);
   // grid[studentId][day] = status. A missing cell means "Present" (the default).
   const [grid, setGrid] = useState<Record<string, Record<number, Status>>>({});
+  // Cell with focus — highlights its row name and day header so the cursor is easy to spot.
+  const [focused, setFocused] = useState<{ sid: string; day: number } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -185,7 +187,7 @@ export default function AttendanceRegisterPage() {
                       key={d.day}
                       title={d.holiday || DOW[d.dow]}
                       className={`border-b border-slate-200 px-1 py-1 text-center font-semibold w-9 ${
-                        d.holiday ? 'bg-purple-100 text-purple-700' : d.sunday ? 'bg-slate-100 text-slate-400' : d.future ? 'bg-white text-slate-300' : 'bg-slate-50 text-slate-600'
+                        focused?.day === d.day ? 'bg-purple-600 text-white' : d.holiday ? 'bg-purple-100 text-purple-700' : d.sunday ? 'bg-slate-100 text-slate-400' : d.future ? 'bg-white text-slate-300' : 'bg-slate-50 text-slate-600'
                       }`}
                     >
                       <div className="text-[13px] leading-none">{d.day}</div>
@@ -198,8 +200,10 @@ export default function AttendanceRegisterPage() {
               <tbody>
                 {data.roster.map((s, ri) => (
                   <tr key={s.id} className={ri % 2 ? 'bg-slate-50/40' : ''}>
-                    <td className="sticky left-0 z-10 bg-inherit border-r border-slate-200 px-3 py-1 text-slate-800 whitespace-nowrap min-w-[180px]">
-                      <span className="text-slate-400 mr-1.5 tabular-nums">{ri + 1}.</span>{s.name}
+                    <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-1 whitespace-nowrap min-w-[180px] ${
+                      focused?.sid === s.id ? 'bg-purple-100 text-purple-900 font-semibold shadow-[inset_3px_0_0_theme(colors.purple.600)]' : 'bg-inherit text-slate-800'
+                    }`}>
+                      <span className={`mr-1.5 tabular-nums ${focused?.sid === s.id ? 'text-purple-500' : 'text-slate-400'}`}>{ri + 1}.</span>{s.name}
                     </td>
                     {data.days.map((d) => {
                       if (d.sunday || d.holiday || d.future) {
@@ -211,8 +215,10 @@ export default function AttendanceRegisterPage() {
                           <select
                             value={v}
                             onChange={(e) => setCell(s.id, d.day, e.target.value as Status)}
+                            onFocus={() => setFocused({ sid: s.id, day: d.day })}
+                            onBlur={() => setFocused((f) => (f?.sid === s.id && f.day === d.day ? null : f))}
                             title={`${s.name} · ${d.iso}`}
-                            className={`w-full h-8 text-center text-[12px] font-semibold border-0 outline-none appearance-none cursor-pointer ${CELL_CLASS[v]}`}
+                            className={`w-full h-8 text-center text-[12px] font-semibold border-0 outline-none appearance-none cursor-pointer hover:ring-1 hover:ring-inset hover:ring-purple-300 focus:ring-2 focus:ring-inset focus:ring-purple-600 ${CELL_CLASS[v]}`}
                             style={{ textAlignLast: 'center' }}
                           >
                             {OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.code}</option>)}
