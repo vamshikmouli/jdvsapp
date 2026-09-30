@@ -182,7 +182,7 @@ function ContinuousAbsentees() {
 /* ---------- Monthly attendance: appreciation/improvement image + message ---------- */
 type Tier = 'perfect' | 'great' | 'good' | 'low';
 interface MonthStudent { student: string; className: string | null; tier: Tier; pct: number; status: string; to?: string; error?: string }
-interface MonthResult { monthLabel: string; total: number; sent: number; failed: number; skipped: number; tiers: Record<Tier, number>; details: MonthStudent[]; waConfigured?: boolean }
+interface MonthResult { monthLabel: string; total: number; sent: number; failed: number; skipped: number; already: number; held: number; dailyLimit: number; usedToday: number; tiers: Record<Tier, number>; details: MonthStudent[]; waConfigured?: boolean }
 const TIER_META: Record<Tier, { label: string; chip: string; dot: string }> = {
   perfect: { label: 'All present', chip: 'bg-success-50 text-success-700 border-success-100', dot: 'bg-success-500' },
   great: { label: '90%+', chip: 'bg-info-50 text-info-700 border-info-100', dot: 'bg-info-500' },
@@ -215,7 +215,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
   };
 
   const send = async (test = false) => {
-    if (!test && !confirm(`Send monthly attendance for ${preview?.monthLabel || month} to ${preview?.total ?? 'all'} students' parents on WhatsApp?`)) return;
+    if (!test && !confirm(`Send monthly attendance for ${preview?.monthLabel || month} to ${preview?.sent ?? 'the remaining'} parent number(s) on WhatsApp?`)) return;
     setBusy(test ? 'test' : 'send'); setErr('');
     try {
       const body: any = { month }; if (classId) body.classId = classId; if (test) body.to = testTo.trim();
@@ -248,7 +248,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">{view.monthLabel}</div>
-              <div className="text-[13px] text-slate-500">{result ? <>Sent {result.sent} · failed {result.failed} · skipped {result.skipped}</> : <>{view.total} student{view.total === 1 ? '' : 's'} with attendance data</>}</div>
+              <div className="text-[13px] text-slate-500">{result ? <>Sent {result.sent} · failed {result.failed} · no number {result.skipped}{result.already ? <> · already sent {result.already}</> : null}{result.held ? <> · held {result.held}</> : null}</> : <>{view.total} student{view.total === 1 ? '' : 's'} with attendance data · {view.sent} to send{view.already ? <> · {view.already} already sent</> : null}{view.held ? <> · {view.held} held</> : null}</>}</div>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(['perfect', 'great', 'good', 'low'] as Tier[]).map((t) => (
@@ -261,7 +261,18 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
 
           {view.waConfigured === false && <div className="mt-3 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">WhatsApp isn't configured on the server, so nothing can be sent yet.</div>}
 
-          {!result && view.total > 0 && (
+          {typeof view.dailyLimit === 'number' && (
+            <div className="mt-3 text-[12.5px] text-slate-500">
+              WhatsApp daily limit: <b>{view.usedToday}</b> of <b>{view.dailyLimit}</b> parent numbers used in the last 24 hours (fee receipts and alerts count too).
+            </div>
+          )}
+          {view.held > 0 && (
+            <div className="mt-2 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">
+              {view.held} parent number(s) are over today&apos;s WhatsApp limit and were held back. Come back tomorrow and press Send again. Parents who already got this month&apos;s report are skipped automatically.
+            </div>
+          )}
+
+          {!result && view.sent > 0 && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <div className="flex flex-col sm:flex-row sm:items-end gap-2">
                 <div className="flex-1">
@@ -271,7 +282,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
                     <Button icon="Send" onClick={() => send(true)} disabled={busy === 'test' || !testTo.trim()}>{busy === 'test' ? 'Sending…' : 'Send test'}</Button>
                   </div>
                 </div>
-                <Button kind="primary" icon="Send" onClick={() => send(false)} disabled={busy === 'send'}>{busy === 'send' ? 'Sending…' : `Send to ${view.total} student(s)`}</Button>
+                <Button kind="primary" icon="Send" onClick={() => send(false)} disabled={busy === 'send'}>{busy === 'send' ? 'Sending…' : `Send to ${view.sent} parent number(s)`}</Button>
               </div>
             </div>
           )}
@@ -285,6 +296,8 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
                   {d.status === 'sent' && <span className="text-success-600 text-[11.5px] inline-flex items-center gap-0.5"><Icon name="Check" size={13} />sent</span>}
                   {d.status === 'failed' && <span className="text-danger-600 text-[11.5px]" title={d.error || ''}>failed</span>}
                   {d.status === 'skipped' && <span className="text-slate-400 text-[11.5px]" title={d.error || ''}>no number</span>}
+                  {d.status === 'already' && <span className="text-slate-400 text-[11.5px] inline-flex items-center gap-0.5"><Icon name="CheckCheck" size={13} />already sent</span>}
+                  {d.status === 'held' && <span className="text-marigold-700 text-[11.5px]" title={d.error || ''}>held · tomorrow</span>}
                 </div>
               </div>
             ))}

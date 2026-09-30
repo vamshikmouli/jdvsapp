@@ -159,8 +159,40 @@ export interface MonthlySendResult {
   sent: number;
   failed: number;
   skipped: number;
-  tiers: Record<Tier, number>;
+  already: number;            // recipients who already got this month's report (not re-sent)
+  held: number;               // recipients held back by the daily WhatsApp limit — send again tomorrow
+  dailyLimit: number;         // unique recipients Meta allows per 24h (WHATSAPP_DAILY_LIMIT)
+  usedToday: number;          // unique numbers messaged in the last 24h, before this run
   details: { student: string; className: string | null; tier: Tier; pct: number; status: string; to?: string; error?: string }[];
+  tiers: Record<Tier, number>;
+}
+
+// Meta caps business-initiated conversations at N unique recipients per rolling
+// 24h (250 on a new/unverified number, 1K+ after it's upgraded). Every kind of
+// message counts — fee receipts, absence alerts, reminders — so the budget is shared.
+const DAILY_LIMIT = Math.max(1, Number(process.env.WHATSAPP_DAILY_LIMIT) || 250);
+
+// Meta errors that mean "stop sending for now" (rate / messaging limit reached).
+const LIMIT_ERROR = /\b(130429|131048|131056)\b|rate limit|messaging limit/i;
+
+/** Unique numbers we successfully messaged in the last 24h (all message kinds). */
+async function phonesUsedLast24h(): Promise<Set<string>> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await prisma.messageDelivery.findMany({
+    where: { createdAt: { gte: since }, status: { not: 'FAILED' } },
+    select: { phone: true },
+    distinct: ['phone'],
+  });
+  return new Set(rows.map((r) => r.phone));
+}
+
+/** "studentId|phone" pairs that already received this month's report. */
+async function alreadySentFor(month: string): Promise<Set<string>> {
+  const rows = await prisma.messageDelivery.findMany({
+    where: { kind: 'ATTENDANCE_MONTHLY', batchId: { startsWith: `monthatt-${month}-` }, status: { not: 'FAILED' } },
+    select: { studentId: true, phone: true },
+  });
+  return new Set(rows.map((r) => `${r.studentId}|${r.phone}`));
 }
 
 /**
@@ -170,10 +202,20 @@ export interface MonthlySendResult {
  */
 export async function sendMonthlyReports(opts: { month: string; classId?: string | null; dry?: boolean; sentById?: string | null; toOverride?: string | null }): Promise<MonthlySendResult> {
   const { monthLabel, students } = await getClassMonth(opts.month, opts.classId);
-  const res: MonthlySendResult = { monthLabel, total: students.length, sent: 0, failed: 0, skipped: 0, tiers: { perfect: 0, great: 0, good: 0, low: 0 }, details: [] };
+  const res: MonthlySendResult = { monthLabel, total: students.length, sent: 0, failed: 0, skipped: 0, already: 0, held: 0, dailyLimit: DAILY_LIMIT, usedToday: 0, tiers: { perfect: 0, great: 0, good: 0, low: 0 }, details: [] };
   const deliveries: WaDeliveryInput[] = [];
   const batchId = `monthatt-${opts.month}-${Date.now()}`;
   const live = !opts.dry && whatsappConfigured();
+
+  // Resumable sends: skip parents who already got this month's report, and stop
+  // at the daily limit — the rest are "held" and go out on the next Send.
+  // A test send (toOverride) bypasses both.
+  const used = await phonesUsedLast24h();
+  res.usedToday = used.size;
+  const done = opts.toOverride ? new Set<string>() : await alreadySentFor(opts.month);
+  let limitHit = false;
+  // A number already messaged in the last 24h doesn't use a new slot.
+  const fits = (to: string) => !limitHit && (opts.toOverride || used.has(to) || used.size < DAILY_LIMIT);
 
   // Batch-fetch every student's contact fields in ONE query (avoids an N+1 —
   // previously one findUnique per student inside the loop).
@@ -205,20 +247,37 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
 
     const parentName = reps[0].name;
     const message = buildMessage(s, monthLabel);
+    const row = { student: s.name, className: s.className, tier: s.tier, pct: s.pct };
+
+    // Split this student's recipients: already sent / held by the limit / to send now.
+    const toSend: typeof reps = [];
+    for (const rcp of reps) {
+      if (done.has(`${s.studentId}|${rcp.to}`)) { res.already++; res.details.push({ ...row, status: 'already', to: rcp.to }); }
+      else if (!fits(rcp.to)) { res.held++; res.details.push({ ...row, status: 'held', to: rcp.to, error: 'daily WhatsApp limit — send again tomorrow' }); }
+      else { toSend.push(rcp); used.add(rcp.to); }
+    }
+    if (!toSend.length) continue;
 
     if (!live) {
-      res.sent++; // count as "would send" in dry mode
-      res.details.push({ student: s.name, className: s.className, tier: s.tier, pct: s.pct, status: opts.dry ? 'preview' : 'wa-off' });
+      res.sent += toSend.length; // count as "would send" in dry mode
+      for (const rcp of toSend) res.details.push({ ...row, status: opts.dry ? 'preview' : 'wa-off', to: rcp.to });
       continue;
     }
 
     try {
       const png = renderAttendanceCalendarPng({ staffName: s.name, designation: cleanClass(s.className) ? `Class ${cleanClass(s.className)}` : '', month: opts.month, days: s.days, schoolName: SCHOOL });
       const mediaId = await uploadWhatsAppMedia(png);
-      for (const rcp of reps) {
+      for (const rcp of toSend) {
+        if (limitHit) { res.held++; res.details.push({ ...row, status: 'held', to: rcp.to, error: 'daily WhatsApp limit — send again tomorrow' }); continue; }
         const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId, bodyParams: [rcp.name || parentName, message] });
-        if (send.ok) { res.sent++; res.details.push({ student: s.name, className: s.className, tier: s.tier, pct: s.pct, status: 'sent', to: rcp.to }); }
-        else { res.failed++; res.details.push({ student: s.name, className: s.className, tier: s.tier, pct: s.pct, status: 'failed', to: rcp.to, error: send.error }); }
+        if (send.ok) { res.sent++; res.details.push({ ...row, status: 'sent', to: rcp.to }); }
+        else if (LIMIT_ERROR.test(send.error || '')) {
+          // Meta says we've hit the limit — hold this and everyone after it.
+          limitHit = true; res.held++;
+          res.details.push({ ...row, status: 'held', to: rcp.to, error: `WhatsApp limit reached — send again tomorrow (${send.error})` });
+          continue; // not logged as a delivery, so the next run retries it
+        }
+        else { res.failed++; res.details.push({ ...row, status: 'failed', to: rcp.to, error: send.error }); }
         deliveries.push({ kind: 'ATTENDANCE_MONTHLY', batchId, title: `Monthly attendance · ${monthLabel}`, studentId: s.studentId, studentName: s.name, className: s.className, recipient: rcp.name, phone: rcp.to, ok: send.ok, error: send.ok ? null : (send.error || 'send failed'), wamid: send.id, sentById: opts.sentById });
       }
       await sleep(300);
