@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
-import { sendMonthlyReports } from '@/lib/services/monthlyAttendance';
+import { sendMonthlyReports, getMonthlyDeliveryReport } from '@/lib/services/monthlyAttendance';
 import { whatsappConfigured } from '@/lib/services/whatsapp';
 import { logActivity } from '@/lib/activity';
 
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const validMonth = (m: string) => /^\d{4}-\d{2}$/.test(m);
 
+// GET /api/attendance/monthly-report?month=YYYY-MM&classId=&delivery=1 → delivery report.
 // GET /api/attendance/monthly-report?month=YYYY-MM&classId=  → preview (renders nothing,
 // returns who would be messaged, tier split, no WhatsApp sent).
 export async function GET(req: NextRequest) {
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
     const month = sp.get('month') || '';
     const classId = sp.get('classId') || undefined;
     if (!validMonth(month)) return NextResponse.json({ error: 'month must be YYYY-MM' }, { status: 400 });
+    // ?delivery=1 → who received this month's report (per parent number).
+    if (sp.get('delivery') === '1') return NextResponse.json(await getMonthlyDeliveryReport(month, classId));
     const result = await sendMonthlyReports({ month, classId, dry: true });
     return NextResponse.json({ ...result, waConfigured: whatsappConfigured() });
   } catch (err) {

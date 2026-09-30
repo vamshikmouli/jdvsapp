@@ -202,6 +202,20 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
   const [testTo, setTestTo] = useState('');
   const [busy, setBusy] = useState<'' | 'preview' | 'send' | 'test'>('');
   const [err, setErr] = useState('');
+  const [delivery, setDelivery] = useState<DeliveryReport | null>(null);
+  const [dFilter, setDFilter] = useState<DeliveryState | 'ALL'>('ALL');
+  const [dBusy, setDBusy] = useState(false);
+
+  const checkDelivery = async () => {
+    setDBusy(true); setErr('');
+    try {
+      const sp = new URLSearchParams({ month, delivery: '1' }); if (classId) sp.set('classId', classId);
+      const r = await fetch(`/api/attendance/monthly-report?${sp}`);
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Could not load delivery report');
+      setDelivery(d); setDFilter('ALL');
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not load delivery report'); }
+    finally { setDBusy(false); }
+  };
 
   const runPreview = async () => {
     setBusy('preview'); setErr(''); setResult(null);
@@ -232,16 +246,19 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
       <p className="text-sm text-slate-500">Send each student's monthly attendance calendar as a WhatsApp image, with a personalised message — praise for good attendance, encouragement to improve where it's low. Leaves are shown but don't count against the student.</p>
 
       <Card>
-        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] gap-3 items-end">
-          <Field label="Month"><Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPreview(null); setResult(null); }} /></Field>
-          <Field label="Class"><Select value={classId} onChange={(e) => { setClassId(e.target.value); setPreview(null); setResult(null); }}>
+        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto_auto] gap-3 items-end">
+          <Field label="Month"><Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPreview(null); setResult(null); setDelivery(null); }} /></Field>
+          <Field label="Class"><Select value={classId} onChange={(e) => { setClassId(e.target.value); setPreview(null); setResult(null); setDelivery(null); }}>
             <option value="">All classes</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select></Field>
           <Button icon="Eye" onClick={runPreview} disabled={busy === 'preview'}>{busy === 'preview' ? 'Checking…' : 'Preview'}</Button>
+          <Button icon="ListChecks" onClick={checkDelivery} disabled={dBusy}>{dBusy ? 'Loading…' : 'Check delivery'}</Button>
         </div>
         {err && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-lg p-2.5 text-sm text-danger-700">{err}</div>}
       </Card>
+
+      {delivery && <DeliveryReportCard report={delivery} filter={dFilter} setFilter={setDFilter} onRefresh={checkDelivery} busy={dBusy} />}
 
       {view && (
         <Card>
@@ -305,6 +322,70 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
         </Card>
       )}
     </div>
+  );
+}
+
+/* ---------- Monthly attendance: who received it ---------- */
+type DeliveryState = 'READ' | 'DELIVERED' | 'SENT' | 'FAILED' | 'NOT_SENT' | 'NO_NUMBER';
+interface DeliveryReport {
+  monthLabel: string;
+  counts: Record<DeliveryState, number>;
+  rows: { student: string; className: string | null; recipient: string; phone: string; status: DeliveryState; error: string | null; at: string | null }[];
+}
+const DELIVERY_META: Record<DeliveryState, { label: string; hint: string; chip: string; text: string }> = {
+  READ: { label: 'Read', hint: 'Parent opened it', chip: 'bg-success-50 text-success-700 border-success-100', text: 'text-success-700' },
+  DELIVERED: { label: 'Delivered', hint: 'Reached the parent’s phone', chip: 'bg-success-50 text-success-700 border-success-100', text: 'text-success-700' },
+  SENT: { label: 'Sent', hint: 'Accepted by WhatsApp, no delivery receipt yet', chip: 'bg-info-50 text-info-700 border-info-100', text: 'text-info-700' },
+  FAILED: { label: 'Failed', hint: 'Not delivered — see reason', chip: 'bg-danger-50 text-danger-700 border-danger-100', text: 'text-danger-700' },
+  NOT_SENT: { label: 'Not sent', hint: 'Never sent (e.g. held by the daily limit)', chip: 'bg-marigold-50 text-marigold-700 border-marigold-100', text: 'text-marigold-700' },
+  NO_NUMBER: { label: 'No number', hint: 'No WhatsApp number on the student profile', chip: 'bg-slate-50 text-slate-500 border-slate-200', text: 'text-slate-400' },
+};
+const DELIVERY_ORDER: DeliveryState[] = ['READ', 'DELIVERED', 'SENT', 'FAILED', 'NOT_SENT', 'NO_NUMBER'];
+
+function DeliveryReportCard({ report, filter, setFilter, onRefresh, busy }: { report: DeliveryReport; filter: DeliveryState | 'ALL'; setFilter: (f: DeliveryState | 'ALL') => void; onRefresh: () => void; busy: boolean }) {
+  const received = report.counts.READ + report.counts.DELIVERED;
+  const notReceived = report.counts.FAILED + report.counts.NOT_SENT + report.counts.NO_NUMBER;
+  // Problems first, then the rest; alphabetical within a status.
+  const rank = (st: DeliveryState) => ['FAILED', 'NOT_SENT', 'NO_NUMBER', 'SENT', 'DELIVERED', 'READ'].indexOf(st);
+  const rows = report.rows
+    .filter((r) => filter === 'ALL' || r.status === filter)
+    .sort((a, b) => rank(a.status) - rank(b.status) || a.student.localeCompare(b.student));
+  return (
+    <Card>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div className="text-sm font-bold text-slate-900">Delivery · {report.monthLabel}</div>
+          <div className="text-[13px] text-slate-500"><b className="text-success-700">{received}</b> received · <b className="text-danger-700">{notReceived}</b> not received · <b className="text-info-700">{report.counts.SENT}</b> awaiting receipt</div>
+        </div>
+        <Button icon="RefreshCw" onClick={onRefresh} disabled={busy}>{busy ? 'Refreshing…' : 'Refresh'}</Button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        <button onClick={() => setFilter('ALL')} className={`rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${filter === 'ALL' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>All: {report.rows.length}</button>
+        {DELIVERY_ORDER.map((st) => (
+          <button key={st} onClick={() => setFilter(st)} title={DELIVERY_META[st].hint}
+            className={`rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${DELIVERY_META[st].chip} ${filter === st ? 'ring-2 ring-purple-400' : ''}`}>
+            {DELIVERY_META[st].label}: {report.counts[st]}
+          </button>
+        ))}
+      </div>
+      {report.counts.SENT > 0 && report.counts.DELIVERED + report.counts.READ === 0 && (
+        <div className="mt-3 bg-info-50 border border-info-100 rounded-lg p-2.5 text-[12.5px] text-info-700">Nothing shows as Delivered or Read yet. Receipts can take a few minutes. If it stays this way, check that the WhatsApp status webhook is set up in Meta.</div>
+      )}
+      <div className="mt-3 max-h-[50vh] overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-50">
+        {rows.length === 0 && <div className="px-3 py-4 text-center text-[13px] text-slate-400">Nothing here.</div>}
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+            <div className="min-w-0">
+              <div className="truncate"><span className="font-medium text-slate-800">{r.student}</span> <span className="text-slate-400">{(r.className || '').replace(/\s?STD$/i, '')}</span></div>
+              <div className="text-[12px] text-slate-500 truncate">{r.recipient}{r.phone !== '—' ? ` · ${r.phone}` : ''}{r.at ? ` · ${new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+            </div>
+            <span className={`flex-shrink-0 text-[11.5px] font-semibold text-right max-w-[50%] truncate ${DELIVERY_META[r.status].text}`} title={r.error || DELIVERY_META[r.status].hint}>
+              {DELIVERY_META[r.status].label}{r.status === 'FAILED' && r.error ? `: ${r.error}` : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

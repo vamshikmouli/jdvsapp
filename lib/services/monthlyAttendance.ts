@@ -186,6 +186,79 @@ async function phonesUsedLast24h(): Promise<Set<string>> {
   return new Set(rows.map((r) => r.phone));
 }
 
+/** Every student's contact fields in ONE query (avoids an N+1). */
+async function contactsFor(studentIds: string[]): Promise<Map<string, any>> {
+  const map = new Map<string, any>();
+  if (!studentIds.length) return map;
+  const rows = await prisma.student.findMany({
+    where: { id: { in: studentIds } },
+    select: {
+      id: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true,
+      altGuardianName: true, altGuardianPhone: true, guardianName: true, guardianPhone: true,
+      smsFor: true, whatsappEnabled: true,
+    },
+  });
+  for (const r of rows) map.set(r.id, r);
+  return map;
+}
+
+export type DeliveryState = 'READ' | 'DELIVERED' | 'SENT' | 'FAILED' | 'NOT_SENT' | 'NO_NUMBER';
+export interface MonthlyDeliveryReport {
+  monthLabel: string;
+  counts: Record<DeliveryState, number>;
+  rows: { student: string; className: string | null; recipient: string; phone: string; status: DeliveryState; error: string | null; at: string | null }[];
+}
+
+const STATE_RANK: Record<string, number> = { FAILED: 1, SENT: 2, DELIVERED: 3, READ: 4 };
+
+/**
+ * Who got this month's report? One row per parent number for every student with
+ * attendance that month: READ / DELIVERED / SENT (Meta accepted, no receipt yet) /
+ * FAILED, or NOT_SENT (never sent — e.g. held by the daily limit) / NO_NUMBER.
+ * Statuses come from the delivery log, updated by Meta's status webhook.
+ */
+export async function getMonthlyDeliveryReport(month: string, classId?: string | null): Promise<MonthlyDeliveryReport> {
+  const { monthLabel, students } = await getClassMonth(month, classId);
+  const counts: Record<DeliveryState, number> = { READ: 0, DELIVERED: 0, SENT: 0, FAILED: 0, NOT_SENT: 0, NO_NUMBER: 0 };
+  const rows: MonthlyDeliveryReport['rows'] = [];
+  if (!students.length) return { monthLabel, counts, rows };
+
+  const ids = students.map((s) => s.studentId);
+  const contactById = await contactsFor(ids);
+  const logs = await prisma.messageDelivery.findMany({
+    where: { kind: 'ATTENDANCE_MONTHLY', batchId: { startsWith: `monthatt-${month}-` }, studentId: { in: ids } },
+    select: { studentId: true, recipient: true, phone: true, status: true, error: true, createdAt: true },
+  });
+  // Best status per student + number (a later successful retry beats an earlier failure).
+  const best = new Map<string, (typeof logs)[number]>();
+  for (const l of logs) {
+    const k = `${l.studentId}|${l.phone}`;
+    const cur = best.get(k);
+    if (!cur || (STATE_RANK[l.status.toUpperCase()] || 0) > (STATE_RANK[cur.status.toUpperCase()] || 0)) best.set(k, l);
+  }
+
+  for (const s of students) {
+    const reps = feeWaRecipients((contactById.get(s.studentId) || {}) as any);
+    // Current recipients, plus any number we actually messaged (contacts may have changed since).
+    const phones = new Map<string, string>(reps.map((r) => [r.to, r.name]));
+    // (Admin test sends are logged with recipient "Test" — not a parent, so left out.)
+    for (const l of logs) if (l.studentId === s.studentId && l.recipient !== 'Test' && !phones.has(l.phone)) phones.set(l.phone, l.recipient);
+    if (!phones.size) {
+      counts.NO_NUMBER++;
+      rows.push({ student: s.name, className: s.className, recipient: '—', phone: '—', status: 'NO_NUMBER', error: null, at: null });
+      continue;
+    }
+    for (const [phone, name] of phones) {
+      const l = best.get(`${s.studentId}|${phone}`);
+      const up = l ? l.status.toUpperCase() : '';
+      const status: DeliveryState = up === 'READ' || up === 'DELIVERED' || up === 'FAILED' ? up : l ? 'SENT' : 'NOT_SENT';
+      counts[status]++;
+      rows.push({ student: s.name, className: s.className, recipient: name || l?.recipient || '—', phone, status, error: l?.error ?? null, at: l ? l.createdAt.toISOString() : null });
+    }
+  }
+  return { monthLabel, counts, rows };
+}
+
 /** "studentId|phone" pairs that already received this month's report. */
 async function alreadySentFor(month: string): Promise<Set<string>> {
   const rows = await prisma.messageDelivery.findMany({
@@ -217,20 +290,7 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
   // A number already messaged in the last 24h doesn't use a new slot.
   const fits = (to: string) => !limitHit && (opts.toOverride || used.has(to) || used.size < DAILY_LIMIT);
 
-  // Batch-fetch every student's contact fields in ONE query (avoids an N+1 —
-  // previously one findUnique per student inside the loop).
-  const contactById = new Map<string, any>();
-  if (!opts.toOverride && students.length) {
-    const contactRows = await prisma.student.findMany({
-      where: { id: { in: students.map((s) => s.studentId) } },
-      select: {
-        id: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true,
-        altGuardianName: true, altGuardianPhone: true, guardianName: true, guardianPhone: true,
-        smsFor: true, whatsappEnabled: true,
-      },
-    });
-    for (const r of contactRows) contactById.set(r.id, r);
-  }
+  const contactById = opts.toOverride ? new Map<string, any>() : await contactsFor(students.map((s) => s.studentId));
 
   for (const s of students) {
     res.tiers[s.tier]++;
