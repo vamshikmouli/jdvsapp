@@ -397,10 +397,18 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
         continue;
       }
       if (a.type === 'subject') { const j = rows.findIndex((x) => x.subId === a.id); if (j >= 0) idx = j; continue; }
+      if (a.type === 'clear' && idx >= rows.length && rows.length) idx = rows.length - 1; // undo the last row of the list
       if (idx >= rows.length) { msg = { ok: false, text: 'End of the list.' }; break; }
       const row = rows[idx];
       if (a.type === 'next') { advance(); continue; }
-      if (a.type === 'clear') { setCell(row.subId, row.stId, ''); msg = { ok: true, text: `${row.label}: cleared` }; continue; }
+      if (a.type === 'clear') {
+        // Undo: if the current row is still empty, step back to the mark just entered.
+        let target = row;
+        if (!cell(row.subId, row.stId).trim() && idx > 0) { idx--; target = rows[idx]; }
+        setCell(target.subId, target.stId, '');
+        msg = { ok: true, text: `${target.label}: cleared — say the correct mark` };
+        continue;
+      }
       if (a.type === 'ab') { setCell(row.subId, row.stId, 'AB'); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: AB` }; advance(); continue; }
       if (a.type === 'num') {
         if (a.n < 0 || a.n > row.max) { msg = { ok: false, text: `Heard ${a.n} for ${row.label} — over max ${row.max}. Say it again.` }; break; }

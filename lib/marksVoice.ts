@@ -21,14 +21,17 @@ const UNITS: Record<string, number> = {
   fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
 };
 const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
-const AB_WORDS = new Set(['absent', 'ab', 'abs', 'absentee', 'a.b', 'a.b.']);
-const NEXT_WORDS = new Set(['next', 'skip', 'blank', 'empty', 'nil.']);
-const BACK_WORDS = new Set(['back', 'previous', 'undo', 'go back']);
-const CLEAR_WORDS = new Set(['clear', 'delete', 'erase', 'remove']);
+// Includes how phone speech engines (en-IN) commonly mis-hear each command.
+const AB_WORDS = new Set(['absent', 'ab', 'abs', 'absentee', 'absence', 'absents', 'apsent']);
+const NEXT_WORDS = new Set(['next', 'skip', 'blank', 'empty', 'nest', 'necks', 'text', 'nex', 'nexts']);
+const BACK_WORDS = new Set(['back', 'previous', 'bag', 'pack', 'buck', 'bach', 'beck']);
+const CLEAR_WORDS = new Set(['clear', 'delete', 'erase', 'remove', 'undo', 'wrong', 'clean', 'claire', 'clare', 'cleared']);
 const STOP_WORDS = new Set(['stop', 'done', 'finish', 'finished']);
-const ROLL_WORDS = new Set(['roll', 'role', 'rol', 'number', 'no', 'no.']);
+const ROLL_WORDS = new Set(['roll', 'role', 'rol', 'number', 'no']);
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9.]/g, '');
+// Letters and digits only. Phone engines add punctuation ("Next.", "Back,") — without
+// stripping it, commands were silently ignored on mobile.
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 export function parseVoice(text: string, subjects: { id: string; name: string }[] = []): VoiceAction[] {
   // "a b" → "ab"; "point" between numbers → decimal handled below.
@@ -49,8 +52,10 @@ export function parseVoice(text: string, subjects: { id: string; name: string }[
   const readNumber = (): number | null => {
     const w = words[i];
     if (w === undefined) return null;
-    const d = w.replace(/[^0-9.]/g, '');
-    if (d && /^[0-9]+(\.[0-9]+)?$/.test(d) && /^[0-9.]+$/.test(w.replace(/[,%]/g, ''))) {
+    // Digits, allowing trailing punctuation from phone engines ("45." / "45,").
+    const bare = w.replace(/[.,;:!?%]+$/, '');
+    const d = bare.replace(/[^0-9.]/g, '');
+    if (d && /^[0-9]+(\.[0-9]+)?$/.test(d) && /^[0-9.]+$/.test(bare)) {
       i++;
       let n = Number(d);
       if (words[i] === 'point' && words[i + 1] !== undefined && /^[0-9]$/.test(words[i + 1]) ) { n = Number(`${d}.${words[i + 1]}`); i += 2; }
@@ -78,7 +83,9 @@ export function parseVoice(text: string, subjects: { id: string; name: string }[
   while (i < words.length) {
     const w = words[i];
     const ww = norm(w);
-    if (AB_WORDS.has(w) || AB_WORDS.has(ww)) { out.push({ type: 'ab' }); i++; continue; }
+    if (!ww && !/\d/.test(w)) { i++; continue; } // lone punctuation
+    if (AB_WORDS.has(ww) || /^a\.?b\.?$/.test(w)) { out.push({ type: 'ab' }); i++; continue; }
+    if (ww === 'go' && words[i + 1] !== undefined && BACK_WORDS.has(norm(words[i + 1]))) { out.push({ type: 'back' }); i += 2; continue; }
     if (NEXT_WORDS.has(ww)) { out.push({ type: 'next' }); i++; continue; }
     if (BACK_WORDS.has(ww)) { out.push({ type: 'back' }); i++; continue; }
     if (CLEAR_WORDS.has(ww)) { out.push({ type: 'clear' }); i++; continue; }

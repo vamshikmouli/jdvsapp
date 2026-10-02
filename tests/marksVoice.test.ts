@@ -39,4 +39,12 @@ describe('parseVoice — dictated marks', () => {
   it('ignores filler words', () => {
     expect(parseVoice('marks is 45 and 38')).toEqual([{ type: 'num', n: 45 }, { type: 'num', n: 38 }]);
   });
+  it('ignores punctuation phones add ("Next." "Back," "45.")', () => {
+    expect(parseVoice('Next. Back, Clear. 45. Absent.').map((a) => a.type)).toEqual(['next', 'back', 'clear', 'num', 'ab']);
+    expect(parseVoice('45.')).toEqual([{ type: 'num', n: 45 }]);
+  });
+  it('understands common mis-hearings of the commands', () => {
+    expect(parseVoice('nest bag clean absence').map((a) => a.type)).toEqual(['next', 'back', 'clear', 'ab']);
+    expect(parseVoice('go back').map((a) => a.type)).toEqual(['back']);
+  });
 });
