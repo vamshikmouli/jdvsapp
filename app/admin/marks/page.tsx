@@ -379,6 +379,7 @@ function AssessmentsTab() {
   const [items, setItems] = useState<Assessment[] | null>(null);
   const [edit, setEdit] = useState<Partial<Assessment> | null>(null);
   const [maxFor, setMaxFor] = useState<Assessment | null>(null);
+  const [classSubFor, setClassSubFor] = useState<Assessment | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
@@ -424,6 +425,7 @@ function AssessmentsTab() {
                   {a.archived ? (
                     <button onClick={() => restore(a)} className="text-[11px] font-medium text-success-600 hover:text-success-700 inline-flex items-center gap-1" title="Restore"><Icon name="ArchiveRestore" size={14} />Restore</button>
                   ) : (<>
+                    <button onClick={() => setClassSubFor(a)} className="text-[11px] font-medium text-purple-600 hover:text-purple-700 inline-flex items-center gap-1" title="Choose this exam's subjects and max marks for each class"><Icon name="ListChecks" size={14} />Class subjects</button>
                     <button onClick={() => setMaxFor(a)} className="text-[11px] font-medium text-purple-600 hover:text-purple-700 inline-flex items-center gap-1" title="Set max marks per subject"><Icon name="SlidersHorizontal" size={14} />Max marks</button>
                     <div className="flex items-center gap-1.5" title="Visible to parents">
                       <span className="text-[11px] text-slate-400">Published</span>
@@ -441,7 +443,111 @@ function AssessmentsTab() {
 
       {edit && <AssessmentModal initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
       {maxFor && <MaxMarksDrawer assessment={maxFor} onClose={() => setMaxFor(null)} onSaved={() => { setMaxFor(null); load(); }} />}
+      {classSubFor && <ClassSubjectsDrawer assessment={classSubFor} onClose={() => setClassSubFor(null)} />}
     </div>
+  );
+}
+
+/* This exam's subjects + max marks per class (e.g. 10th: Kannada 100, English 80, PE grade) */
+interface ClassExamSubj { id: string; name: string; gradeOnly: boolean; inClass: boolean; included: boolean; max: number; hasMarks: boolean }
+function ClassSubjectsDrawer({ assessment, onClose }: { assessment: Assessment; onClose: () => void }) {
+  const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [classId, setClassId] = useState('');
+  const [rows, setRows] = useState<ClassExamSubj[] | null>(null);
+  const [customised, setCustomised] = useState(false);
+  const [alsoTo, setAlsoTo] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+
+  useEffect(() => { fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c: ClassRow[]) => { setClasses(c); if (c[0]) setClassId(c[0].id); }); }, []);
+  const load = useCallback(async () => {
+    if (!classId) return;
+    setRows(null); setError('');
+    const r = await fetch(`/api/assessment-class-subjects?assessmentId=${assessment.id}&classId=${classId}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setError(d.error || 'Could not load'); setRows([]); return; }
+    setRows(d.subjects); setCustomised(d.customised);
+  }, [assessment.id, classId]);
+  useEffect(() => { load(); setAlsoTo([]); setNote(''); }, [load]);
+
+  const setRow = (id: string, patch: Partial<ClassExamSubj>) => setRows((rs) => (rs || []).map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const included = (rows || []).filter((x) => x.included);
+  const className = (id: string) => (classes.find((c) => c.id === id)?.name || '').replace(/\s?STD$/i, '');
+
+  const save = async (reset = false) => {
+    setBusy(true); setError(''); setNote('');
+    try {
+      const body = reset
+        ? { assessmentId: assessment.id, classIds: [classId], reset: true }
+        : { assessmentId: assessment.id, classIds: [classId, ...alsoTo], items: included.map((x) => ({ subjectId: x.id, max: x.max })) };
+      const r = await fetch('/api/assessment-class-subjects', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Save failed');
+      const bad = (d.failed || []) as { classId: string; error: string }[];
+      setNote(reset ? 'Back to the class\'s usual subjects.' : `Saved for ${d.done.map(className).join(', ')}.`);
+      if (bad.length) setError(bad.map((f) => `${className(f.classId)}: ${f.error}`).join(' · '));
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed'); } finally { setBusy(false); }
+  };
+
+  return (
+    <Drawer open onClose={onClose} title={`${assessment.name} — subjects per class`} subtitle="Choose which subjects are in this exam for a class, and each one's max marks." width={620}
+      footer={<div className="flex flex-wrap items-center justify-between gap-2">
+        {customised ? <Button onClick={() => save(true)} disabled={busy} icon="RotateCcw">Use class's usual subjects</Button> : <span />}
+        <div className="flex gap-2"><Button onClick={onClose}>Close</Button><Button kind="primary" icon="Save" onClick={() => save(false)} disabled={busy || !rows || included.length === 0}>{busy ? 'Saving…' : alsoTo.length ? `Save for ${alsoTo.length + 1} classes` : 'Save'}</Button></div>
+      </div>}>
+      <Field label="Class">
+        <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          {classes.map((c) => <option key={c.id} value={c.id}>{c.name.replace(/\s?STD$/i, '')}</option>)}
+        </Select>
+      </Field>
+      {rows && (
+        <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${customised ? 'bg-purple-50 text-purple-800' : 'bg-slate-50 text-slate-600'}`}>
+          {customised ? 'Customised for this exam — only the ticked subjects below are in it, with these max marks.' : 'Not customised — this exam uses the class\'s usual subjects (Class subjects tab) and the exam\'s max marks. Change anything below and Save to customise.'}
+        </div>
+      )}
+      {error && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-md p-2.5 text-sm text-danger-700">{error}</div>}
+      {note && !error && <div className="mt-3 bg-success-50 border border-success-100 rounded-md p-2.5 text-sm text-success-700">{note}</div>}
+      {!rows ? <div className="mt-4 space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={40} />)}</div> : (
+        <div className="mt-3 rounded-lg border border-slate-200 divide-y divide-slate-100">
+          {rows.map((x) => (
+            <div key={x.id} className={`flex items-center gap-3 px-3 py-2 ${x.included ? '' : 'opacity-60'}`}>
+              <input type="checkbox" checked={x.included} disabled={x.included && x.hasMarks}
+                title={x.included && x.hasMarks ? 'Marks are already entered — clear them before removing' : undefined}
+                onChange={(e) => setRow(x.id, { included: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-purple-600" />
+              <div className="flex-1 min-w-0 text-sm text-slate-800">
+                {x.name}
+                {x.gradeOnly && <span className="ml-1.5 text-[10px] font-semibold text-purple-600 bg-purple-50 rounded px-1.5 py-0.5">GRADE</span>}
+                {!x.inClass && <span className="ml-1.5 text-[10px] text-slate-400">(not usually in this class)</span>}
+                {x.hasMarks && <span className="ml-1.5 text-[10px] text-slate-400">· marks entered</span>}
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span className="text-[11px] text-slate-400">{x.gradeOnly ? 'out of' : 'max'}</span>
+                <Input type="number" value={String(x.max)} disabled={!x.included} onChange={(e) => setRow(x.id, { max: Math.max(0, Math.round(Number(e.target.value) || 0)) })} className="w-20 text-right tabular-nums" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows && classes.length > 1 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold text-slate-600 mb-1.5">Also apply the same subjects &amp; max marks to:</div>
+          <div className="flex flex-wrap gap-1.5">
+            {classes.filter((c) => c.id !== classId).map((c) => {
+              const on = alsoTo.includes(c.id);
+              return (
+                <button key={c.id} type="button" onClick={() => setAlsoTo((l) => (on ? l.filter((x) => x !== c.id) : [...l, c.id]))}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${on ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
+                  {on && '✓ '}{c.name.replace(/\s?STD$/i, '')}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <p className="mt-4 text-[11px] text-slate-400">Grade subjects are entered as grades (A1, A2…); their &quot;out of&quot; is only used to store the grade. A subject with marks already entered can&apos;t be removed, and its max can&apos;t go below a mark already given.</p>
+    </Drawer>
   );
 }
 

@@ -357,6 +357,7 @@ model SchoolClass {
   classFees   ClassFee[]
   classSubjects ClassSubject[]
   markSheets  MarkSheet[]
+  assessmentSubjects AssessmentClassSubject[]
   enrollments Enrollment[]
   uniformStock UniformStock[]
   archived    Boolean  @default(false) // soft-delete: hidden until restored
@@ -1215,12 +1216,31 @@ model Subject {
   classes   ClassSubject[]
   markSheets MarkSheet[]
   assessmentMaxes AssessmentSubject[]
+  assessmentClasses AssessmentClassSubject[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 }
 
 // Per-assessment override of a subject's max marks (e.g. SA Maths /80, FA English /20).
 // Falls back to Assessment.defaultMax when there is no row.
+// Per-exam, per-class subject list + max marks (Marks → Assessments → Class subjects).
+// When a class has rows for an exam, ONLY these subjects (with these maxes) are in that
+// exam for that class; otherwise the class's usual subjects + the exam's maxes apply.
+model AssessmentClassSubject {
+  id           String      @id @default(cuid())
+  assessmentId String
+  assessment   Assessment  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  classId      String
+  class        SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId    String
+  subject      Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  maxMarks     Int
+  order        Int         @default(0)
+
+  @@unique([assessmentId, classId, subjectId])
+  @@index([assessmentId, classId])
+}
+
 model AssessmentSubject {
   id           String     @id @default(cuid())
   assessmentId String
@@ -1263,6 +1283,7 @@ model Assessment {
   examSchedule       Json?
   markSheets         MarkSheet[]
   subjectMaxes       AssessmentSubject[]
+  classSubjects      AssessmentClassSubject[]
   archived           Boolean        @default(false) // soft-delete: hidden until restored
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt

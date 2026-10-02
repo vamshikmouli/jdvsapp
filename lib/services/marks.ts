@@ -11,8 +11,28 @@ export interface SheetSelector {
   subjectId: string;
 }
 
-// The configured max for a subject in an assessment: per-subject override, else defaultMax.
-async function resolveMax(assessmentId: string, subjectId: string, defaultMax: number): Promise<number> {
+/**
+ * This exam's custom subject list for a class (Marks → Assessments → Class subjects),
+ * or null when the class isn't customised. Never throws: if the table isn't there yet
+ * (deployed without `prisma db push`), marks keep working the old way.
+ */
+async function classExamSetup(assessmentId: string, classId: string): Promise<{ subjectId: string; maxMarks: number; order: number }[] | null> {
+  try {
+    const rows = await prisma.assessmentClassSubject.findMany({ where: { assessmentId, classId }, orderBy: { order: 'asc' }, select: { subjectId: true, maxMarks: true, order: true } });
+    return rows.length ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+// The configured max for a subject in an assessment: the class's exam setup, else the
+// exam's per-subject override, else defaultMax.
+async function resolveMax(assessmentId: string, subjectId: string, defaultMax: number, classId?: string): Promise<number> {
+  if (classId) {
+    const setup = await classExamSetup(assessmentId, classId);
+    const row = setup?.find((x) => x.subjectId === subjectId);
+    if (row) return row.maxMarks;
+  }
   const o = await prisma.assessmentSubject.findUnique({ where: { assessmentId_subjectId: { assessmentId, subjectId } }, select: { maxMarks: true } });
   return o?.maxMarks ?? defaultMax;
 }
@@ -41,7 +61,7 @@ export async function getMarkSheetGrid(sel: SheetSelector) {
   if (!assessment || !klass || !subject) return null;
 
   const sheet = await findSheet(sel);
-  const maxMarks = sheet?.maxMarks ?? await resolveMax(sel.assessmentId, sel.subjectId, assessment.defaultMax);
+  const maxMarks = sheet?.maxMarks ?? await resolveMax(sel.assessmentId, sel.subjectId, assessment.defaultMax, sel.classId);
 
   const students = await rosterForClass(assessment.yearId, sel.classId, sel.sectionId);
 
@@ -89,7 +109,15 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
     include: { subject: { select: { id: true, name: true, order: true, active: true, gradeOnly: true } } },
     orderBy: { order: 'asc' },
   });
-  const subjects = csubs.map((c) => c.subject).filter((s) => s.active).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  let subjects = csubs.map((c) => c.subject).filter((s) => s.active).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  // This exam customised for this class → exactly its subjects, in its order, with its maxes.
+  const setup = await classExamSetup(sel.assessmentId, sel.classId);
+  const setupMax = new Map((setup || []).map((x) => [x.subjectId, x.maxMarks]));
+  if (setup) {
+    const info = await prisma.subject.findMany({ where: { id: { in: setup.map((x) => x.subjectId) }, active: true }, select: { id: true, name: true, order: true, active: true, gradeOnly: true } });
+    const byId = new Map(info.map((x) => [x.id, x]));
+    subjects = setup.map((x) => byId.get(x.subjectId)).filter(Boolean) as typeof subjects;
+  }
 
   const students = await rosterForClass(assessment.yearId, sel.classId, sel.sectionId);
 
@@ -112,7 +140,7 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
       const sh = bySubject.get(s.id);
       const marks: Record<string, { marksObtained: number | null; isAbsent: boolean }> = {};
       if (sh) for (const m of sh.marks) marks[m.studentId] = { marksObtained: m.marksObtained, isAbsent: m.isAbsent };
-      return { id: s.id, name: s.name, gradeOnly: s.gradeOnly, max: sh?.maxMarks ?? maxOverride.get(s.id) ?? assessment.defaultMax, status: (sh?.status || 'DRAFT') as MarkSheetStatus, sheetId: sh?.id || null, marks };
+      return { id: s.id, name: s.name, gradeOnly: s.gradeOnly, max: sh?.maxMarks ?? setupMax.get(s.id) ?? maxOverride.get(s.id) ?? assessment.defaultMax, status: (sh?.status || 'DRAFT') as MarkSheetStatus, sheetId: sh?.id || null, marks };
     }),
     // Grade scale — grade-only subjects (PE, Drawing…) are entered as these labels.
     bands,
@@ -127,7 +155,7 @@ export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], acti
   if (!assessment) throw new Error('Assessment not found');
 
   let sheet = await findSheet(sel);
-  const maxMarks = sheet?.maxMarks ?? await resolveMax(sel.assessmentId, sel.subjectId, assessment.defaultMax);
+  const maxMarks = sheet?.maxMarks ?? await resolveMax(sel.assessmentId, sel.subjectId, assessment.defaultMax, sel.classId);
 
   // Validate marks against the max.
   for (const m of marks) {
@@ -306,8 +334,11 @@ export async function setAssessmentSubjectMaxes(assessmentId: string, items: { s
         update: { maxMarks: max },
       });
     }
-    // Keep already-created (not-yet-approved) sheets in sync with the new max.
-    await prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, status: { not: 'APPROVED' } }, data: { maxMarks: max } });
+    // Keep already-created (not-yet-approved) sheets in sync with the new max — except in
+    // classes whose exam setup sets their own max for this subject.
+    let custom: string[] = [];
+    try { custom = (await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: it.subjectId }, select: { classId: true } })).map((x) => x.classId); } catch { /* table not created yet */ }
+    await prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, status: { not: 'APPROVED' }, ...(custom.length ? { classId: { notIn: custom } } : {}) }, data: { maxMarks: max } });
   }
   return { ok: true };
 }
@@ -340,4 +371,73 @@ export async function listPendingSheets() {
     });
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Per-exam, per-class subjects + max marks (Marks → Assessments → Class subjects)
+
+export async function getClassExamSetup(assessmentId: string, classId: string) {
+  const a = await prisma.assessment.findUnique({ where: { id: assessmentId }, select: { id: true, name: true, defaultMax: true } });
+  if (!a) return null;
+  const [all, mapped, overrides, setup, sheets] = await Promise.all([
+    prisma.subject.findMany({ where: { active: true }, orderBy: [{ order: 'asc' }, { name: 'asc' }], select: { id: true, name: true, gradeOnly: true } }),
+    prisma.classSubject.findMany({ where: { classId }, select: { subjectId: true } }),
+    prisma.assessmentSubject.findMany({ where: { assessmentId }, select: { subjectId: true, maxMarks: true } }),
+    classExamSetup(assessmentId, classId),
+    prisma.markSheet.findMany({ where: { assessmentId, classId }, select: { subjectId: true, status: true, marks: { where: { OR: [{ marksObtained: { not: null } }, { isAbsent: true }] }, select: { id: true }, take: 1 } } }),
+  ]);
+  const inClass = new Set(mapped.map((m) => m.subjectId));
+  const ov = new Map(overrides.map((o) => [o.subjectId, o.maxMarks]));
+  const custom = new Map((setup || []).map((x) => [x.subjectId, x]));
+  const withMarks = new Set(sheets.filter((sh) => sh.marks.length > 0).map((sh) => sh.subjectId));
+  const order = (id: string) => (custom.has(id) ? custom.get(id)!.order : 1000);
+  const subjects = all
+    .map((sub) => ({
+      id: sub.id, name: sub.name, gradeOnly: sub.gradeOnly,
+      inClass: inClass.has(sub.id),
+      included: setup ? custom.has(sub.id) : inClass.has(sub.id),
+      max: custom.get(sub.id)?.maxMarks ?? ov.get(sub.id) ?? a.defaultMax,
+      hasMarks: withMarks.has(sub.id),
+    }))
+    .sort((x, y) => order(x.id) - order(y.id));
+  return { assessment: a, customised: !!setup, subjects };
+}
+
+/**
+ * Save this exam's subjects + maxes for a class (items = included subjects, in order),
+ * or reset to the default (items = null). Refuses to drop a subject that already has
+ * marks, or to lower a max below a mark already entered.
+ */
+export async function setClassExamSetup(assessmentId: string, classId: string, items: { subjectId: string; max: number }[] | null) {
+  const a = await prisma.assessment.findUnique({ where: { id: assessmentId }, select: { id: true } });
+  if (!a) throw new Error('Assessment not found');
+  const sheets = await prisma.markSheet.findMany({
+    where: { assessmentId, classId },
+    select: { id: true, subjectId: true, status: true, subject: { select: { name: true } }, marks: { select: { marksObtained: true, isAbsent: true } } },
+  });
+  const entered = (sh: (typeof sheets)[number]) => sh.marks.some((m) => m.marksObtained != null || m.isAbsent);
+
+  if (items === null) {
+    await prisma.assessmentClassSubject.deleteMany({ where: { assessmentId, classId } });
+    return { ok: true, customised: false };
+  }
+  const clean = items.map((it) => ({ subjectId: String(it.subjectId), max: Math.round(Number(it.max)) }));
+  if (!clean.length) throw new Error('Pick at least one subject for this exam.');
+  for (const it of clean) if (!(it.max > 0 && it.max <= 1000)) throw new Error('Max marks must be between 1 and 1000.');
+  const keep = new Set(clean.map((x) => x.subjectId));
+  for (const sh of sheets) {
+    if (!keep.has(sh.subjectId) && entered(sh)) throw new Error(`${sh.subject.name} already has marks for this exam — clear them before removing the subject.`);
+    const it = clean.find((x) => x.subjectId === sh.subjectId);
+    if (it) {
+      const top = Math.max(0, ...sh.marks.map((m) => m.marksObtained ?? 0));
+      if (top > it.max) throw new Error(`${sh.subject.name}: a mark of ${top} is already entered — max can't be below that.`);
+    }
+  }
+  await prisma.$transaction([
+    prisma.assessmentClassSubject.deleteMany({ where: { assessmentId, classId } }),
+    prisma.assessmentClassSubject.createMany({ data: clean.map((x, i) => ({ assessmentId, classId, subjectId: x.subjectId, maxMarks: x.max, order: i })) }),
+    // Existing (not approved) sheets of this class follow the new max.
+    ...clean.map((x) => prisma.markSheet.updateMany({ where: { assessmentId, classId, subjectId: x.subjectId, status: { not: 'APPROVED' } }, data: { maxMarks: x.max } })),
+  ]);
+  return { ok: true, customised: true };
 }

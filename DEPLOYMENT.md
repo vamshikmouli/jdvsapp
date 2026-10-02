@@ -103,6 +103,20 @@ The app is portable. On an Oracle "Always Free" VM you run it as a normal Node s
 
 No code changes needed for the move.
 
+### Updating the VM to a new version
+
+```bash
+cd <app folder>
+git pull
+npm install                 # postinstall also regenerates the Prisma client
+npx prisma db push          # applies new tables/columns (safe to run every time)
+npm run build
+pm2 restart <app-name>      # or: sudo systemctl restart <service>
+```
+
+`npx prisma db push` only adds what's new (e.g. the `AssessmentClassSubject` table
+for per-exam class subjects); it doesn't touch existing data.
+
 ---
 
 ## HOSTING-NOTES — cost summary
