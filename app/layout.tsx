@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Providers } from '@/components/Providers';
 import { PWARegister } from '@/components/PWARegister';
+import { OfflineOverlay } from '@/components/OfflineOverlay';
 import { prisma } from '@/lib/db';
 import './globals.css';
 
@@ -46,6 +47,7 @@ export default function RootLayout({
       <body>
         <Providers>{children}</Providers>
         <PWARegister />
+        <OfflineOverlay />
       </body>
     </html>
   );

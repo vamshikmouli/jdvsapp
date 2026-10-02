@@ -1,6 +1,7 @@
 /* Jnana Deepika — minimal service worker (offline shell + faster repeat loads) */
-const CACHE = 'jd-cache-v1';
-const OFFLINE_URL = '/';
+const CACHE = 'jd-cache-v2';
+// Funny "no internet" page (sleeping Wi-Fi cat) shown when a page can't load offline.
+const OFFLINE_URL = '/offline.html';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -66,9 +67,10 @@ self.addEventListener('fetch', (event) => {
         return res;
       })
       .catch(async () => {
+        // Pages: always the offline screen (a stale cached page would just fail to load its data).
+        if (req.mode === 'navigate') return (await caches.match(OFFLINE_URL)) || new Response('You are offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
         const cached = await caches.match(req);
         if (cached) return cached;
-        if (req.mode === 'navigate') return caches.match(OFFLINE_URL);
         return new Response('', { status: 504, statusText: 'Offline' });
       })
   );
