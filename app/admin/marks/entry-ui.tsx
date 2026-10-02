@@ -266,8 +266,8 @@ const MODE_KEY = 'marksEntryMode';
 export const savedEntryMode = (): EntryMode => { try { return localStorage.getItem(MODE_KEY) === 'student' ? 'student' : 'subject'; } catch { return 'subject'; } };
 
 // One big-box row: label on the left, mark box + AB on the right.
-function MarkRow({ num, label, sub, value, max, canEdit, last, active, inputRef, onChange, onNext, onFocusRow }: {
-  num: number; label: string; sub?: React.ReactNode; value: string; max: number; canEdit: boolean; last: boolean; active?: boolean;
+function MarkRow({ num, label, sub, value, max, canEdit, last, active, flash, inputRef, onChange, onNext, onFocusRow }: {
+  num: number; label: string; sub?: React.ReactNode; value: string; max: number; canEdit: boolean; last: boolean; active?: boolean; flash?: boolean;
   inputRef: (el: HTMLInputElement | null) => void; onChange: (v: string) => void; onNext: () => void; onFocusRow?: () => void;
 }) {
   const ab = /^a/i.test(value.trim());
@@ -297,6 +297,7 @@ function MarkRow({ num, label, sub, value, max, canEdit, last, active, inputRef,
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onNext(); } }}
         placeholder="—"
         className={`w-[72px] h-12 flex-shrink-0 rounded-xl border-2 text-center text-xl font-bold tabular-nums outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/15
+          ${flash ? '!border-success-500 !bg-success-50 scale-110' : ''} transition-transform duration-150
           ${bad ? 'border-danger-400 text-danger-700 bg-white' : ab ? 'border-slate-200 bg-slate-100 text-slate-500 text-base' : 'border-slate-200 text-slate-900'} ${!canEdit ? 'bg-slate-50 text-slate-400' : ''}`} />
       <button type="button" disabled={!canEdit}
         onClick={() => { onChange(ab ? '' : 'AB'); if (!ab) onNext(); }}
@@ -334,26 +335,53 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   const recRef = useRef<any>(null);
   const wantRef = useRef(false);
   const voiceMoved = useRef(false);
-  const handleRef = useRef<(text: string) => void>(() => {});
+  const handleRef = useRef<(text: string, final?: boolean, key?: string) => void>(() => {});
+  const sessRef = useRef(0); // recogniser restarts — keeps result keys unique
   type VRow = { subId: string; stId: string; max: number; canEdit: boolean; label: string; roll?: string | null };
   const rowsFor = (m: EntryMode, sIdx: number): VRow[] => m === 'subject'
     ? grid.students.map((x) => ({ subId: su.id, stId: x.id, max: su.max, canEdit: su.canEdit, label: x.name, roll: x.roll }))
     : grid.subjects.map((x) => ({ subId: x.id, stId: grid.students[sIdx].id, max: x.max, canEdit: x.canEdit, label: x.name }));
 
+  // Position as of the last spoken mark — read/written synchronously, because live
+  // (interim) results can arrive faster than React re-renders.
+  const posRef = useRef({ cur: 0, st: 0 });
+  useEffect(() => { posRef.current = { cur, st: stIdx }; }, [cur, stIdx]);
+  // How many actions of each in-progress phrase were already applied from live results.
+  const appliedRef = useRef(new Map<string, number>());
+  const [flashKey, setFlashKey] = useState('');
+  const flash = (subId: string, stId: string) => {
+    setFlashKey(`${subId}|${stId}`);
+    try { navigator.vibrate?.(25); } catch { /* not supported */ }
+    setTimeout(() => setFlashKey((k) => (k === `${subId}|${stId}` ? '' : k)), 450);
+  };
+
   // Always the latest render's view of state (the recogniser's callbacks are created once).
-  handleRef.current = (text: string) => {
-    setHeard(text.trim());
+  // `final` = the speech service has finished this phrase. Live (non-final) results are
+  // applied straight away for everything that can't change any more — so "45" is
+  // entered while the teacher is still talking, not after a pause.
+  handleRef.current = (text: string, final = true, key = '') => {
+    setHeard(final ? text.trim() : text.trim() + '…');
     const acts = parseVoice(text, mode === 'student' ? grid.subjects : []);
-    let s = stIdx;
+    const done = appliedRef.current.get(key) || 0;
+    let s = posRef.current.st;
     let rows = rowsFor(mode, s);
     const skipLocked = (j: number) => { while (j < rows.length && !rows[j].canEdit) j++; return j; };
-    let idx = skipLocked(Math.min(cur, rows.length));
+    let idx = skipLocked(Math.min(posRef.current.cur, rows.length));
     let msg: { ok: boolean; text: string } | null = null;
+    let applied = done;
     const advance = () => {
       idx = skipLocked(idx + 1);
       if (idx >= rows.length && mode === 'student' && s < total - 1) { s++; rows = rowsFor(mode, s); idx = skipLocked(0); }
     };
-    for (const a of acts) {
+    for (let i = done; i < acts.length; i++) {
+      const a = acts[i];
+      const last = i === acts.length - 1;
+      // A live number at the end might still grow ("4" → "45", "forty" → "forty five"): wait.
+      if (!final && last && a.type === 'num') {
+        const max = idx < rows.length ? rows[idx].max : 100;
+        if (a.n * 10 <= max || (a.n >= 20 && a.n % 10 === 0)) break;
+      }
+      applied = i + 1;
       if (a.type === 'stop') { stopVoice(); break; }
       if (a.type === 'back') {
         if (idx > 0) idx--;
@@ -373,13 +401,15 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
       const row = rows[idx];
       if (a.type === 'next') { advance(); continue; }
       if (a.type === 'clear') { setCell(row.subId, row.stId, ''); msg = { ok: true, text: `${row.label}: cleared` }; continue; }
-      if (a.type === 'ab') { setCell(row.subId, row.stId, 'AB'); msg = { ok: true, text: `${row.label}: AB` }; advance(); continue; }
+      if (a.type === 'ab') { setCell(row.subId, row.stId, 'AB'); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: AB` }; advance(); continue; }
       if (a.type === 'num') {
         if (a.n < 0 || a.n > row.max) { msg = { ok: false, text: `Heard ${a.n} for ${row.label} — over max ${row.max}. Say it again.` }; break; }
-        setCell(row.subId, row.stId, String(a.n)); msg = { ok: true, text: `${row.label}: ${a.n}` }; advance();
+        setCell(row.subId, row.stId, String(a.n)); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: ${a.n}` }; advance();
       }
     }
-    if (!acts.length) msg = { ok: false, text: `Didn't catch a mark in "${text.trim()}".` };
+    if (final) appliedRef.current.delete(key); else appliedRef.current.set(key, applied);
+    if (final && !acts.length) msg = { ok: false, text: `Didn't catch a mark in "${text.trim()}".` };
+    posRef.current = { cur: idx, st: s };
     if (s !== stIdx) { voiceMoved.current = true; setStIdx(s); }
     setCur(idx);
     if (msg) setVoiceMsg(msg);
@@ -395,16 +425,17 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
     if (!SR) { setVoiceMsg({ ok: false, text: 'Voice entry needs Chrome or Edge (computer / Android) or Safari (iPhone).' }); return; }
     const rec = new SR();
     rec.lang = 'en-IN';
-    rec.continuous = true;
+    // Android Chrome's continuous mode repeats / merges results; there, listen phrase
+    // by phrase and restart at once (onend). Elsewhere stay in continuous mode.
+    rec.continuous = !/Android/i.test(navigator.userAgent);
     rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    rec.onstart = () => { sessRef.current++; appliedRef.current.clear(); };
     rec.onresult = (e: any) => {
-      let interim = '';
       for (let k = e.resultIndex; k < e.results.length; k++) {
         const res = e.results[k];
-        if (res.isFinal) handleRef.current(res[0].transcript);
-        else interim += res[0].transcript;
+        handleRef.current(res[0].transcript, res.isFinal, `${sessRef.current}-${k}`);
       }
-      if (interim) setHeard(interim.trim() + '…');
     };
     rec.onerror = (e: any) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
@@ -538,6 +569,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
               <MarkRow key={x.id} num={i + 1} label={x.name} sub={x.roll ? `Roll ${x.roll}` : undefined}
                 value={cell(su.id, x.id)} max={su.max} canEdit={su.canEdit} last={i === total - 1}
                 inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
+                flash={flashKey === `${su.id}|${x.id}`}
                 onChange={(v) => setCell(su.id, x.id, v)} onNext={() => focusRow(i + 1)} />
             ))}
             {nextSubject && (
@@ -554,6 +586,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
               <MarkRow key={s.id} num={i + 1} label={s.name} sub={<>max {s.max}{s.status !== 'DRAFT' ? ` · ${s.status.toLowerCase()}` : ''}</>}
                 value={cell(s.id, st.id)} max={s.max} canEdit={s.canEdit} last={i === grid.subjects.length - 1 && stIdx === total - 1}
                 inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
+                flash={flashKey === `${s.id}|${st.id}`}
                 onChange={(v) => setCell(s.id, st.id, v)} onNext={() => focusRow(i + 1)} />
             ))}
             {stIdx < total - 1 && (
