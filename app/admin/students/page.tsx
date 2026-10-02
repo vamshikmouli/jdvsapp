@@ -34,6 +34,7 @@ import { downloadBackup } from '@/lib/utils';
 import { parseContactTargets, normalizeContactTargets, contactTargetsLabel, type ContactTarget } from '@/lib/contactTargets';
 import * as XLSX from 'xlsx';
 import { fmtDate } from '@/lib/dateFormat';
+import { buildAddress } from '@/lib/address';
 
 interface SchoolClass {
   id: string;
@@ -157,6 +158,8 @@ export default function StudentsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [form, setForm] = useState(emptyForm);
+  // Aadhaar-style address built from the profile (S/O father, village, taluk, district).
+  const formAddress = buildAddress({ gender: form.gender, fatherName: form.fatherName, guardianName: form.altGuardianName || form.motherName, village: form.village, taluk: form.taluk, district: form.district });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [showMore, setShowMore] = useState(false);            // "Add more details" expander
@@ -400,7 +403,7 @@ export default function StudentsPage() {
         religion: form.religion.trim() || null,
         category: form.category || null,
         caste: form.caste.trim() || null,
-        address: form.address.trim() || null,
+        address: form.address.trim() || formAddress || null,
         fatherName: form.fatherName.trim() || null,
         fatherPhone: form.fatherPhone.trim() || null,
         motherName: form.motherName.trim() || null,
@@ -943,10 +946,16 @@ export default function StudentsPage() {
                 <Input type="number" value={form.noOfDependents} onChange={(e) => setForm({ ...form, noOfDependents: e.target.value })} placeholder="0" />
               </Field>
               <div className="sm:col-span-2">
-                <Field label="Address">
-                  <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} placeholder="Home address"
+                <Field label="Address" hint={formAddress ? 'Left empty, it is filled from father’s name, village, taluk and district on save' : 'Fill village / taluk / district to build it automatically'}>
+                  <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={4} placeholder={formAddress || 'Home address'}
                     className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
                 </Field>
+                {formAddress && form.address.trim() !== formAddress && (
+                  <button type="button" onClick={() => setForm({ ...form, address: formAddress })}
+                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700">
+                    <Icon name="MapPin" size={13} /> Fill from profile (Aadhaar style)
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1045,7 +1054,7 @@ export default function StudentsPage() {
             <DetailRow label="District" value={viewing.district} />
             <DetailRow label="Annual income" value={viewing.annualIncome != null ? `₹${viewing.annualIncome.toLocaleString('en-IN')}` : null} />
             <DetailRow label="No. of dependents" value={viewing.noOfDependents != null ? String(viewing.noOfDependents) : null} />
-            <DetailRow label="Address" value={viewing.address} />
+            <DetailRow label="Address" value={(viewing.address || buildAddress(viewing)) ? <span className="whitespace-pre-line">{viewing.address || buildAddress(viewing)}</span> : null} />
             {canUpdate && viewing.guardianUserId && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <Button kind="secondary" icon="KeyRound" disabled={resetting} onClick={() => resetParentPin(viewing!)}>

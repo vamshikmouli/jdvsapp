@@ -5,6 +5,7 @@ import { PageHeader, Button, Card, Field, Input, Select, EmptyState, Skeleton } 
 import { Icon } from '@/components/Icon';
 import { toast } from '@/lib/toast';
 import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
+import { buildAddress } from '@/lib/address';
 
 const shortClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '—');
 const fmtDate = (d: string | null) => fmtDateApp(d);
@@ -286,7 +287,8 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
   if (F.dob && student.dob) rows.push(['Date of Birth', fmtDate(student.dob)]);
   if (F.father && student.fatherName) rows.push(["Father's Name", student.fatherName]);
   if (F.mother && student.motherName) rows.push(["Mother's Name", student.motherName]);
-  if (F.address && student.address) rows.push(['Address', student.address]);
+  const addr = (student.address || buildAddress(student)).replace(/,?\n/g, ', ');
+  if (F.address && addr) rows.push(['Address', addr]);
 
   return (
     <div className="bg-white border-2 border-slate-800 rounded-lg p-4 h-full flex flex-col">
