@@ -3,6 +3,8 @@
 import React from 'react';
 import { Icon } from '@/components/Icon';
 import { classifyNet, fmtMbps, measurePing, measureDownload, browserEstimate, type NetLevel } from '@/lib/netSpeed';
+import { detectBrowser, browserIssues, voiceProblem } from '@/lib/browserCheck';
+import { getSpeechRecognition } from '@/lib/marksVoice';
 
 // Signal bars in the top bar: green = fast, amber = OK, red = slow. Tap for the
 // speed check (download speed + ping to the school server) and what it means.
@@ -37,6 +39,8 @@ export function NetSpeed() {
   const [testedAt, setTestedAt] = React.useState<number | null>(null);
   const [err, setErr] = React.useState('');
   const wrapRef = React.useRef<HTMLDivElement>(null);
+  // "This device": browser + version, whether it's up to date and whether voice works.
+  const [device, setDevice] = React.useState<{ label: string; issues: string[]; voice: string | null; voiceOk: boolean } | null>(null);
 
   // Background: browser estimate (free) + a tiny ping now and every 2 minutes.
   React.useEffect(() => {
@@ -73,7 +77,16 @@ export function NetSpeed() {
     } catch { setErr("Couldn't reach the school server — check the internet."); }
     setTesting(false);
   };
-  const toggle = () => { setOpen((o) => { if (!o && !testedAt && !testing) runTest(); return !o; }); };
+  const toggle = () => {
+    if (!device) {
+      const b = detectBrowser(navigator.userAgent, navigator.maxTouchPoints || 0);
+      const env = { secure: window.isSecureContext || location.hostname === 'localhost', hasVoice: !!getSpeechRecognition(), online: true };
+      const vp = voiceProblem(b, env);
+      // Not on https → the browser issue already says so; don't repeat it for voice.
+      setDevice({ label: b.label, issues: browserIssues(b, env).map((i) => i.text), voice: env.secure ? vp : null, voiceOk: !vp });
+    }
+    setOpen((o) => { if (!o && !testedAt && !testing) runTest(); return !o; });
+  };
 
   const c = online ? classifyNet(mbps, ping) : { level: 'offline' as NetLevel, label: 'Offline', bars: 0 };
   const color = COLOR[c.level];
@@ -105,6 +118,25 @@ export function NetSpeed() {
             </div>
           </div>
           <p className="text-xs text-slate-600 mt-3 leading-snug">{err || ADVICE[c.level]}</p>
+          {device && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">This device</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+                <Icon name="Globe" size={14} className="text-slate-400 flex-shrink-0" /> <span className="truncate">{device.label}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                <span className={`rounded-full px-2 py-0.5 ${device.issues.length ? 'bg-danger-50 text-danger-700' : 'bg-success-50 text-success-700'}`}>
+                  {device.issues.length ? '⚠ Needs update' : '✓ Up to date'}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 ${device.voiceOk ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
+                  {device.voiceOk ? '✓ Voice entry' : '✗ Voice entry'}
+                </span>
+              </div>
+              {[...device.issues, ...(device.voice ? [device.voice] : [])].map((t) => (
+                <p key={t} className="mt-1.5 text-[11.5px] leading-snug text-danger-700">{t}</p>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between mt-3">
             <span className="text-[10.5px] text-slate-400">{type ? `${String(type).toUpperCase()} · ` : ''}to the school server</span>
             <button onClick={runTest} disabled={testing || !online}
