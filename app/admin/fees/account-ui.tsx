@@ -145,15 +145,15 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
         </div>
       )}
       {s && (
-        <div className={`grid gap-3 mb-5 ${s.concession > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+        <div className={`grid mb-4 rounded-lg border border-slate-200 bg-slate-50 divide-x divide-slate-200 text-center ${s.concession > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
           {/* Tap Total fee / Concession / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer.
-              Right-hand boxes open their split leftwards so it stays on screen. */}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="stat" align="left" /></div>
+              Edge boxes open their split inwards so it stays on screen. */}
+          <div className="px-1 py-1.5"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="strip" align="left" /></div>
           {s.concession > 0 && (
-            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.concession} metric="concession" layout="stat" align="left" /></div>
+            <div className="px-1 py-1.5 bg-info-50"><HeadBreakdown heads={s.heads} total={s.concession} metric="concession" layout="strip" align="center" /></div>
           )}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="stat" align={s.concession > 0 ? 'auto' : 'left'} /></div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
+          <div className="px-1 py-1.5"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="strip" align="center" /></div>
+          <div className="px-1 py-1.5 bg-danger-50 rounded-r-lg"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="strip" align="right" /></div>
         </div>
       )}
 
@@ -564,7 +564,8 @@ const HEAD_METRIC: Record<HeadMetric, { label: string; headerColor: string; stat
 function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
   heads: HeadRowLite[]; total: number; metric: HeadMetric;
   // 'auto' = opens rightwards in the 2-column phone grid, leftwards in the 4-column grid (sm+).
-  layout: 'stat' | 'header'; align?: 'left' | 'right' | 'auto';
+  // 'strip' = compact phone row (small label over the figure).
+  layout: 'stat' | 'header' | 'strip'; align?: 'left' | 'right' | 'auto' | 'center';
 }) {
   const [open, setOpen] = useState(false);
   const m = HEAD_METRIC[metric];
@@ -576,7 +577,12 @@ function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} className="w-full" title="See the fee-head-wise split">
-        {layout === 'stat' ? (
+        {layout === 'strip' ? (
+          <>
+            <div className="text-[9.5px] uppercase tracking-[0.05em] text-slate-400 font-semibold inline-flex items-center gap-0.5">{m.label} {chevron}</div>
+            <div className={`text-[13px] font-bold tabular-nums leading-tight ${statColor}`}>{feeMoney(total)}</div>
+          </>
+        ) : layout === 'stat' ? (
           <>
             <div className={`text-base font-bold tabular-nums ${statColor}`}>{feeMoney(total)}</div>
             <div className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-0.5">{m.label} {chevron}</div>
@@ -591,7 +597,7 @@ function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
-          <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : align === 'auto' ? 'left-0 sm:left-auto sm:right-0' : 'left-0'}`}>
+          <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : align === 'auto' ? 'left-0 sm:left-auto sm:right-0' : 'left-0'}`}>
             <div className="text-[10.5px] uppercase tracking-wide text-slate-400 px-2 pb-1 text-left">{m.label} by fee head</div>
             {rows.length === 0 ? (
               <div className="px-2 py-2 text-xs text-slate-400 text-left">{metric === 'paid' ? 'No payments yet.' : metric === 'balance' ? 'Nothing pending.' : metric === 'concession' ? 'No approved concession.' : 'Nothing charged yet.'}</div>
@@ -1184,11 +1190,11 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       {msg && !error && <div className="mb-4 bg-success-50 border border-success-100 rounded-md p-3 text-sm text-success-700">{msg}</div>}
 
       {/* Owed / Paid / Balance — shown here on mobile (the header versions are md+ only). Tap for the fee-head split. */}
-      <div className={`grid gap-2 mb-4 md:hidden ${showConc ? 'grid-cols-2' : 'grid-cols-3'}`}>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="stat" align="left" /></div>
-        {showConc && <div className="rounded-xl border border-info-100 bg-info-50 px-3 py-2 text-center"><HeadBreakdown heads={account.summary.heads} total={s.concession} metric="concession" layout="stat" align="right" />{pendingLine}</div>}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
-        <div className="rounded-xl border border-danger-100 bg-danger-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
+      <div className={`grid mb-3 md:hidden rounded-lg border border-slate-200 bg-slate-50 divide-x divide-slate-200 text-center ${showConc ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <div className="px-1 py-1.5"><HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="strip" align="left" /></div>
+        {showConc && <div className="px-1 py-1.5 bg-info-50"><HeadBreakdown heads={account.summary.heads} total={s.concession} metric="concession" layout="strip" align="center" /><div className="[&>div]:text-[9px] [&>div]:truncate">{pendingLine}</div></div>}
+        <div className="px-1 py-1.5"><HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="strip" align="center" /></div>
+        <div className="px-1 py-1.5 bg-danger-50 rounded-r-lg"><HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="strip" align="right" /></div>
       </div>
 
       <div className={addOpen ? 'grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 items-start' : 'space-y-4'}>
