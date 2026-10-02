@@ -686,7 +686,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const [adding, setAdding] = useState('');
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
-  const [done, setDone] = useState<{ receiptNo: string; id: string } | null>(null);
+  const [done, setDone] = useState<{ receiptNo: string; id: string; waHeld?: boolean } | null>(null);
   const brand = useBranding();
 
   const reloadAccount = async (): Promise<Account | null> => {
@@ -852,7 +852,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       // "Print receipts" button prints it on demand (no auto-print).
       await reloadAccount();
       setManualNo(''); // a book serial belongs to one receipt only
-      setDone({ receiptNo: data.receiptNo, id: data.id });
+      setDone({ receiptNo: data.receiptNo, id: data.id, waHeld: !!data.waHeld });
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to record payment'); }
     finally { setBusy(false); }
   };
@@ -1024,7 +1024,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
         <div className="text-center py-2">
           <div className="w-12 h-12 rounded-full bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-3"><Icon name="Check" size={26} /></div>
           <p className="text-sm text-slate-600">Collected <span className="font-semibold text-slate-900">{feeMoney(total)}</span> from {account?.student.name}.</p>
-          <p className="text-xs text-slate-500 mt-1">Receipt <span className="font-mono">{done.receiptNo}</span> recorded.{sendWa ? ' Sent to parent on WhatsApp.' : ''} Tap <b>Print receipts</b> to print the fee &amp; uniform slips.</p>
+          <p className="text-xs text-slate-500 mt-1">Receipt <span className="font-mono">{done.receiptNo}</span> recorded.{sendWa ? (done.waHeld ? ' The WhatsApp receipt will be sent to the parent once the pending concession is approved or rejected.' : ' Sent to parent on WhatsApp.') : ''} Tap <b>Print receipts</b> to print the fee &amp; uniform slips.</p>
         </div>
       </Modal>
     );
@@ -1334,6 +1334,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                   <input type="checkbox" checked={sendWa} onChange={(e) => setSendWa(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
                   <span className="text-sm text-slate-700 inline-flex items-center gap-1.5"><Icon name="MessageCircle" size={15} className="text-success-600" /> Send WhatsApp receipt to parent</span>
                 </label>
+              )}
+              {sendWa && pendingConc > 0 && opts?.feeReceiptWhatsapp !== 'OFF' && account.student.whatsappEnabled !== false && (
+                <div className="mt-2 flex items-start gap-2 text-xs text-marigold-700 bg-marigold-50 border border-marigold-100 rounded-lg px-3 py-2">
+                  <Icon name="Clock" size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>A concession of <b>{feeMoney(pendingConc)}</b> is waiting for approval — the WhatsApp receipt will be sent <b>after it is approved</b> (so it shows the correct balance).</span>
+                </div>
               )}
               <p className="text-[11px] text-slate-400 mt-2">Choose the <b>payment mode</b> and <b>date</b> in the bar below, then Record.</p>
             </div>

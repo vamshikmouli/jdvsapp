@@ -4,6 +4,17 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { decideConcession, deleteConcession, cancelConcession } from '@/lib/services/fees';
 import { logActivity } from '@/lib/activity';
+import { prisma } from '@/lib/db';
+import { releaseHeldFeeReceipts } from '@/lib/services/feeReceiptWa';
+
+const studentOf = async (concessionId: string) =>
+  (await prisma.concession.findUnique({ where: { id: concessionId }, select: { assignment: { select: { studentId: true } } } }))?.assignment.studentId || null;
+
+// Once the student has no concession waiting for approval, send any WhatsApp fee
+// receipts that were held for it (fire-and-forget — never delays the response).
+const release = (studentId: string | null) => {
+  if (studentId) void releaseHeldFeeReceipts(studentId).catch((e) => console.error('release held receipts', e));
+};
 
 // Approve / reject a pending concession, or cancel an approved one
 // (admins with FEES_CONCESSION_APPROVE).
@@ -25,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: 'action must be approve, reject or cancel' }, { status: 400 });
     }
     const result = await decideConcession(params.id, action === 'approve', userId, body.note || null);
+    release(await studentOf(params.id));
     void logActivity(session, { category: 'FEES', action: action === 'approve' ? 'CONCESSION_APPROVED' : 'CONCESSION_REJECTED', entityType: 'Concession', entityId: params.id, summary: `${action === 'approve' ? 'Approved' : 'Rejected'} a concession${body.note ? ` — ${body.note}` : ''}`, req });
     return NextResponse.json(result);
   } catch (err) {
@@ -40,7 +52,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     if (!session || !(can(session, 'FEES_COLLECT') || can(session, 'FEES_CONCESSION_APPROVE'))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+    const sid = await studentOf(params.id);
     await deleteConcession(params.id);
+    release(sid);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('fees/concessions/[id] DELETE', err);

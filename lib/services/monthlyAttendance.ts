@@ -179,7 +179,7 @@ const LIMIT_ERROR = /\b(130429|131048|131056)\b|rate limit|messaging limit/i;
 async function phonesUsedLast24h(): Promise<Set<string>> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const rows = await prisma.messageDelivery.findMany({
-    where: { createdAt: { gte: since }, status: { not: 'FAILED' } },
+    where: { createdAt: { gte: since }, status: { notIn: ['FAILED', 'HELD'] } },
     select: { phone: true },
     distinct: ['phone'],
   });

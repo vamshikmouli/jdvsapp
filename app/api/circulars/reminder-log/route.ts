@@ -20,6 +20,8 @@ export async function GET(_req: NextRequest) {
     // Pull a generous window of recent deliveries and group client-side; cheap and
     // avoids N queries per kind. 600 rows comfortably covers recent activity.
     const rows = await prisma.messageDelivery.findMany({
+      // HELD = a fee receipt waiting for concession approval — not sent yet.
+      where: { status: { not: 'HELD' } },
       orderBy: { createdAt: 'desc' }, take: 600,
       select: { batchId: true, kind: true, title: true, studentName: true, className: true, recipient: true, phone: true, status: true, error: true, createdAt: true },
     });
