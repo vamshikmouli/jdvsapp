@@ -28,8 +28,9 @@ function payMethodText(p: { method: string; tenders?: { method: string; amount: 
 }
 
 // Read-only payment-history drawer (the "Eye" drawer) — used by the Collection
-// list and the top-bar universal search.
-export function PaymentTimeline({ studentId, name, onClose }: { studentId: string; name: string; onClose: () => void }) {
+// list and the top-bar universal search. `onCollect` (users who can collect) adds
+// a "Collect payment" button that swaps this drawer for the Collect drawer.
+export function PaymentTimeline({ studentId, name, onClose, onCollect }: { studentId: string; name: string; onClose: () => void; onCollect?: () => void }) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -41,16 +42,20 @@ export function PaymentTimeline({ studentId, name, onClose }: { studentId: strin
 
   return (
     <Drawer open onClose={onClose} title="Payment history" subtitle={name} width={560}
-      footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
+      footer={<div className="flex justify-end gap-2">
+        <Button onClick={onClose}>Close</Button>
+        {onCollect && <Button kind="primary" icon="IndianRupee" onClick={onCollect}>Collect payment</Button>}
+      </div>}>
       {s && (
         <div className={`grid gap-3 mb-5 ${s.concession > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
-          {/* Tap Total fee / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer. */}
+          {/* Tap Total fee / Concession / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer.
+              Right-hand boxes open their split leftwards so it stays on screen. */}
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="stat" align="left" /></div>
           {s.concession > 0 && (
-            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-slate-400">Concession</div><div className="text-lg font-bold tabular-nums text-info-700">−{feeMoney(s.concession)}</div></div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.concession} metric="concession" layout="stat" align="left" /></div>
           )}
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="left" /></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
         </div>
       )}
 
@@ -447,11 +452,12 @@ function ConcessionSection({ account, canRequest, onChanged }: { account: Accoun
 // An Owed / Paid / Balance figure, clickable to reveal its fee-head-wise split
 // (School fee, Software, Uniform …). Used in the Collect header and the
 // account/History header.
-type HeadMetric = 'owed' | 'charged' | 'paid' | 'balance';
+type HeadMetric = 'owed' | 'charged' | 'concession' | 'paid' | 'balance';
 type HeadRowLite = { name: string; charged: number; concession: number; paid: number; balance: number };
 const HEAD_METRIC: Record<HeadMetric, { label: string; headerColor: string; statColor: string; value: (h: HeadRowLite) => number }> = {
   owed: { label: 'Owed', headerColor: 'text-slate-800', statColor: 'text-slate-900', value: (h) => Math.max(0, h.charged - h.concession) },
   charged: { label: 'Total fee', headerColor: 'text-slate-800', statColor: 'text-slate-900', value: (h) => h.charged },
+  concession: { label: 'Concession', headerColor: 'text-info-700', statColor: 'text-info-700', value: (h) => h.concession },
   paid: { label: 'Paid', headerColor: 'text-success-600', statColor: 'text-success-700', value: (h) => h.paid },
   balance: { label: 'Balance', headerColor: 'text-danger-600', statColor: 'text-danger-700', value: (h) => h.balance },
 };
@@ -487,7 +493,7 @@ function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
           <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : 'left-0'}`}>
             <div className="text-[10.5px] uppercase tracking-wide text-slate-400 px-2 pb-1 text-left">{m.label} by fee head</div>
             {rows.length === 0 ? (
-              <div className="px-2 py-2 text-xs text-slate-400 text-left">{metric === 'paid' ? 'No payments yet.' : metric === 'balance' ? 'Nothing pending.' : 'Nothing charged yet.'}</div>
+              <div className="px-2 py-2 text-xs text-slate-400 text-left">{metric === 'paid' ? 'No payments yet.' : metric === 'balance' ? 'Nothing pending.' : metric === 'concession' ? 'No approved concession.' : 'Nothing charged yet.'}</div>
             ) : (
               <div className="max-h-64 overflow-y-auto">
                 {rows.map((r) => (
@@ -947,6 +953,10 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   // Uniform picker options: the Fee-setup uniform catalogue (priced by matrix for
   // this student) provided by the server, plus "Other" for anything one-off.
   const uniOptions = (opts?.uniform?.items || []) as { key: string; name: string; price: number }[];
+  // Requested but not yet approved — shown under the Concession figure (doesn't reduce the balance yet).
+  const pendingConc = account.concessions.filter((c) => c.status === 'PENDING').reduce((t, c) => t + c.amount, 0);
+  const showConc = s.concession > 0 || pendingConc > 0;
+  const pendingLine = pendingConc > 0 ? <div className="text-[10.5px] font-semibold text-marigold-700 whitespace-nowrap" title="Waiting for admin approval">+{feeMoney(pendingConc)} pending</div> : null;
 
   return (
     <Drawer open onClose={onClose} title="Collect payment" subtitle={`${account.student.name} · ${account.student.id} · ${shortClass(account.student.className)}${account.student.guardianPhone ? ` · ${account.student.guardianPhone}` : ''}`} width={1240}
@@ -955,6 +965,12 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-right min-w-[104px]">
             <HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="header" align="right" />
           </div>
+          {showConc && (
+            <div className="rounded-xl border border-info-100 bg-info-50 px-4 py-2 text-right min-w-[104px]">
+              <HeadBreakdown heads={account.summary.heads} total={s.concession} metric="concession" layout="header" align="right" />
+              {pendingLine}
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-right min-w-[104px]">
             <HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="header" align="right" />
           </div>
@@ -1021,10 +1037,11 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       {msg && !error && <div className="mb-4 bg-success-50 border border-success-100 rounded-md p-3 text-sm text-success-700">{msg}</div>}
 
       {/* Owed / Paid / Balance — shown here on mobile (the header versions are md+ only). Tap for the fee-head split. */}
-      <div className="grid grid-cols-3 gap-2 mb-4 md:hidden">
+      <div className={`grid gap-2 mb-4 md:hidden ${showConc ? 'grid-cols-2' : 'grid-cols-3'}`}>
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalCharged - s.concession} metric="owed" layout="stat" align="left" /></div>
+        {showConc && <div className="rounded-xl border border-info-100 bg-info-50 px-3 py-2 text-center"><HeadBreakdown heads={account.summary.heads} total={s.concession} metric="concession" layout="stat" align="right" />{pendingLine}</div>}
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
-        <div className="rounded-xl border border-danger-100 bg-danger-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="stat" align="left" /></div>
+        <div className="rounded-xl border border-danger-100 bg-danger-50 px-3 py-2"><HeadBreakdown heads={account.summary.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
       </div>
 
       <div className={addOpen ? 'grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 items-start' : 'space-y-4'}>

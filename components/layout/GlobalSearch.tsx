@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { Avatar } from '@/components/Primitives';
-import { PaymentTimeline } from '@/app/admin/fees/account-ui';
+import { PaymentTimeline, CollectDrawer } from '@/app/admin/fees/account-ui';
 
 interface Stu {
   id: string;
@@ -39,6 +39,7 @@ export function GlobalSearch() {
   const [focused, setFocused] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [timeline, setTimeline] = useState<{ id: string; name: string } | null>(null);
+  const [collectId, setCollectId] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -154,7 +155,9 @@ export function GlobalSearch() {
         </div>
       )}
 
-      {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)} />}
+      {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)}
+        onCollect={canCollect ? () => { const id = timeline.id; setTimeline(null); setCollectId(id); } : undefined} />}
+      {collectId && <CollectDrawer studentId={collectId} onClose={() => setCollectId(null)} onDone={() => setCollectId(null)} />}
     </>
   );
 }
