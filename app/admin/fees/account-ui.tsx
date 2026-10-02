@@ -45,17 +45,21 @@ export function PaymentTimeline({ studentId, name, onClose, onCollect }: { stude
         <Button onClick={onClose}>Close</Button>
         {onCollect && n === 1 && <Button kind="primary" icon="IndianRupee" onClick={() => onCollect(list[0].id)}>Collect payment</Button>}
       </div>}>
-      <div className="mb-4">
+      {/* Several students (lg+): fill the drawer so each column's receipts scroll on their own,
+          keeping every student's name, Collect button and totals in view. */}
+      <div className={n > 1 ? 'lg:h-full lg:flex lg:flex-col' : ''}>
+      <div className="mb-4 flex-shrink-0">
         {n < MAX_HISTORY
           ? <AddStudentPicker exclude={list.map((x) => x.id)} onPick={add} />
           : <p className="text-xs text-slate-400">Showing {MAX_HISTORY} students — remove one (×) to add another.</p>}
       </div>
-      <div className={`grid gap-6 grid-cols-1 ${n === 2 ? 'lg:grid-cols-2' : n === 3 ? 'lg:grid-cols-3' : ''}`}>
+      <div className={`grid gap-6 grid-cols-1 ${n === 2 ? 'lg:grid-cols-2' : n === 3 ? 'lg:grid-cols-3' : ''} ${n > 1 ? 'lg:flex-1 lg:min-h-0 lg:grid-rows-[minmax(0,1fr)]' : ''}`}>
         {list.map((st) => (
           <TimelineColumn key={st.id} studentId={st.id} name={st.name} multi={n > 1}
             onRemove={n > 1 ? () => remove(st.id) : undefined}
             onCollect={onCollect && n > 1 ? () => onCollect(st.id) : undefined} />
         ))}
+      </div>
       </div>
     </Drawer>
   );
@@ -126,7 +130,7 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
   const liveCount = pays.filter((p) => !p.voided).length;
 
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 ${multi ? 'lg:flex lg:flex-col lg:min-h-0' : ''}`}>
       {multi && (
         <div className="flex items-start justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
           <div className="min-w-0">
@@ -154,6 +158,7 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
 
       <div className="text-sm font-semibold text-slate-900 mb-3">{liveCount} receipt{liveCount === 1 ? '' : 's'}</div>
 
+      <div className={multi ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-2 lg:-mr-2 lg:pt-1' : ''}>
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={80} />)}</div>
       ) : pays.length === 0 ? (
@@ -193,6 +198,7 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
