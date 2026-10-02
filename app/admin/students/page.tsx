@@ -125,7 +125,7 @@ const emptyForm = {
   studyFromYear: '',
   studyToYear: '',
   studyFromStandard: '',
-  studyToStandard: '10th',
+  studyToStandard: '',
   customFields: {} as Record<string, string>,
 };
 
@@ -337,7 +337,7 @@ export default function StudentsPage() {
       studyFromYear: s.studyFromYear || '',
       studyToYear: s.studyToYear || '',
       studyFromStandard: s.studyFromStandard || '',
-      studyToStandard: s.studyToStandard || '10th',
+      studyToStandard: s.studyToStandard || '',
       customFields: (s.customFields && typeof s.customFields === 'object' ? s.customFields : {}) as Record<string, string>,
     });
     setFormError('');
