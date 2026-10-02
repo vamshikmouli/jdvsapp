@@ -661,7 +661,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   // Collection
   const [amounts, setAmounts] = useState<Record<string, number>>({});
   const [tendered, setTendered] = useState(0);
-  const [addOpen, setAddOpen] = useState(true); // left "Add a fee" panel expanded?
+  // Left "Add a fee" panel expanded? Starts minimized on phones so the dues show first.
+  const [addOpen, setAddOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
   const [addKind, setAddKind] = useState<'van' | 'uniform' | 'idcard' | 'oldfee'>('van'); // active add-fee chip
   const [method, setMethod] = useState(''); // no default — operator must pick
   // Split tender: one receipt paid partly by two+ modes (e.g. UPI + Cash).
@@ -1059,6 +1060,27 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const showConc = s.concession > 0 || pendingConc > 0;
   const pendingLine = pendingConc > 0 ? <div className="text-[10.5px] font-semibold text-marigold-700 whitespace-nowrap" title="Waiting for admin approval">+{feeMoney(pendingConc)} pending</div> : null;
 
+  // Split tender inputs — shared by the phone and desktop footers.
+  const splitBlock = (
+    <div>
+      <div className="grid grid-cols-2 gap-1.5 lg:flex lg:flex-wrap lg:gap-2">
+        {PAY_MODES.map((m) => (
+          <label key={m.v} title={m.label}
+            className={`flex items-center gap-1.5 lg:gap-2 rounded-lg lg:rounded-xl border px-2 py-1 lg:px-3 lg:py-2 transition-colors ${Number(splits[m.v]) > 0 ? 'border-purple-400 bg-purple-50' : 'border-slate-200'}`}>
+            <Icon name={m.icon as any} size={18} className="hidden lg:block text-slate-500" />
+            <span className="text-[12px] lg:text-[13px] font-semibold text-slate-600 w-11 lg:w-12 flex-shrink-0">{m.label}</span>
+            <input inputMode="numeric" placeholder="0" value={splits[m.v] ?? ''}
+              onChange={(e) => setSplits((s) => ({ ...s, [m.v]: e.target.value.replace(/[^\d]/g, '') }))}
+              className="w-full min-w-0 lg:w-24 rounded-md border border-slate-200 px-2 py-1 lg:px-2.5 lg:py-1.5 text-right text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
+          </label>
+        ))}
+      </div>
+      <div className={`mt-1 text-[10.5px] font-semibold tabular-nums ${splitSum === total ? 'text-success-600' : 'text-danger-600'}`}>
+        Split {feeMoney(splitSum)} / {feeMoney(total)}{splitSum !== total ? ` · ${splitSum > total ? 'over by' : 'short by'} ${feeMoney(Math.abs(total - splitSum))}` : ' ✓'}
+      </div>
+    </div>
+  );
+
   return (
     <Drawer open onClose={onClose} title="Collect payment" subtitle={`${account.student.name} · ${account.student.id} · ${shortClass(account.student.className)}${account.student.guardianPhone ? ` · ${account.student.guardianPhone}` : ''}`} width={1240}
       headerRight={
@@ -1081,7 +1103,44 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
         </div>
       }
       footer={
-        <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+        <>
+        {/* Phone: compact so the dues and history keep most of the screen. */}
+        <div className="lg:hidden space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold">Collecting now</div>
+              <div className="font-display text-xl font-extrabold tabular-nums text-purple-600 leading-none mt-0.5">{feeMoney(total)}</div>
+            </div>
+            {total > 0 ? (
+              <div className="ml-auto w-[9.75rem]">
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Payment date" className="!py-2 text-sm" />
+              </div>
+            ) : (
+              <div className="ml-auto text-right text-[11px] leading-snug text-slate-400">Enter the amount, or tap<br />Fill / Pay all above</div>
+            )}
+          </div>
+          {total > 0 && (!splitOpen ? (
+            <div className="grid grid-cols-5 gap-1.5">
+              {PAY_MODES.map((m) => (
+                <button key={m.v} type="button" onClick={() => setMethod(m.v)} aria-pressed={method === m.v}
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border py-1.5 text-[10.5px] font-semibold transition-colors ${method === m.v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
+                  <Icon name={m.icon as any} size={15} />{m.label}
+                </button>
+              ))}
+            </div>
+          ) : splitBlock)}
+          <div className="flex gap-2">
+            {total > 0 && (
+              <button type="button" onClick={() => setSplitOpen((v) => !v)} aria-label={splitOpen ? 'Single mode' : 'Split across modes'} title={splitOpen ? 'Single mode' : 'Split across modes (e.g. UPI + Cash)'}
+                className={`flex-shrink-0 inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 text-[11px] font-semibold ${splitOpen ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
+                <Icon name="Split" size={14} />{splitOpen ? '1 mode' : 'Split'}
+              </button>
+            )}
+            <Button onClick={onClose} className="flex-1">Close</Button>
+            {total > 0 && <Button kind="primary" icon="Check" onClick={submit} disabled={busy} className="flex-[2]">{busy ? 'Saving…' : 'Record'}</Button>}
+          </div>
+        </div>
+        <div className="hidden lg:flex lg:flex-row lg:items-end gap-4">
           <div className="lg:mr-auto">
             <div className="text-[10.5px] uppercase tracking-[0.08em] text-slate-400 font-semibold">Collecting now</div>
             <div className="font-display text-2xl font-extrabold tabular-nums text-purple-600 leading-none mt-0.5">{feeMoney(total)}</div>
@@ -1104,25 +1163,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                   </button>
                 ))}
               </div>
-            ) : (
-              <div>
-                <div className="flex flex-wrap gap-2">
-                  {PAY_MODES.map((m) => (
-                    <label key={m.v} title={m.label}
-                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${Number(splits[m.v]) > 0 ? 'border-purple-400 bg-purple-50' : 'border-slate-200'}`}>
-                      <Icon name={m.icon as any} size={18} className="text-slate-500" />
-                      <span className="text-[13px] font-semibold text-slate-600 w-12">{m.label}</span>
-                      <input inputMode="numeric" placeholder="0" value={splits[m.v] ?? ''}
-                        onChange={(e) => setSplits((s) => ({ ...s, [m.v]: e.target.value.replace(/[^\d]/g, '') }))}
-                        className="w-24 rounded-md border border-slate-200 px-2.5 py-1.5 text-right text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
-                    </label>
-                  ))}
-                </div>
-                <div className={`mt-1 text-[10.5px] font-semibold tabular-nums ${splitSum === total ? 'text-success-600' : 'text-danger-600'}`}>
-                  Split {feeMoney(splitSum)} / {feeMoney(total)}{splitSum !== total ? ` · ${splitSum > total ? 'over by' : 'short by'} ${feeMoney(Math.abs(total - splitSum))}` : ' ✓'}
-                </div>
-              </div>
-            )}
+            ) : splitBlock}
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10.5px] uppercase tracking-[0.06em] text-slate-400 font-semibold">Date <span className="text-danger-500">*</span></label>
@@ -1133,6 +1174,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
             <Button kind="primary" icon="Check" onClick={submit} disabled={busy || total <= 0} className="flex-1 lg:flex-none">{busy ? 'Saving…' : 'Record payment'}</Button>
           </div>
         </div>
+        </>
       }>
       {error && <div className="mb-4 bg-danger-50 border border-danger-100 rounded-md p-3 text-sm text-danger-700 flex items-start gap-2"><Icon name="AlertCircle" size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
       {msg && !error && <div className="mb-4 bg-success-50 border border-success-100 rounded-md p-3 text-sm text-success-700">{msg}</div>}

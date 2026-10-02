@@ -103,17 +103,17 @@ export function Drawer({ open, onClose, title, subtitle, footer, headerRight, ch
         onClick={onClose}
       />
       <div
-        className={`absolute top-0 right-0 h-full bg-white shadow-xl flex flex-col transition-transform duration-300 ease-out ${
+        className={`absolute top-0 right-0 h-full supports-[height:100dvh]:h-[100dvh] bg-white shadow-xl flex flex-col transition-transform duration-300 ease-out ${
           show ? 'translate-x-0' : 'translate-x-full'
         }`}
         style={{ width: `${width}px`, maxWidth: '100vw' }}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100 flex-shrink-0">
+        <div className="flex items-start justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100 flex-shrink-0">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-            {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
+            <h2 className="text-base sm:text-lg font-semibold text-slate-900">{title}</h2>
+            {subtitle && <p className="text-xs sm:text-sm text-slate-500 mt-0.5">{subtitle}</p>}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             {headerRight}
@@ -122,8 +122,8 @@ export function Drawer({ open, onClose, title, subtitle, footer, headerRight, ch
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="border-t border-slate-100 px-6 py-4 flex-shrink-0">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+        {footer && <div className="border-t border-slate-100 px-4 py-3 sm:px-6 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-4 flex-shrink-0 shadow-[0_-4px_12px_-6px_rgba(15,23,42,0.12)]">{footer}</div>}
       </div>
     </div>,
     document.body,
