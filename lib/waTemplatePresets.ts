@@ -16,7 +16,7 @@ export interface WaTemplatePreset {
 }
 
 export const MONTHLY_ATTENDANCE_TEMPLATE = 'monthly_attendance_report';
-export const ABSENCE_ALERT_TEMPLATE = 'student_absence_alert';
+export const ABSENCE_ALERT_TEMPLATE = 'student_absence_reminder';
 
 export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
   {
