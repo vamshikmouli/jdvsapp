@@ -384,7 +384,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   const recRef = useRef<any>(null);
   const wantRef = useRef(false);
   const voiceMoved = useRef(false);
-  const handleRef = useRef<(text: string, final?: boolean, key?: string) => void>(() => {});
+  const handleRef = useRef<(text: string, final?: boolean, key?: string, settle?: boolean) => void>(() => {});
   const sessRef = useRef(0); // recogniser restarts — keeps result keys unique
   type VRow = { subId: string; stId: string; max: number; grades?: string[]; canEdit: boolean; label: string; roll?: string | null };
   const rowsFor = (m: EntryMode, sIdx: number): VRow[] => m === 'subject'
@@ -398,6 +398,12 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   useEffect(() => { posRef.current = { cur, st: stIdx }; }, [cur, stIdx]);
   // How many actions of each in-progress phrase were already applied from live results.
   const appliedRef = useRef(new Map<string, number>());
+  // A trailing number that might still grow ("4" → "45") is entered after a short pause
+  // instead of waiting 1–2 s for the speech service to close the phrase.
+  const SETTLE_MS = 450;
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The mark entered on a pause, so it can be corrected if the phrase then grows.
+  const settledRef = useRef<{ key: string; i: number; subId: string; stId: string; n: number } | null>(null);
   const [flashKey, setFlashKey] = useState('');
   const flash = (subId: string, stId: string) => {
     setFlashKey(`${subId}|${stId}`);
@@ -409,10 +415,24 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   // `final` = the speech service has finished this phrase. Live (non-final) results are
   // applied straight away for everything that can't change any more — so "45" is
   // entered while the teacher is still talking, not after a pause.
-  handleRef.current = (text: string, final = true, key = '') => {
-    setHeard(final ? text.trim() : text.trim() + '…');
+  // `settle` = the teacher paused: apply the trailing number now, but keep the phrase open.
+  handleRef.current = (text: string, final = true, key = '', settle = false) => {
+    if (settleTimer.current) { clearTimeout(settleTimer.current); settleTimer.current = null; }
+    if (!settle) setHeard(final ? text.trim() : text.trim() + '…');
     const acts = parseVoice(text, mode === 'student' ? grid.subjects : [], allGrades);
     const done = appliedRef.current.get(key) || 0;
+    // A mark entered on a pause, then the phrase grew ("4" → "45"): fix that cell.
+    const st = settledRef.current;
+    if (st && st.key === key) {
+      const a = acts[st.i];
+      if (a && a.type === 'num' && a.n !== st.n) {
+        const row = rowsFor(mode, posRef.current.st).find((r) => r.subId === st.subId && r.stId === st.stId) || null;
+        const max = row ? row.max : Infinity;
+        if (a.n <= max) { setCell(st.subId, st.stId, String(a.n)); flash(st.subId, st.stId); setVoiceMsg({ ok: true, text: `Corrected to ${a.n}` }); st.n = a.n; }
+      }
+      if (final) settledRef.current = null;
+    }
+    let held = false;
     let s = posRef.current.st;
     let rows = rowsFor(mode, s);
     const skipLocked = (j: number) => { while (j < rows.length && !rows[j].canEdit) j++; return j; };
@@ -426,12 +446,12 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
     for (let i = done; i < acts.length; i++) {
       const a = acts[i];
       const last = i === acts.length - 1;
-      // A live grade at the end might still grow ("A" → "A1"): wait for the phrase.
-      if (!final && last && a.type === 'grade') break;
-      // A live number at the end might still grow ("4" → "45", "forty" → "forty five"): wait.
-      if (!final && last && a.type === 'num') {
+      // A live grade at the end might still grow ("A" → "A1"): wait (briefly) for the phrase.
+      if (!final && !settle && last && a.type === 'grade') { held = true; break; }
+      // A live number at the end might still grow ("4" → "45", "forty" → "forty five"): wait briefly.
+      if (!final && !settle && last && a.type === 'num') {
         const max = idx < rows.length ? rows[idx].max : 100;
-        if (a.n * 10 <= max || (a.n >= 20 && a.n % 10 === 0)) break;
+        if (a.n * 10 <= max || (a.n >= 20 && a.n % 10 === 0)) { held = true; break; }
       }
       applied = i + 1;
       if (a.type === 'stop') { stopVoice(); break; }
@@ -469,10 +489,13 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
       if (a.type === 'num') {
         if (row.grades) { msg = { ok: false, text: `${row.label} needs a grade (${row.grades.slice(0, 4).join(', ')}…), not a number.` }; break; }
         if (a.n < 0 || a.n > row.max) { msg = { ok: false, text: `Heard ${a.n} for ${row.label} — over max ${row.max}. Say it again.` }; break; }
-        setCell(row.subId, row.stId, String(a.n)); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: ${a.n}` }; advance();
+        setCell(row.subId, row.stId, String(a.n)); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: ${a.n}` };
+        if (settle && last) settledRef.current = { key, i, subId: row.subId, stId: row.stId, n: a.n };
+        advance();
       }
     }
     if (final) appliedRef.current.delete(key); else appliedRef.current.set(key, applied);
+    if (held && !final) settleTimer.current = setTimeout(() => handleRef.current(text, false, key, true), SETTLE_MS);
     if (final && !acts.length) msg = { ok: false, text: `Didn't catch a mark in "${text.trim()}".` };
     posRef.current = { cur: idx, st: s };
     if (s !== stIdx) { voiceMoved.current = true; setStIdx(s); }
@@ -482,6 +505,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
 
   const stopVoice = () => {
     wantRef.current = false;
+    if (settleTimer.current) { clearTimeout(settleTimer.current); settleTimer.current = null; }
     try { recRef.current?.stop(); } catch { /* already stopped */ }
     setListening(false);
   };
