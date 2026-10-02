@@ -47,6 +47,15 @@ prisma/.dev.db
 biometric-bridge/node_modules/
 biometric-bridge/captures/
 
+# Separate Expo parent-app (its own project) — ignored here, worked on later
+/mobile/
+
+# Generated artifacts / local-only data — never source, never commit
+/prod-backups/
+/graphify-out/
+/.claude/
+dev-verify.log
+
 # ---- added during prod->git reconcile (never commit secrets/artifacts) ----
 tsconfig.tsbuildinfo
 .env.bak*
