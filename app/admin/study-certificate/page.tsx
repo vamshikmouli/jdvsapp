@@ -241,9 +241,9 @@ export default function StudyCertificatePage() {
   );
 }
 
-function Box({ children, className = '', red = false }: { children: React.ReactNode; className?: string; red?: boolean }) {
+function Box({ children, className = '', red = false, blue = false }: { children: React.ReactNode; className?: string; red?: boolean; blue?: boolean }) {
   return (
-    <span className={`inline-block border-b border-slate-800 px-1 pb-0.5 font-bold ${red ? 'text-red-700' : 'text-slate-900'} ${className}`}>
+    <span className={`inline-block border-b border-slate-800 px-1 pb-0.5 font-bold ${red ? 'text-red-700' : blue ? 'text-blue-700' : 'text-slate-900'} ${className}`}>
       {children || ' '}
     </span>
   );
@@ -288,9 +288,9 @@ function Certificate({ form, photoUrl, signatureUrl }: { form: Form; photoUrl: s
         </div>
         <div className="flex items-center flex-wrap gap-2">
           <span>School / College from</span>
-          <Box className="min-w-[110px] text-center font-normal">{form.fromYear}</Box>
+          <Box className="min-w-[110px] text-center">{form.fromYear}</Box>
           <span>to</span>
-          <Box className="min-w-[110px] text-center font-normal">{form.toYear}</Box>
+          <Box className="min-w-[110px] text-center">{form.toYear}</Box>
           <span>from</span>
           <Box className="min-w-[80px] text-center">{form.fromStd}</Box>
         </div>
@@ -311,7 +311,7 @@ function Certificate({ form, photoUrl, signatureUrl }: { form: Form; photoUrl: s
         </div>
         <div className="flex items-center gap-2">
           <span className="whitespace-nowrap">Date of leaving School/College:</span>
-          <Box className="min-w-[220px] text-center font-normal">{fmtDate(form.leavingDate)}</Box>
+          <Box className="min-w-[220px] text-center font-normal" blue>{fmtDate(form.leavingDate)}</Box>
         </div>
         <div className="text-sm pt-1">This certificate issued according to records of our School/ College</div>
       </div>
@@ -319,13 +319,13 @@ function Certificate({ form, photoUrl, signatureUrl }: { form: Form; photoUrl: s
       <div className="flex justify-between items-end mt-10 text-base">
         <div>Date : <span className="font-semibold">{fmtDate(form.issueDate)}</span></div>
         <div className="text-center">
+          {signatureUrl && <img src={signatureUrl} alt="" className="h-12 w-auto object-contain mx-auto mb-1" />}
           <div className="font-semibold">Signature &amp; Seal of the</div>
         </div>
       </div>
       <div className="flex justify-between items-end mt-3 text-base">
         <div>Place : <span className="font-semibold">{form.place}</span></div>
         <div className="text-center">
-          {signatureUrl && <img src={signatureUrl} alt="" className="h-12 w-auto object-contain mx-auto mb-1" />}
           <div className="font-semibold">Headmaster / Principal</div>
           {form.principalName && <div className="text-xs text-slate-500">{form.principalName}</div>}
         </div>
