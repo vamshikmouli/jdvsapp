@@ -1442,12 +1442,15 @@ async function encodeWithinRange(draw: (size: number) => HTMLCanvasElement): Pro
 }
 
 // Crop a chosen/captured image to a square before upload — drag to reposition,
-// slide to zoom. Saves a JPEG of 50–1000 KB. No external library.
+// slide to zoom. The slider starts in the middle (photo fills the square): left
+// zooms OUT so the whole photo fits (blank space is white), right zooms in.
+// Saves a JPEG of 50–1000 KB. No external library.
 function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: () => void; onCropped: (blob: Blob) => void }) {
   const V = 288;   // viewport square (px)
   const [url, setUrl] = useState('');
   const [img, setImg] = useState<{ w: number; h: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
+  // Slider position -1…0…1 → zoom minZoom…1…MAX_ZOOM (1 = photo just fills the square).
+  const [slide, setSlide] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const imgRef = useRef<HTMLImageElement | null>(null);
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -1455,13 +1458,18 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
   useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
 
   const base = img ? V / Math.min(img.w, img.h) : 1; // "cover" scale
+  const MAX_ZOOM = 3;
+  // Zoom out far enough that the whole photo fits, with some room to spare.
+  const minZoom = img ? Math.min(0.5, (Math.min(img.w, img.h) / Math.max(img.w, img.h)) * 0.9) : 0.5;
+  const zoom = slide < 0 ? 1 + slide * (1 - minZoom) : 1 + slide * (MAX_ZOOM - 1);
   const scale = base * zoom;
   const dispW = img ? img.w * scale : 0;
   const dispH = img ? img.h * scale : 0;
 
   const clamp = (p: { x: number; y: number }) => {
-    const maxX = Math.max(0, (dispW - V) / 2);
-    const maxY = Math.max(0, (dispH - V) / 2);
+    // Bigger than the square: no gaps at the edges. Smaller: stays inside the square.
+    const maxX = Math.abs(dispW - V) / 2;
+    const maxY = Math.abs(dispH - V) / 2;
     return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) };
   };
   useEffect(() => { setPan((p) => clamp(p)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [zoom, img]);
@@ -1475,9 +1483,6 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
     if (!img || !imgRef.current) return;
     const imgLeft = V / 2 - dispW / 2 + pan.x;
     const imgTop = V / 2 - dispH / 2 + pan.y;
-    const srcX = (0 - imgLeft) / scale;
-    const srcY = (0 - imgTop) / scale;
-    const srcSize = V / scale;
     const el = imgRef.current;
     // The border is part of the saved photo, so it shows on ID cards, certificates, etc.
     const draw = (size: number) => {
@@ -1486,9 +1491,16 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
       const ctx = canvas.getContext('2d');
       if (!ctx) return canvas;
       const bw = Math.max(4, Math.round(size * PHOTO_BORDER));
+      const inner = size - 2 * bw;
+      const f = inner / V; // viewport px → canvas px
       ctx.fillStyle = PHOTO_BORDER_COLOR;
       ctx.fillRect(0, 0, size, size);
-      ctx.drawImage(el, srcX, srcY, srcSize, srcSize, bw, bw, size - 2 * bw, size - 2 * bw);
+      ctx.fillStyle = '#ffffff'; // background when zoomed out
+      ctx.fillRect(bw, bw, inner, inner);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(bw, bw, inner, inner); ctx.clip();
+      ctx.drawImage(el, bw + imgLeft * f, bw + imgTop * f, dispW * f, dispH * f);
+      ctx.restore();
       return canvas;
     };
     const b = await encodeWithinRange(draw);
@@ -1504,7 +1516,7 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
     <Modal open onClose={onCancel} title="Crop photo" width={360}
       footer={<div className="flex justify-end gap-2"><Button onClick={onCancel}>Cancel</Button><Button kind="primary" icon="Check" onClick={doCrop} disabled={!img}>Use photo</Button></div>}>
       <div className="flex flex-col items-center gap-3">
-        <div className="relative overflow-hidden bg-slate-900 touch-none select-none cursor-move" style={{ width: V, height: V }}
+        <div className="relative overflow-hidden bg-white ring-1 ring-slate-200 touch-none select-none cursor-move" style={{ width: V, height: V }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
           {url && (
             <img ref={imgRef} src={url} alt="" draggable={false}
@@ -1515,11 +1527,15 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
           <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(V * PHOTO_BORDER))}px ${PHOTO_BORDER_COLOR}` }} />
         </div>
         <div className="flex items-center gap-2 w-full px-2">
-          <Icon name="ZoomOut" size={16} className="text-slate-400" />
-          <input type="range" min={1} max={3} step={0.01} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-1 accent-purple-600" />
-          <Icon name="ZoomIn" size={16} className="text-slate-400" />
+          <button type="button" onClick={() => setSlide((v) => Math.max(-1, +(v - 0.1).toFixed(2)))} aria-label="Zoom out" className="p-1 rounded hover:bg-slate-100"><Icon name="ZoomOut" size={18} className="text-slate-500" /></button>
+          <div className="relative flex-1 flex items-center">
+            {/* centre tick = photo fills the square */}
+            <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 h-3 w-px bg-slate-300" />
+            <input type="range" min={-1} max={1} step={0.01} value={slide} onChange={(e) => setSlide(Number(e.target.value))} onDoubleClick={() => setSlide(0)} className="relative w-full accent-purple-600" aria-label="Zoom" />
+          </div>
+          <button type="button" onClick={() => setSlide((v) => Math.min(1, +(v + 0.1).toFixed(2)))} aria-label="Zoom in" className="p-1 rounded hover:bg-slate-100"><Icon name="ZoomIn" size={18} className="text-slate-500" /></button>
         </div>
-        <p className="text-[11px] text-slate-400">Drag to reposition · slide to zoom · saved as {PHOTO_MIN_KB}–{PHOTO_MAX_KB} KB</p>
+        <p className="text-[11px] text-slate-400">Drag to move · slide left to zoom out, right to zoom in · saved as {PHOTO_MIN_KB}–{PHOTO_MAX_KB} KB</p>
         {sizeErr && <p className="text-xs text-danger-700 text-center">{sizeErr}</p>}
       </div>
     </Modal>
