@@ -23,7 +23,10 @@ import {
   sortRows,
   nextSort,
   type SortState,
+  Pager,
+  usePaged,
 } from '@/components/Primitives';
+import { matchesQuery } from '@/lib/listSearch';
 import { Icon } from '@/components/Icon';
 import { CustomFieldsModal } from './CustomFieldsModal';
 import { parseCustomFieldDefs, type CustomFieldDef } from '@/lib/customFields';
@@ -209,8 +212,9 @@ export default function StudentsPage() {
     setLoading(true);
     setError('');
     try {
+      // Search runs in the browser over this list (see `matched`) — instant, and
+      // across every student, not just the visible page.
       const params = new URLSearchParams();
-      if (search) params.set('q', search);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (classFilter !== 'all') params.set('classId', classFilter);
 
@@ -222,7 +226,7 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, classFilter]);
+  }, [statusFilter, classFilter]);
 
   useEffect(() => {
     fetchClasses();
@@ -238,25 +242,30 @@ export default function StudentsPage() {
     }).catch(() => {});
   }, [fetchClasses]);
 
-  useEffect(() => {
-    const t = setTimeout(fetchStudents, 250);
-    return () => clearTimeout(t);
-  }, [fetchStudents]);
+  useEffect(() => { fetchStudents(); }, [fetchStudents]);
 
   const totalStudents = classes.reduce((t, c) => t + c._count.students, 0);
 
   const [sort, setSort] = useState<SortState>({ key: 'name', dir: 'asc' });
   const onSort = (k: string) => setSort((s) => nextSort(s, k));
+  const matched = React.useMemo(
+    () => students.filter((s) => matchesQuery(search,
+      [s.name, s.id, s.admissionNo, s.guardianName, s.fatherName, s.motherName, s.altGuardianName],
+      [s.guardianPhone, s.fatherPhone, s.motherPhone, s.altGuardianPhone])),
+    [students, search]
+  );
   const sorted = React.useMemo(
-    () => sortRows(students, sort, (s, k) =>
+    () => sortRows(matched, sort, (s, k) =>
       k === 'name' ? s.name : k === 'id' ? s.id : k === 'class' ? (s.class?.name || '') : k === 'status' ? s.status : s.name
     ),
-    [students, sort]
+    [matched, sort]
   );
+  // Only one page is rendered (20 by default; Show 50 / 100 / All).
+  const pg = usePaged(sorted, 'students', `${search}|${statusFilter}|${classFilter}|${sort?.key}|${sort?.dir}`);
 
-  const active = students.filter((s) => s.status === 'ACTIVE').length;
-  const girls = students.filter((s) => s.gender === 'F').length;
-  const boys = students.filter((s) => s.gender === 'M').length;
+  const active = matched.filter((s) => s.status === 'ACTIVE').length;
+  const girls = matched.filter((s) => s.gender === 'F').length;
+  const boys = matched.filter((s) => s.gender === 'M').length;
 
   // --- Form handlers ---
   const openAdd = () => {
@@ -550,7 +559,7 @@ export default function StudentsPage() {
       <Card
         className="mt-4"
         padded={false}
-        title={<span className="text-sm font-medium text-slate-500">{loading ? 'Loading…' : `${students.length} student${students.length === 1 ? '' : 's'} shown`}</span>}
+        title={<span className="text-sm font-medium text-slate-500">{loading ? 'Loading…' : `${matched.length} student${matched.length === 1 ? '' : 's'}${search.trim() ? ` matching "${search.trim()}"` : ''}`}</span>}
       >
         {/* Desktop / tablet: table */}
         <div className="hidden md:block overflow-x-auto">
@@ -582,7 +591,7 @@ export default function StudentsPage() {
                 </tr>
               )}
 
-              {!loading && !error && students.length === 0 && (
+              {!loading && !error && matched.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-12">
                     <EmptyState icon="SearchX" title="No students match" body="Try a different class, status, or search term." />
@@ -592,7 +601,7 @@ export default function StudentsPage() {
 
               {!loading &&
                 !error &&
-                sorted.map((student) => (
+                pg.paged.map((student) => (
                   <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-3 px-6">
                       <div className="flex items-center gap-3 text-left group">
@@ -686,10 +695,10 @@ export default function StudentsPage() {
           {!loading && error && (
             <div className="py-10"><EmptyState icon="AlertCircle" title="Couldn't load students" body={error} /></div>
           )}
-          {!loading && !error && students.length === 0 && (
+          {!loading && !error && matched.length === 0 && (
             <div className="py-10"><EmptyState icon="SearchX" title="No students match" body="Try a different class, status, or search." /></div>
           )}
-          {!loading && !error && sorted.map((student) => (
+          {!loading && !error && pg.paged.map((student) => (
             <div key={student.id} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
               <div className="flex items-center gap-3 flex-1 min-w-0 text-left">
                 <button type="button" onClick={() => student.photoUrl ? setPhotoView({ url: student.photoUrl, name: student.name }) : setViewing(student)}
@@ -731,6 +740,7 @@ export default function StudentsPage() {
             </div>
           ))}
         </div>
+        {!loading && !error && <Pager {...pg} />}
       </Card>
 
       {/* Add / Edit Drawer */}

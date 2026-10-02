@@ -4,7 +4,8 @@ import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
-import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptyState, Skeleton, TableRowSkeleton, Avatar, Chip, Th, sortRows, nextSort, type SortState } from '@/components/Primitives';
+import { PageHeader, Button, Card, Select, Input, Field, Drawer, Modal, EmptyState, Skeleton, TableRowSkeleton, Avatar, Chip, Th, sortRows, nextSort, type SortState, Pager, usePaged } from '@/components/Primitives';
+import { matchesQuery } from '@/lib/listSearch';
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import { feeMoney, statusTone, statusLabel, PAY_METHODS, PAY_METHOD_LABEL, type ChargeStatus, type AccountSummary } from '@/lib/fees';
@@ -37,6 +38,7 @@ interface AccountRow {
   lastSeq?: number;
   siblingCount?: number;
   heads?: { name: string; balance: number }[];
+  search?: { motherName: string | null; guardianName: string | null; admissionNo: string | null; phones: string[] };
 }
 
 // A little cluster of person icons showing how many children the parent has (1–4,
@@ -66,7 +68,6 @@ function SiblingIcons({ count, onClick }: { count: number; onClick?: (e: React.M
 
 export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canManage }: { refreshKey?: number; canCollect: boolean; canVoid?: boolean; canNotify?: boolean; canManage?: boolean }) {
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [classId, setClassId] = useState('all');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -75,8 +76,6 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
   const [sort, setSort] = useState<SortState>({ key: 'recent', dir: 'desc' }); // most recent collection → top
   const onSort = (k: string) => setSort((s) => nextSort(s, k));
 
-  // Debounce the free-text search so typing doesn't fire a query per keystroke.
-  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 250); return () => clearTimeout(t); }, [search]);
 
   // status order so "paid" sorts to the top in ascending order
   const STATUS_RANK: Record<string, number> = { paid: 0, partial: 1, due: 2, overdue: 3 };
@@ -87,18 +86,25 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
   const itemsDueTotal = (r: AccountRow) => itemsDue(r).reduce((t, h) => t + h.balance, 0);
 
   const accountsUrl = (() => {
+    // Search is done in the browser over this list (see `matched`) — instant, and
+    // across every student, not just the visible page.
     const params = new URLSearchParams();
-    if (debouncedSearch) params.set('q', debouncedSearch);
     if (filter !== 'all') params.set('filter', filter);
     if (classId !== 'all') params.set('classId', classId);
     return `/api/fees/accounts?${params}`;
   })();
-  // Cached per (search, filter, class); refreshKey bumps after a bulk import.
+  // Cached per (filter, class); refreshKey bumps after a bulk import.
   const { data, isLoading: loading, error: queryError, refetch } = useQuery({
-    queryKey: ['fees', 'accounts', debouncedSearch, filter, classId, refreshKey ?? 0],
+    queryKey: ['fees', 'accounts', filter, classId, refreshKey ?? 0],
     queryFn: () => jsonFetcher<{ rows: AccountRow[] }>(accountsUrl),
   });
-  const rows = data?.rows ?? [];
+  const allRows = data?.rows ?? [];
+  const rows = useMemo(
+    () => allRows.filter((r) => matchesQuery(search,
+      [r.name, r.id, r.fatherName, r.search?.motherName, r.search?.guardianName, r.search?.admissionNo],
+      [r.phone, ...(r.search?.phones || [])])),
+    [allRows, search]
+  );
   const error = queryError ? (queryError instanceof Error ? queryError.message : 'Failed to load') : '';
   // Kept for the collect / multi-collect drawers' onDone — force a refresh.
   const fetchRows = useCallback(async () => { await refetch(); }, [refetch]);
@@ -123,6 +129,10 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
     ),
     [rows, sort]
   );
+
+  // Only one page is rendered (20 by default; Show 50 / 100 / All). Print, select-all
+  // and bulk reminders still work on every matching student (`sorted`).
+  const pg = usePaged(sorted, 'fees-collection', `${search}|${filter}|${classId}|${sort?.key}|${sort?.dir}`);
 
   // ---- Bulk personalized fee reminders (select many → notify each parent with their balance) ----
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -307,7 +317,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
               {!loading && !error && rows.length === 0 && (
                 <tr><td colSpan={colCount} className="py-12"><EmptyState icon="SearchX" title="No students match" body="Try a different search or filter." /></td></tr>
               )}
-              {!loading && !error && sorted.map((r) => (
+              {!loading && !error && pg.paged.map((r) => (
                 <tr key={r.id} onClick={() => setOpenId(r.id)} className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${selected.has(r.id) ? 'bg-purple-50/40' : ''}`}>
                   {canNotify && (
                     <td className="pl-6 pr-1" onClick={(e) => e.stopPropagation()}>
@@ -373,7 +383,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
           {!loading && !error && rows.length === 0 && <div className="py-12"><EmptyState icon="SearchX" title="No students match" body="Try a different search or filter." /></div>}
           {!loading && !error && (
             <div className="divide-y divide-slate-100">
-              {sorted.map((r) => (
+              {pg.paged.map((r) => (
                 <div key={r.id} onClick={() => setOpenId(r.id)} className={`flex items-center gap-3 px-4 py-3 active:bg-slate-50 ${selected.has(r.id) ? 'bg-purple-50/40' : ''}`}>
                   {canNotify && (
                     <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0 w-5">
@@ -400,6 +410,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
             </div>
           )}
         </div>
+        {!loading && !error && <Pager {...pg} />}
       </Card>
 
       {openId && <CollectDrawer studentId={openId} onClose={() => setOpenId(null)} onDone={async () => { setOpenId(null); await fetchRows(); }} />}

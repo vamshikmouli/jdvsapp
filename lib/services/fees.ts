@@ -324,6 +324,8 @@ export interface AccountListRow {
   lastSeq: number;
   siblingCount: number;
   heads: { name: string; balance: number }[];
+  // For the Collection list's in-browser search (mother / guardian name, every phone).
+  search: { motherName: string | null; guardianName: string | null; admissionNo: string | null; phones: string[] };
 }
 
 /** List students with derived fee totals, for the collection table + KPIs. */
@@ -417,6 +419,12 @@ export async function listAccounts(
       lastSeq: s.payments[0] ? (parseInt((s.payments[0].receiptNo.match(/(\d+)\s*$/) || [])[1] || '0', 10) || 0) : 0,
       siblingCount: s.guardianUserId ? (gCount[s.guardianUserId] || 1) : (s.guardianPhone ? (pCount[s.guardianPhone] || 1) : 1),
       heads: sum.heads.filter((h) => h.balance > 0).map((h) => ({ name: h.name, balance: h.balance })),
+      search: {
+        motherName: s.motherName || null,
+        guardianName: s.guardianName || null,
+        admissionNo: s.admissionNo || null,
+        phones: [s.guardianPhone, s.fatherPhone, s.motherPhone, s.altGuardianPhone].filter(Boolean) as string[],
+      },
     };
   });
 
