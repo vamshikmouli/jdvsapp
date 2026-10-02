@@ -1104,41 +1104,45 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       }
       footer={
         <>
-        {/* Phone: compact so the dues and history keep most of the screen. */}
-        <div className="lg:hidden space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold">Collecting now</div>
-              <div className="font-display text-xl font-extrabold tabular-nums text-purple-600 leading-none mt-0.5">{feeMoney(total)}</div>
-            </div>
-            {total > 0 ? (
-              <div className="ml-auto w-[9.75rem]">
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Payment date" className="!py-2 text-sm" />
+        {/* Phone: as small as possible so the dues and history keep the screen.
+            Nothing entered → one line. Collecting → amount + date, then mode / Split / Record. */}
+        <div className="lg:hidden">
+          {total <= 0 ? (
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1 text-[11px] leading-snug text-slate-400">
+                <span className="font-display text-base font-extrabold tabular-nums text-purple-600 mr-1.5">{feeMoney(0)}</span>
+                Enter an amount or tap Fill
               </div>
-            ) : (
-              <div className="ml-auto text-right text-[11px] leading-snug text-slate-400">Enter the amount, or tap<br />Fill / Pay all above</div>
-            )}
-          </div>
-          {total > 0 && (!splitOpen ? (
-            <div className="grid grid-cols-5 gap-1.5">
-              {PAY_MODES.map((m) => (
-                <button key={m.v} type="button" onClick={() => setMethod(m.v)} aria-pressed={method === m.v}
-                  className={`flex flex-col items-center gap-0.5 rounded-lg border py-1.5 text-[10.5px] font-semibold transition-colors ${method === m.v ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
-                  <Icon name={m.icon as any} size={15} />{m.label}
-                </button>
-              ))}
+              <Button onClick={onClose} className="!py-2">Close</Button>
             </div>
-          ) : splitBlock)}
-          <div className="flex gap-2">
-            {total > 0 && (
-              <button type="button" onClick={() => setSplitOpen((v) => !v)} aria-label={splitOpen ? 'Single mode' : 'Split across modes'} title={splitOpen ? 'Single mode' : 'Split across modes (e.g. UPI + Cash)'}
-                className={`flex-shrink-0 inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 text-[11px] font-semibold ${splitOpen ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
-                <Icon name="Split" size={14} />{splitOpen ? '1 mode' : 'Split'}
-              </button>
-            )}
-            <Button onClick={onClose} className="flex-1">Close</Button>
-            {total > 0 && <Button kind="primary" icon="Check" onClick={submit} disabled={busy} className="flex-[2]">{busy ? 'Saving…' : 'Record'}</Button>}
-          </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1 leading-none">
+                  <span className="text-[10px] uppercase tracking-[0.06em] text-slate-400 font-semibold mr-1.5">Collecting</span>
+                  <span className="font-display text-lg font-extrabold tabular-nums text-purple-600">{feeMoney(total)}</span>
+                </div>
+                <div className="w-[9.25rem] flex-shrink-0">
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Payment date" className="!py-1.5 text-sm" />
+                </div>
+              </div>
+              {splitOpen && splitBlock}
+              <div className="flex gap-2">
+                {!splitOpen && (
+                  <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Payment mode"
+                    className={`min-w-0 flex-[1.15] rounded-lg border px-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-200 ${method ? 'border-purple-300 bg-purple-50 text-purple-700' : 'border-danger-500/40 bg-white text-slate-500'}`}>
+                    <option value="" disabled>Mode *</option>
+                    {PAY_MODES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+                  </select>
+                )}
+                <button type="button" onClick={() => setSplitOpen((v) => !v)} aria-label={splitOpen ? 'Single mode' : 'Split across modes'} title={splitOpen ? 'Single mode' : 'Split across modes (e.g. UPI + Cash)'}
+                  className={`flex-shrink-0 inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 text-[11px] font-semibold ${splitOpen ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'}`}>
+                  <Icon name="Split" size={14} />{splitOpen ? '1 mode' : 'Split'}
+                </button>
+                <Button kind="primary" icon="Check" onClick={submit} disabled={busy} className="!py-2.5 flex-1">{busy ? 'Saving…' : 'Record'}</Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="hidden lg:flex lg:flex-row lg:items-end gap-4">
           <div className="lg:mr-auto">
