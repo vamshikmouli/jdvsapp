@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Icon } from '@/components/Icon';
+import { fmtDate } from '@/lib/dateFormat';
 
 // ========== Field ==========
 interface FieldProps {
@@ -32,6 +33,21 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ icon, className = '', ...props }: InputProps) {
+  // Date boxes: the browser draws them in the device's locale (mm/dd/yyyy on many
+  // PCs), so show the app's own format (10-Apr-2027) on top until the box is focused.
+  if (props.type === 'date' && typeof props.value === 'string') {
+    return (
+      <div className="relative">
+        <input
+          className={`peer w-full px-3 py-2.5 rounded-md border border-slate-200 text-transparent focus:text-slate-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none transition-all ${className}`}
+          {...props}
+        />
+        <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 peer-focus:hidden ${props.value ? 'text-slate-900' : 'text-slate-400'} ${props.disabled ? 'opacity-50' : ''}`}>
+          {props.value ? fmtDate(props.value) : 'dd-mmm-yyyy'}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="relative">
       {icon && (

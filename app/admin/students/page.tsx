@@ -333,7 +333,7 @@ export default function StudentsPage() {
       status: s.status,
       tcNo: s.tcNo || '',
       tcDate: s.tcDate ? String(s.tcDate).slice(0, 10) : '',
-      schoolLeavingDate: s.schoolLeavingDate ? String(s.schoolLeavingDate).slice(0, 10) : '',
+      schoolLeavingDate: s.schoolLeavingDate ? String(s.schoolLeavingDate).slice(0, 10) : leavingDefault(activeYearLabel),
       studyFromYear: s.studyFromYear || '',
       studyToYear: s.studyToYear || '',
       studyFromStandard: s.studyFromStandard || '',
@@ -965,7 +965,7 @@ export default function StudentsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="TC number"><Input value={form.tcNo} onChange={(e) => setForm({ ...form, tcNo: e.target.value })} placeholder="e.g. 123/2029-30" /></Field>
                 <Field label="TC date"><Input type="date" value={form.tcDate} onChange={(e) => setForm({ ...form, tcDate: e.target.value })} /></Field>
-                <Field label="Date of school leaving" hint="Defaults to 10 April of the admission year's end"><Input type="date" value={form.schoolLeavingDate} onChange={(e) => setForm({ ...form, schoolLeavingDate: e.target.value })} /></Field>
+                <Field label="Date of school leaving" hint={`Defaults to 10 April at the end of the year (${fmtDate(leavingDefault(activeYearLabel)) || '—'} for ${activeYearLabel || 'this year'})`}><Input type="date" value={form.schoolLeavingDate} onChange={(e) => setForm({ ...form, schoolLeavingDate: e.target.value })} /></Field>
                 <div className="hidden sm:block" />
                 <Field label="Studied from (year)"><Input value={form.studyFromYear} onChange={(e) => setForm({ ...form, studyFromYear: e.target.value })} placeholder="2026-27" /></Field>
                 <Field label="Studied to (year)"><Input value={form.studyToYear} onChange={(e) => setForm({ ...form, studyToYear: e.target.value })} placeholder="2029-30" /></Field>
