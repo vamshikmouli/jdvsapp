@@ -534,7 +534,41 @@ function RepliesPanel() {
 /* ---------- Analytics: fee-reminder WhatsApp delivery (persisted) ---------- */
 interface DeliveryRow { student: string; className: string | null; recipient: string; phone: string; status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'; error: string | null }
 const DELIVERY_LABEL: Record<string, string> = { SENT: 'Sent', DELIVERED: 'Delivered', READ: 'Read', FAILED: 'Failed' };
-interface DeliveryBatch { batchId: string; kind: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[] }
+interface DeliveryBatch { batchId: string; kind: string; title: string | null; at: string; sent: number; failed: number; rows: DeliveryRow[]; stats?: { SENT: number; DELIVERED: number; READ: number; FAILED: number } }
+
+// Read ⊂ Delivered ⊂ Sent: a READ message was also delivered. "Sent" here = accepted by
+// WhatsApp but no delivery receipt yet (phone off / no internet / not on WhatsApp yet).
+function BatchStats({ b }: { b: DeliveryBatch }) {
+  const s = b.stats || { SENT: b.sent, DELIVERED: 0, READ: 0, FAILED: b.failed };
+  const total = s.SENT + s.DELIVERED + s.READ + s.FAILED;
+  if (!total) return null;
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  const reached = s.DELIVERED + s.READ;
+  const items = [
+    { k: 'READ', label: 'Read', n: s.READ, dot: 'bg-success-700', text: 'text-success-700' },
+    { k: 'DELIVERED', label: 'Delivered', n: s.DELIVERED, dot: 'bg-success-500', text: 'text-success-700' },
+    { k: 'SENT', label: 'Sent, not delivered yet', n: s.SENT, dot: 'bg-info-500', text: 'text-info-700' },
+    { k: 'FAILED', label: 'Failed', n: s.FAILED, dot: 'bg-danger-500', text: 'text-danger-700' },
+  ];
+  return (
+    <div className="px-4 pb-3.5 -mt-1">
+      <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
+        <div className="bg-success-700" style={{ width: pct(s.READ) }} />
+        <div className="bg-success-500" style={{ width: pct(s.DELIVERED) }} />
+        <div className="bg-info-500" style={{ width: pct(s.SENT) }} />
+        <div className="bg-danger-500" style={{ width: pct(s.FAILED) }} />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+        {items.map((it) => (
+          <span key={it.k} className="inline-flex items-center gap-1.5 text-slate-600">
+            <span className={`w-2 h-2 rounded-full ${it.dot}`} />{it.label} <b className={`tabular-nums ${it.n ? it.text : 'text-slate-400'}`}>{it.n}</b>
+          </span>
+        ))}
+        <span className="text-slate-400 ml-auto tabular-nums">Reached {Math.round((reached / total) * 100)}% · Read {Math.round((s.READ / total) * 100)}%</span>
+      </div>
+    </div>
+  );
+}
 interface DeliveryGroup { kind: string; total: number; batches: DeliveryBatch[] }
 
 // Friendly names + a default per-batch title for each message kind.
@@ -600,11 +634,12 @@ function AnalyticsPanel() {
                 <div className="text-xs text-slate-500 mt-0.5">{new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {total} number{total === 1 ? '' : 's'}</div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Chip tone="success">{b.sent} sent</Chip>
+                <Chip tone="success">{(b.stats ? b.stats.DELIVERED + b.stats.READ : b.sent)} delivered</Chip>
                 {b.failed > 0 && <Chip tone="danger">{b.failed} failed</Chip>}
                 <Icon name={isOpen ? 'ChevronUp' : 'ChevronDown'} size={16} className="text-slate-400" />
               </div>
             </button>
+            <BatchStats b={b} />
             {isOpen && (
               <div className="border-t border-slate-100 max-h-80 overflow-y-auto divide-y divide-slate-100">
                 {[...b.rows].sort((x, y) => Number(y.status === 'FAILED') - Number(x.status === 'FAILED')).map((r, i) => (

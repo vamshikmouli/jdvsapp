@@ -45,6 +45,28 @@ export async function GET(_req: NextRequest) {
       const list = groupMap.get(b.kind) || [];
       if (list.length < MAX_BATCHES_PER_KIND) { list.push(b); groupMap.set(b.kind, list); }
     }
+    // Exact per-status counts for every batch shown (the row list above is capped,
+    // so a big batch — e.g. a whole-school monthly report — is counted in full here).
+    const shownIds = [...groupMap.values()].flat().map((b) => b.batchId);
+    if (shownIds.length) {
+      const counts = await prisma.messageDelivery.groupBy({
+        by: ['batchId', 'status'],
+        where: { batchId: { in: shownIds }, status: { not: 'HELD' } },
+        _count: { _all: true },
+      });
+      const byBatch = new Map<string, Record<string, number>>();
+      for (const c of counts) {
+        const m = byBatch.get(c.batchId) || { SENT: 0, DELIVERED: 0, READ: 0, FAILED: 0 };
+        const st = String(c.status || '').toUpperCase();
+        m[st in m ? st : 'SENT'] += c._count._all;
+        byBatch.set(c.batchId, m);
+      }
+      for (const b of [...groupMap.values()].flat()) {
+        const m = byBatch.get(b.batchId);
+        if (m) { b.stats = m; b.sent = m.SENT + m.DELIVERED + m.READ; b.failed = m.FAILED; }
+      }
+    }
+
     const groups = [...groupMap.entries()].map(([kind, list]) => ({
       kind,
       total: list.reduce((t, x) => t + x.sent + x.failed, 0),
