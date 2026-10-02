@@ -42,9 +42,11 @@ export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
     category: 'UTILITY',
     title: 'Student absent / on leave (same day)',
     usedFor: 'Student attendance — sent to parents when a class is submitted with the child absent or on leave',
-    // One paragraph, no line breaks: WhatsApp folds messages that take up many
-    // lines behind "Read more", even short ones.
-    body: 'Dear {{1}}, this is to inform you that {{2}} was marked {{3}} in school on {{4}}. For any queries, please contact the school office. Thank you.',
+    // No empty lines: WhatsApp folds messages that take up many lines behind "Read more".
+    body:
+      'Dear {{1}},\n' +
+      'This is to inform you that {{2}} was marked {{3}} in school on {{4}}.\n' +
+      'For any queries, please contact the school office. Thank you.',
     examples: ['Ramesh', 'ASHA', 'absent', '02 Oct 2026'],
     header: 'NONE',
   },
