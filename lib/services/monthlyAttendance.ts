@@ -322,7 +322,7 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
         if (limitHit) { res.held++; res.details.push({ ...row, status: 'held', to: rcp.to, error: 'daily WhatsApp limit — send again tomorrow' }); continue; }
         const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId, bodyParams: LEGACY_TWO_VAR
           ? [rcp.name || parentName, message]
-          : [rcp.name || parentName, s.name, monthLabel, String(s.present), String(s.absent), String(s.leave), String(s.pct)] });
+          : [s.name, monthLabel, String(s.pct), String(s.present), String(s.absent), String(s.leave)] });
         if (send.ok) { res.sent++; res.details.push({ ...row, status: 'sent', to: rcp.to }); }
         else if (LIMIT_ERROR.test(send.error || '')) {
           // Meta says we've hit the limit — hold this and everyone after it.
