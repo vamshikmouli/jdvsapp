@@ -78,10 +78,11 @@ export async function getPhoneStatus(): Promise<any> {
   return { configured: true, ...j };
 }
 
-function bodyExample(body: string) {
+function bodyExample(body: string, examples?: string[]) {
   const n = (body.match(/\{\{\d+\}\}/g) || []).length;
   if (!n) return undefined;
-  return { body_text: [Array.from({ length: n }, (_, i) => `Sample ${i + 1}`)] };
+  // Realistic samples help Meta's review pick the right category.
+  return { body_text: [Array.from({ length: n }, (_, i) => examples?.[i] || `Sample ${i + 1}`)] };
 }
 
 /**
@@ -89,7 +90,7 @@ function bodyExample(body: string) {
  * supplies one so the user needn't upload). Returns the initial review status.
  */
 export async function createImageTemplate(opts: {
-  name: string; category: 'UTILITY' | 'MARKETING'; body: string; footer?: string; sample: Buffer;
+  name: string; category: 'UTILITY' | 'MARKETING'; body: string; footer?: string; sample: Buffer; examples?: string[];
 }): Promise<{ ok: boolean; status?: string; id?: string; error?: string }> {
   const token = process.env.WHATSAPP_TOKEN;
   const appId = process.env.WHATSAPP_APP_ID;
@@ -106,7 +107,7 @@ export async function createImageTemplate(opts: {
 
   const components: any[] = [
     { type: 'HEADER', format: 'IMAGE', example: { header_handle: [u.h] } },
-    { type: 'BODY', text: opts.body, ...(bodyExample(opts.body) ? { example: bodyExample(opts.body) } : {}) },
+    { type: 'BODY', text: opts.body, ...(bodyExample(opts.body, opts.examples) ? { example: bodyExample(opts.body, opts.examples) } : {}) },
   ];
   if (opts.footer) components.push({ type: 'FOOTER', text: opts.footer });
 

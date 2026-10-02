@@ -4,6 +4,7 @@ import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, Button, Card, Field, Input, Select, Chip, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { WA_TEMPLATE_PRESETS } from '@/lib/waTemplatePresets';
 
 interface Template { name: string; status: string; category: string; language: string; }
 interface Data {
@@ -41,6 +42,16 @@ export default function WhatsAppAdminPage() {
   const [tBody, setTBody] = useState('');
   const [tFooter, setTFooter] = useState('Jnana Deepika Vidhya Samsthe');
   const [creating, setCreating] = useState(false);
+  const [presetBusy, setPresetBusy] = useState('');
+
+  const createPreset = async (key: string) => {
+    setPresetBusy(key);
+    const res = await fetch('/api/admin/whatsapp/template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preset: key }) });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.ok) { toast.success(`Submitted to Meta as Utility — status: ${j.status}. Approval usually takes a few minutes to a few hours.`); load(); }
+    else toast.error(`Could not create: ${j.error || 'error'}`);
+    setPresetBusy('');
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,6 +162,37 @@ export default function WhatsAppAdminPage() {
               <Field label="Body"><textarea className="w-full rounded-lg border border-slate-300 p-2 text-sm min-h-[90px]" value={tBody} onChange={(e) => setTBody(e.target.value)} placeholder="Hi {{1}}, here is the update for {{2}}. Please see the attached image." /></Field>
               <Field label="Footer (optional)"><Input value={tFooter} onChange={(e) => setTFooter(e.target.value)} /></Field>
               <Button kind="primary" icon="Plus" disabled={creating} onClick={createTemplate}>{creating ? 'Submitting…' : 'Submit for approval'}</Button>
+            </div>
+          </Card>
+
+          {/* Ready-made UTILITY templates */}
+          <Card>
+            <h2 className="font-semibold text-slate-800">Recommended templates (Utility)</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Factual updates about the parent&apos;s own child — no praise or promotional wording, so Meta keeps them as <b>Utility</b> (not Marketing). Create once; the app uses them automatically.</p>
+            <div className="mt-3 space-y-3">
+              {WA_TEMPLATE_PRESETS.map((p) => {
+                const existing = data.templates.find((t) => t.name === p.name);
+                return (
+                  <div key={p.key} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium text-slate-800 text-sm">{p.title} <span className="font-mono text-xs text-slate-400">{p.name}</span></div>
+                        <div className="text-xs text-slate-500">Used by: {p.usedFor}</div>
+                      </div>
+                      {existing ? (
+                        <div className="flex items-center gap-1.5">
+                          <Chip tone={existing.category === 'MARKETING' ? 'danger' : 'neutral'}>{existing.category}</Chip>
+                          <Chip tone={statusTone(existing.status)}>{existing.status}</Chip>
+                        </div>
+                      ) : (
+                        <Button size="sm" kind="primary" icon="Send" disabled={!!presetBusy || !data.configured} onClick={() => createPreset(p.key)}>{presetBusy === p.key ? 'Submitting…' : 'Create in Meta'}</Button>
+                      )}
+                    </div>
+                    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 border border-slate-100 p-2.5 text-[12.5px] text-slate-700 font-sans">[Image: month calendar]{'\n'}{p.body}</pre>
+                    {existing?.category === 'MARKETING' && <p className="mt-1.5 text-xs text-danger-700">Meta has put this one in Marketing. Delete it in WhatsApp Manager and create it again, or create a new name.</p>}
+                  </div>
+                );
+              })}
             </div>
           </Card>
 

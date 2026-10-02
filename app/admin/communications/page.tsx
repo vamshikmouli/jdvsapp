@@ -243,7 +243,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
   const view = result || preview;
   return (
     <div className="mt-5 max-w-4xl space-y-4">
-      <p className="text-sm text-slate-500">Send each student's monthly attendance calendar as a WhatsApp image, with a personalised message — praise for good attendance, encouragement to improve where it's low. Leaves are shown but don't count against the student.</p>
+      <p className="text-sm text-slate-500">Send each student's monthly attendance calendar as a WhatsApp image, with the month's present / absent / leave days and attendance %. Leaves are shown but don't count against the student. Uses the <b>monthly_attendance_report</b> Utility template (create it once in Administration → WA Templates).</p>
 
       <Card>
         <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto_auto] gap-3 items-end">

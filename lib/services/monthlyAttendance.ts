@@ -3,10 +3,14 @@ import { getActiveYear } from '@/lib/services/fees';
 import { renderAttendanceCalendarPng } from '@/lib/services/attendanceImage';
 import { feeWaRecipients, toWaNumber, uploadWhatsAppMedia, sendImageTemplate, whatsappConfigured } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { MONTHLY_ATTENDANCE_TEMPLATE } from '@/lib/waTemplatePresets';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const SCHOOL = 'Jnana Deepika Vidhya Samsthe';
-const MONTHLY_TEMPLATE = process.env.WHATSAPP_MONTHLY_ATT_TEMPLATE || 'student_monthly_attendance';
+// UTILITY template (see lib/waTemplatePresets): one variable per figure, factual wording only.
+const MONTHLY_TEMPLATE = process.env.WHATSAPP_MONTHLY_ATT_TEMPLATE || MONTHLY_ATTENDANCE_TEMPLATE;
+// The old 2-variable template ({{1}} parent, {{2}} whole message) is still supported if configured.
+const LEGACY_TWO_VAR = MONTHLY_TEMPLATE === 'student_monthly_attendance';
 const TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -44,26 +48,13 @@ function tierOf(present: number, absent: number, pct: number): Tier {
   return 'low';
 }
 
-/** The tiered, personalised message (goes into one template variable). */
+/**
+ * Factual summary for the old 2-variable template. No praise / encouragement —
+ * WhatsApp treats that wording as MARKETING; this is a UTILITY account update.
+ */
 export function buildMessage(s: StudentMonth, monthLabel: string): string {
-  const first = s.name.split(' ')[0] || s.name;
-  const stats = `${s.name}'s attendance for ${monthLabel}\nPresent: ${s.present} day${s.present === 1 ? '' : 's'} · Absent: ${s.absent} · Leave: ${s.leave}\nAttendance: ${s.pct}%`;
-  let line: string;
-  switch (s.tier) {
-    case 'perfect':
-      line = `Excellent! ${first} was present every single school day this month — a wonderful record. Please keep it up! 👏`;
-      break;
-    case 'great':
-      line = `Very good! ${first} maintained strong attendance this month. Thank you for ensuring such regularity. 🌟`;
-      break;
-    case 'good':
-      line = `${first} attended fairly well this month, with a little room to improve. Please try to reduce absences next month. 🙂`;
-      break;
-    default:
-      line = `${first}'s attendance needs improvement this month. Regular attendance greatly helps learning — kindly ensure ${first} comes to school regularly. 🙏`;
-  }
-  const leaveNote = s.leave > 0 ? `\n\n(${s.leave} approved leave${s.leave === 1 ? '' : 's'} are not counted against attendance.)` : '';
-  return `${stats}\n\n${line}${leaveNote}`;
+  const leave = s.leave > 0 ? ` · Leave: ${s.leave} (approved leave is not counted as absent)` : '';
+  return `${s.name}'s attendance for ${monthLabel}: Present: ${s.present} day${s.present === 1 ? '' : 's'} · Absent: ${s.absent}${leave} · Attendance: ${s.pct}%. For any correction, please contact the school office.`;
 }
 
 /**
@@ -329,7 +320,9 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
       const mediaId = await uploadWhatsAppMedia(png);
       for (const rcp of toSend) {
         if (limitHit) { res.held++; res.details.push({ ...row, status: 'held', to: rcp.to, error: 'daily WhatsApp limit — send again tomorrow' }); continue; }
-        const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId, bodyParams: [rcp.name || parentName, message] });
+        const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId, bodyParams: LEGACY_TWO_VAR
+          ? [rcp.name || parentName, message]
+          : [rcp.name || parentName, s.name, monthLabel, String(s.present), String(s.absent), String(s.leave), String(s.pct)] });
         if (send.ok) { res.sent++; res.details.push({ ...row, status: 'sent', to: rcp.to }); }
         else if (LIMIT_ERROR.test(send.error || '')) {
           // Meta says we've hit the limit — hold this and everyone after it.
