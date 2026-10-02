@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 // ========== StatCard ==========
 interface StatCardProps {
@@ -63,15 +64,53 @@ export function PageHeader({ eyebrow, title, meta, actions }: PageHeaderProps) {
   );
 }
 
+// ========== ZoomPhoto ==========
+/** A student photo that opens large when tapped (Esc / tap outside / ✕ closes). */
+export function ZoomPhoto({ src, name, className = '', round = true, onError }: { src: string; name: string; className?: string; round?: boolean; onError?: () => void }) {
+  const [big, setBig] = React.useState(false);
+  React.useEffect(() => {
+    if (!big) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBig(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [big]);
+  // stopPropagation everywhere: the photo usually sits inside a clickable row, and
+  // dropdowns (global search) close on outside mousedown — the viewer must not trigger either.
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <>
+      <span role="button" tabIndex={0} title="View photo" aria-label={`View photo of ${name}`}
+        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setBig(true); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setBig(true); } }}
+        className={`inline-flex flex-shrink-0 cursor-zoom-in ${round ? 'rounded-full' : 'rounded-xl'} ring-1 ring-slate-200 hover:ring-2 hover:ring-purple-400 transition-shadow`}>
+        <img src={src} alt={name} loading="lazy" className={className} onError={onError} />
+      </span>
+      {big && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4" onMouseDown={stop} onClick={(e) => { stop(e); setBig(false); }} role="dialog" aria-modal="true" aria-label={name}>
+          <div className="relative flex flex-col items-center" onClick={stop}>
+            <img src={src} alt={name} className="max-h-[78vh] max-w-[90vw] w-auto rounded-2xl object-contain bg-white shadow-2xl" />
+            <div className="mt-3 text-center text-sm font-semibold text-white">{name}</div>
+            <button type="button" onClick={() => setBig(false)} aria-label="Close"
+              className="absolute -top-3 -right-3 grid h-9 w-9 place-items-center rounded-full bg-white text-slate-700 shadow-lg hover:bg-slate-100">✕</button>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ========== Avatar ==========
 interface AvatarProps {
   name: string;
   size?: 'sm' | 'md' | 'lg';
   /** When set, the photo is shown instead of initials (falls back to initials if it fails to load). */
   src?: string | null;
+  /** Tap the photo to see it large (default on). */
+  zoom?: boolean;
 }
 
-export function Avatar({ name, size = 'md', src }: AvatarProps) {
+export function Avatar({ name, size = 'md', src, zoom = true }: AvatarProps) {
   const initials = name
     .split(' ')
     .map((n) => n[0])
@@ -92,15 +131,9 @@ export function Avatar({ name, size = 'md', src }: AvatarProps) {
   React.useEffect(() => setFailed(false), [src]);
 
   if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt={name}
-        loading="lazy"
-        className={`${sizeClasses[size]} flex-shrink-0 rounded-full object-cover bg-slate-100`}
-        onError={() => setFailed(true)}
-      />
-    );
+    const cls = `${sizeClasses[size]} flex-shrink-0 rounded-full object-cover bg-slate-100`;
+    if (!zoom) return <img src={src} alt={name} loading="lazy" className={cls} onError={() => setFailed(true)} />;
+    return <ZoomPhoto src={src} name={name} className={cls} onError={() => setFailed(true)} />;
   }
 
   return (

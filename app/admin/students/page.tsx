@@ -14,6 +14,7 @@ import {
   StatCard,
   EmptyState,
   Avatar,
+  ZoomPhoto,
   Skeleton,
   TableRowSkeleton,
   StatCardSkeleton,
@@ -1020,7 +1021,7 @@ export default function StudentsPage() {
           <div>
             <div className="flex items-center gap-3 pb-4 mb-2 border-b border-slate-100">
               {viewing.photoUrl ? (
-                <img src={viewing.photoUrl} alt={viewing.name} className="w-12 h-12 rounded-full object-cover" />
+                <ZoomPhoto src={viewing.photoUrl} name={viewing.name} className="w-12 h-12 rounded-full object-cover" />
               ) : (
                 <Avatar name={viewing.name} size="md" src={viewing.photoUrl} />
               )}

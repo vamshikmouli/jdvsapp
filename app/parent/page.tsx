@@ -8,6 +8,7 @@ import { PushOptIn } from '@/components/PushOptIn';
 import { useBranding } from '@/components/useBranding';
 import { StreakCard } from '@/components/StreakCard';
 import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
+import { ZoomPhoto } from '@/components/ui/data';
 
 interface Child {
   id: string;
@@ -211,7 +212,7 @@ function ChildCard({ child, fee }: { child: Child; fee: FeeData | null }) {
       {/* gradient header w/ circular avatar */}
       <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-purple-50 to-white">
         {child.photoUrl ? (
-          <img src={child.photoUrl} alt={child.name} className="w-12 h-12 rounded-full object-cover bg-slate-100 flex-shrink-0 ring-2 ring-white shadow" />
+          <ZoomPhoto src={child.photoUrl} name={child.name} className="w-12 h-12 rounded-full object-cover bg-slate-100 shadow" />
         ) : (
           <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold flex-shrink-0 ring-2 ring-white shadow">
             {initials(child.name)}
@@ -650,7 +651,7 @@ function MarksScreen() {
         <div key={rep.student.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
             {rep.student.photoUrl
-              ? <img src={rep.student.photoUrl} alt={rep.student.name} className="w-10 h-10 rounded-xl object-cover bg-slate-100 flex-shrink-0" />
+              ? <ZoomPhoto src={rep.student.photoUrl} name={rep.student.name} round={false} className="w-10 h-10 rounded-xl object-cover bg-slate-100" />
               : <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">{marksInitials(rep.student.name)}</div>}
             <div className="min-w-0">
               <div className="font-semibold text-slate-900 truncate">{rep.student.name}</div>
