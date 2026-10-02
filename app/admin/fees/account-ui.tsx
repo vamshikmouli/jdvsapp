@@ -676,6 +676,8 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   const [splits, setSplits] = useState<Record<string, string>>({}); // mode → amount typed
   const [note, setNote] = useState('');
   const [manualNo, setManualNo] = useState(''); // serial from the carbon book (offline back-entry)
+  // Note / book receipt no. are rarely used — hidden behind a link (shown for cheques or once filled).
+  const [extraOpen, setExtraOpen] = useState(false);
   const [sendWa, setSendWa] = useState(false); // WhatsApp receipt to parent — opt-in, off by default
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
@@ -860,6 +862,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       // "Print receipts" button prints it on demand (no auto-print).
       await reloadAccount();
       setManualNo(''); // a book serial belongs to one receipt only
+      setExtraOpen(false);
       setDone({ receiptNo: data.receiptNo, id: data.id, waHeld: !!data.waHeld });
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to record payment'); }
     finally { setBusy(false); }
@@ -1369,10 +1372,16 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
             })()}
 
             <div className="mt-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
-                <Field label="Book receipt no. (optional)"><Input value={manualNo} onChange={(e) => setManualNo(e.target.value)} placeholder="Manual book serial — if written by hand" /></Field>
-              </div>
+              {extraOpen || note || manualNo || method === 'CHEQUE' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label={method === 'CHEQUE' ? 'Note — cheque no.' : 'Note (optional)'}><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no / remark" /></Field>
+                  <Field label="Book receipt no. (optional)"><Input value={manualNo} onChange={(e) => setManualNo(e.target.value)} placeholder="Manual book serial — if written by hand" /></Field>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setExtraOpen(true)} className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700">
+                  <Icon name="Plus" size={13} /> Add note / book receipt no.
+                </button>
+              )}
               {opts?.feeReceiptWhatsapp === 'OFF' ? (
                 <div className="mt-3 flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                   <Icon name="MessageCircleOff" size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
