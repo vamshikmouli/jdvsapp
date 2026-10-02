@@ -3,6 +3,7 @@
 import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { parseVoice, getSpeechRecognition } from '@/lib/marksVoice';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
@@ -265,9 +266,9 @@ const MODE_KEY = 'marksEntryMode';
 export const savedEntryMode = (): EntryMode => { try { return localStorage.getItem(MODE_KEY) === 'student' ? 'student' : 'subject'; } catch { return 'subject'; } };
 
 // One big-box row: label on the left, mark box + AB on the right.
-function MarkRow({ num, label, sub, value, max, canEdit, last, inputRef, onChange, onNext }: {
-  num: number; label: string; sub?: React.ReactNode; value: string; max: number; canEdit: boolean; last: boolean;
-  inputRef: (el: HTMLInputElement | null) => void; onChange: (v: string) => void; onNext: () => void;
+function MarkRow({ num, label, sub, value, max, canEdit, last, active, inputRef, onChange, onNext, onFocusRow }: {
+  num: number; label: string; sub?: React.ReactNode; value: string; max: number; canEdit: boolean; last: boolean; active?: boolean;
+  inputRef: (el: HTMLInputElement | null) => void; onChange: (v: string) => void; onNext: () => void; onFocusRow?: () => void;
 }) {
   const ab = /^a/i.test(value.trim());
   const bad = cellInvalid(value, max);
@@ -279,7 +280,7 @@ function MarkRow({ num, label, sub, value, max, canEdit, last, inputRef, onChang
     if (v !== '' && !v.endsWith('.') && !isNaN(n) && n <= max && n * 10 > max) onNext();
   };
   return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 ${bad ? 'bg-danger-50' : ''}`}>
+    <div data-active={active ? '1' : undefined} className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 ${bad ? 'bg-danger-50' : active ? 'bg-purple-50 shadow-[inset_4px_0_0_theme(colors.purple.500)]' : ''}`}>
       <span className="w-6 text-right text-xs text-slate-400 tabular-nums flex-shrink-0">{num}</span>
       <div className="flex-1 min-w-0">
         <div className="text-[15px] leading-snug text-slate-900 break-words flex items-center gap-1.5">{label}{!canEdit && <Icon name="Lock" size={12} className="text-slate-400 flex-shrink-0" />}</div>
@@ -291,7 +292,7 @@ function MarkRow({ num, label, sub, value, max, canEdit, last, inputRef, onChang
         readOnly={ab || !canEdit}
         disabled={!canEdit}
         inputMode="decimal" enterKeyHint={last ? 'done' : 'next'} autoComplete="off"
-        onFocus={(e) => e.currentTarget.select()}
+        onFocus={(e) => { e.currentTarget.select(); onFocusRow?.(); }}
         onChange={(e) => type(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onNext(); } }}
         placeholder="—"
@@ -324,6 +325,106 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   const listRef = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef(false);
   const cell = (subId: string, stId: string) => vals[subId]?.[stId] ?? '';
+
+  // ---- Voice entry: the current row (highlighted) gets the next spoken mark ----
+  const [cur, setCur] = useState(0);
+  const [listening, setListening] = useState(false);
+  const [heard, setHeard] = useState('');
+  const [voiceMsg, setVoiceMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const recRef = useRef<any>(null);
+  const wantRef = useRef(false);
+  const voiceMoved = useRef(false);
+  const handleRef = useRef<(text: string) => void>(() => {});
+  type VRow = { subId: string; stId: string; max: number; canEdit: boolean; label: string; roll?: string | null };
+  const rowsFor = (m: EntryMode, sIdx: number): VRow[] => m === 'subject'
+    ? grid.students.map((x) => ({ subId: su.id, stId: x.id, max: su.max, canEdit: su.canEdit, label: x.name, roll: x.roll }))
+    : grid.subjects.map((x) => ({ subId: x.id, stId: grid.students[sIdx].id, max: x.max, canEdit: x.canEdit, label: x.name }));
+
+  // Always the latest render's view of state (the recogniser's callbacks are created once).
+  handleRef.current = (text: string) => {
+    setHeard(text.trim());
+    const acts = parseVoice(text, mode === 'student' ? grid.subjects : []);
+    let s = stIdx;
+    let rows = rowsFor(mode, s);
+    const skipLocked = (j: number) => { while (j < rows.length && !rows[j].canEdit) j++; return j; };
+    let idx = skipLocked(Math.min(cur, rows.length));
+    let msg: { ok: boolean; text: string } | null = null;
+    const advance = () => {
+      idx = skipLocked(idx + 1);
+      if (idx >= rows.length && mode === 'student' && s < total - 1) { s++; rows = rowsFor(mode, s); idx = skipLocked(0); }
+    };
+    for (const a of acts) {
+      if (a.type === 'stop') { stopVoice(); break; }
+      if (a.type === 'back') {
+        if (idx > 0) idx--;
+        else if (mode === 'student' && s > 0) { s--; rows = rowsFor(mode, s); idx = rows.length - 1; }
+        continue;
+      }
+      if (a.type === 'roll') {
+        if (mode !== 'subject') continue;
+        const want = String(a.n);
+        let j = rows.findIndex((x) => (x.roll || '').replace(/\D/g, '').replace(/^0+/, '') === want);
+        if (j < 0 && a.n >= 1 && a.n <= rows.length) j = a.n - 1; // no roll numbers → list position
+        if (j >= 0) idx = j; else msg = { ok: false, text: `No roll ${a.n} in this list.` };
+        continue;
+      }
+      if (a.type === 'subject') { const j = rows.findIndex((x) => x.subId === a.id); if (j >= 0) idx = j; continue; }
+      if (idx >= rows.length) { msg = { ok: false, text: 'End of the list.' }; break; }
+      const row = rows[idx];
+      if (a.type === 'next') { advance(); continue; }
+      if (a.type === 'clear') { setCell(row.subId, row.stId, ''); msg = { ok: true, text: `${row.label}: cleared` }; continue; }
+      if (a.type === 'ab') { setCell(row.subId, row.stId, 'AB'); msg = { ok: true, text: `${row.label}: AB` }; advance(); continue; }
+      if (a.type === 'num') {
+        if (a.n < 0 || a.n > row.max) { msg = { ok: false, text: `Heard ${a.n} for ${row.label} — over max ${row.max}. Say it again.` }; break; }
+        setCell(row.subId, row.stId, String(a.n)); msg = { ok: true, text: `${row.label}: ${a.n}` }; advance();
+      }
+    }
+    if (!acts.length) msg = { ok: false, text: `Didn't catch a mark in "${text.trim()}".` };
+    if (s !== stIdx) { voiceMoved.current = true; setStIdx(s); }
+    setCur(idx);
+    if (msg) setVoiceMsg(msg);
+  };
+
+  const stopVoice = () => {
+    wantRef.current = false;
+    try { recRef.current?.stop(); } catch { /* already stopped */ }
+    setListening(false);
+  };
+  const startVoice = () => {
+    const SR = getSpeechRecognition();
+    if (!SR) { setVoiceMsg({ ok: false, text: 'Voice entry needs Chrome or Edge (computer / Android) or Safari (iPhone).' }); return; }
+    const rec = new SR();
+    rec.lang = 'en-IN';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (e: any) => {
+      let interim = '';
+      for (let k = e.resultIndex; k < e.results.length; k++) {
+        const res = e.results[k];
+        if (res.isFinal) handleRef.current(res[0].transcript);
+        else interim += res[0].transcript;
+      }
+      if (interim) setHeard(interim.trim() + '…');
+    };
+    rec.onerror = (e: any) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        wantRef.current = false; setListening(false);
+        setVoiceMsg({ ok: false, text: 'Microphone is blocked. Allow microphone access for this site in the browser, then try again.' });
+      } else if (e.error === 'network') {
+        setVoiceMsg({ ok: false, text: 'Voice needs an internet connection.' });
+      }
+    };
+    // Browsers stop listening after a pause — keep going until the teacher says "stop".
+    rec.onend = () => { if (wantRef.current) { try { rec.start(); } catch { /* restarting */ } } else setListening(false); };
+    recRef.current = rec;
+    wantRef.current = true;
+    (document.activeElement as HTMLElement | null)?.blur(); // keep the on-screen keyboard closed while dictating
+    setVoiceMsg(null); setHeard('');
+    try { rec.start(); setListening(true); } catch { setVoiceMsg({ ok: false, text: 'Could not start the microphone.' }); }
+  };
+  useEffect(() => () => { wantRef.current = false; try { recRef.current?.stop(); } catch { /* ignore */ } }, []);
+  // Keep the row being dictated in view.
+  useEffect(() => { if (listening) listRef.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [cur, listening, stIdx, su.id]);
   const studentFilled = (stId: string) => grid.subjects.filter((s) => cell(s.id, stId).trim() !== '').length;
 
   // Lock the page behind.
@@ -332,7 +433,8 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   inputs.current.length = mode === 'subject' ? total : grid.subjects.length;
   // New subject / student / mode → list back to the top, active chip in view.
   useEffect(() => {
-    listRef.current?.scrollTo({ top: 0 });
+    if (voiceMoved.current) voiceMoved.current = false; else setCur(0);
+    if (!listening) listRef.current?.scrollTo({ top: 0 });
     tabsRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
     if (pendingFocus.current) { pendingFocus.current = false; setTimeout(() => focusRow(0), 50); }
   }, [su.id, stIdx, mode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -347,6 +449,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   };
   const goStudent = (i: number) => setStIdx(Math.max(0, Math.min(total - 1, i)));
   const close = () => {
+    stopVoice();
     if (dirty && !window.confirm('You have unsaved marks. Close anyway? (They stay on the page until you leave it — tap Save draft to keep them.)')) return;
     onClose();
   };
@@ -368,6 +471,10 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
               : <div className="text-xs text-slate-500">Student {stIdx + 1} of {total} · <span className={nSt === grid.subjects.length ? 'text-success-700 font-semibold' : ''}>{nSt}/{grid.subjects.length} subjects entered</span></div>}
           </div>
           {mode === 'subject' && <StatusPill s={su.status} />}
+          <button onClick={listening ? stopVoice : startVoice} title={listening ? 'Stop voice entry' : 'Enter marks by voice'}
+            className={`w-11 h-11 flex-shrink-0 rounded-full grid place-items-center border-2 ${listening ? 'bg-danger-500 border-danger-500 text-white animate-pulse' : 'border-purple-200 text-purple-700 bg-purple-50'}`}>
+            <Icon name={listening ? 'MicOff' : 'Mic'} size={20} />
+          </button>
         </div>
         {/* Mode switch */}
         <div className="px-3 pb-2">
@@ -380,6 +487,18 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
             ))}
           </div>
         </div>
+        {(listening || voiceMsg) && (
+          <div className="mx-3 mb-2 rounded-lg border border-purple-200 bg-purple-50/60 px-3 py-2 text-[12.5px]">
+            {listening && (
+              <div className="flex items-center gap-2 text-purple-800 font-semibold">
+                <span className="w-2.5 h-2.5 rounded-full bg-danger-500 animate-pulse flex-shrink-0" />
+                <span className="truncate">Listening{heard ? <span className="font-normal text-slate-600"> · heard “{heard}”</span> : '…'}</span>
+              </div>
+            )}
+            {voiceMsg && <div className={`mt-0.5 font-semibold ${voiceMsg.ok ? 'text-success-700' : 'text-danger-700'}`}>{voiceMsg.ok ? '✓ ' : ''}{voiceMsg.text}</div>}
+            {listening && <div className="mt-0.5 text-[11px] text-slate-500">Say marks one after another · “absent” · “next” · “back” · “clear” · {mode === 'subject' ? '“roll 12”' : '“English 42”'} · “stop”</div>}
+          </div>
+        )}
         {mode === 'subject' ? (
           <div ref={tabsRef} className="flex gap-1.5 overflow-x-auto px-3 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {grid.subjects.map((s) => {
@@ -418,7 +537,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
             {grid.students.map((x, i) => (
               <MarkRow key={x.id} num={i + 1} label={x.name} sub={x.roll ? `Roll ${x.roll}` : undefined}
                 value={cell(su.id, x.id)} max={su.max} canEdit={su.canEdit} last={i === total - 1}
-                inputRef={(el) => { inputs.current[i] = el; }}
+                inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
                 onChange={(v) => setCell(su.id, x.id, v)} onNext={() => focusRow(i + 1)} />
             ))}
             {nextSubject && (
@@ -434,7 +553,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
             {grid.subjects.map((s, i) => (
               <MarkRow key={s.id} num={i + 1} label={s.name} sub={<>max {s.max}{s.status !== 'DRAFT' ? ` · ${s.status.toLowerCase()}` : ''}</>}
                 value={cell(s.id, st.id)} max={s.max} canEdit={s.canEdit} last={i === grid.subjects.length - 1 && stIdx === total - 1}
-                inputRef={(el) => { inputs.current[i] = el; }}
+                inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
                 onChange={(v) => setCell(s.id, st.id, v)} onNext={() => focusRow(i + 1)} />
             ))}
             {stIdx < total - 1 && (

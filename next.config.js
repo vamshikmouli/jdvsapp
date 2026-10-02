@@ -31,7 +31,7 @@ const securityHeaders = [
   // Don't leak full URLs to other origins.
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   // Allow only the browser features this app uses; deny the rest.
-  { key: 'Permissions-Policy', value: 'geolocation=(self), camera=(self), microphone=(), payment=(), usb=(), publickey-credentials-get=(self)' },
+  { key: 'Permissions-Policy', value: 'geolocation=(self), camera=(self), microphone=(self), payment=(), usb=(), publickey-credentials-get=(self)' },
   { key: 'Content-Security-Policy', value: csp },
 ];
 
