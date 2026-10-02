@@ -1412,6 +1412,8 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
 }
 
 const PHOTO_MIN_KB = 50;
+const PHOTO_BORDER = 0.012;          // frame width, as a share of the photo's side (~7 px on 600 px)
+const PHOTO_BORDER_COLOR = '#111827';
 const PHOTO_MAX_KB = 1000;
 
 // Encode the crop as a JPEG between PHOTO_MIN_KB and PHOTO_MAX_KB: start at 600 px /
@@ -1467,10 +1469,16 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
     const srcY = (0 - imgTop) / scale;
     const srcSize = V / scale;
     const el = imgRef.current;
+    // The border is part of the saved photo, so it shows on ID cards, certificates, etc.
     const draw = (size: number) => {
       const canvas = document.createElement('canvas');
       canvas.width = size; canvas.height = size;
-      canvas.getContext('2d')?.drawImage(el, srcX, srcY, srcSize, srcSize, 0, 0, size, size);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return canvas;
+      const bw = Math.max(4, Math.round(size * PHOTO_BORDER));
+      ctx.fillStyle = PHOTO_BORDER_COLOR;
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(el, srcX, srcY, srcSize, srcSize, bw, bw, size - 2 * bw, size - 2 * bw);
       return canvas;
     };
     const b = await encodeWithinRange(draw);
@@ -1486,14 +1494,15 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
     <Modal open onClose={onCancel} title="Crop photo" width={360}
       footer={<div className="flex justify-end gap-2"><Button onClick={onCancel}>Cancel</Button><Button kind="primary" icon="Check" onClick={doCrop} disabled={!img}>Use photo</Button></div>}>
       <div className="flex flex-col items-center gap-3">
-        <div className="relative rounded-2xl overflow-hidden bg-slate-900 touch-none select-none cursor-move" style={{ width: V, height: V }}
+        <div className="relative overflow-hidden bg-slate-900 touch-none select-none cursor-move" style={{ width: V, height: V }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
           {url && (
             <img ref={imgRef} src={url} alt="" draggable={false}
               onLoad={(e) => setImg({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
               style={{ position: 'absolute', left: '50%', top: '50%', width: dispW || undefined, height: dispH || undefined, transform: `translate(${-dispW / 2 + pan.x}px, ${-dispH / 2 + pan.y}px)`, maxWidth: 'none' }} />
           )}
-          <div className="absolute inset-0 pointer-events-none ring-1 ring-inset ring-white/25 rounded-2xl" />
+          {/* Preview of the frame that is saved with the photo */}
+          <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(V * PHOTO_BORDER))}px ${PHOTO_BORDER_COLOR}` }} />
         </div>
         <div className="flex items-center gap-2 w-full px-2">
           <Icon name="ZoomOut" size={16} className="text-slate-400" />
