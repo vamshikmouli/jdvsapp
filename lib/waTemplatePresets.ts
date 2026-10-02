@@ -50,4 +50,19 @@ export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
     examples: ['Ramesh', 'ASHA', 'absent', '02 Oct 2026'],
     header: 'NONE',
   },
+  {
+    key: 'attendance_status',
+    name: 'attendance_status',
+    category: 'UTILITY',
+    title: 'Class attendance status (to office numbers)',
+    usedFor: 'Daily 11 AM — which classes have submitted student attendance and which are pending (Attendance status recipients)',
+    // Meta rejects a variable at the very end of the body, hence the closing line.
+    body:
+      'Student attendance status for {{1}}\n' +
+      'Submitted: {{2}}\n' +
+      'Pending: {{3}}\n' +
+      'Please make sure the pending classes submit attendance today.',
+    examples: ['02 Oct 2026', 'LKG · UKG · 1st · 2nd', '3rd (not submitted) · 4th'],
+    header: 'NONE',
+  },
 ];
