@@ -1270,16 +1270,16 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
         </div>
         )}
 
-        {/* RIGHT — Collect */}
-        <div className={sec}>
-          <div className={secHead + ' justify-between gap-2 flex-wrap'}>
-            <span className="flex items-center gap-2 flex-shrink-0"><span className="w-6 h-6 rounded-lg bg-purple-50 text-purple-600 grid place-items-center"><Icon name="IndianRupee" size={14} /></span> Collect<span className="hidden sm:inline"> payment</span></span>
-            <div className="flex items-center gap-2.5 ml-auto flex-wrap">
+        {/* RIGHT — Collect: the main job of this screen, so it's highlighted. */}
+        <div className="rounded-xl border-2 border-purple-300 bg-white shadow-[0_0_0_4px_rgba(124,58,237,0.07)]">
+          <div className={secHead.replace('border-slate-100', 'border-purple-100') + ' justify-between gap-2 flex-wrap bg-purple-50/70 rounded-t-[10px]'}>
+            <span className="flex items-center gap-2 flex-shrink-0 text-purple-900"><span className="w-6 h-6 rounded-lg bg-purple-600 text-white grid place-items-center"><Icon name="IndianRupee" size={14} /></span> Collect payment</span>
+            <div className="hidden sm:flex items-center gap-2.5 ml-auto flex-wrap">
               {/* Optional: the cash handed over — Auto-allocate splits it across the dues. */}
-              <div className="flex items-center rounded-lg sm:rounded-xl border sm:border-[1.5px] border-purple-200 bg-purple-50/50 pl-2 pr-1.5 py-0.5 sm:pl-3 sm:pr-2 sm:py-1.5">
-                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.06em] text-purple-700/80 font-bold mr-1 sm:mr-2 whitespace-nowrap">Received</span>
-                <span className="font-display text-sm sm:text-base font-bold text-slate-400 mr-0.5">₹</span>
-                <input type="number" inputMode="numeric" value={tendered ? String(tendered) : ''} placeholder="0" onChange={(e) => setTendered(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-16 sm:w-24 bg-transparent outline-none font-display text-sm sm:text-lg font-bold sm:font-extrabold tabular-nums text-slate-800 text-right" />
+              <div className="flex items-center rounded-xl border-[1.5px] border-purple-300 bg-white pl-3 pr-2 py-1.5 focus-within:ring-2 focus-within:ring-purple-200">
+                <span className="text-[10px] uppercase tracking-[0.06em] text-purple-700/80 font-bold mr-2 whitespace-nowrap">Amount received</span>
+                <span className="font-display text-base font-bold text-slate-400 mr-0.5">₹</span>
+                <input type="number" inputMode="numeric" value={tendered ? String(tendered) : ''} placeholder="0" onChange={(e) => setTendered(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-28 bg-transparent outline-none font-display text-xl font-extrabold tabular-nums text-slate-900 text-right" />
               </div>
               {tendered > 0 && (
                 <div className="text-right whitespace-nowrap">
@@ -1290,8 +1290,24 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
             </div>
           </div>
           <div className="p-3.5 sm:p-5">
+            {/* Phone: a big, full-width Amount received box. */}
+            <div className="sm:hidden mb-3 rounded-xl border-2 border-purple-300 bg-purple-50/60 px-3 py-2 focus-within:border-purple-500 focus-within:bg-white">
+              <div className="flex items-center gap-2">
+                <label htmlFor="amt-received" className="text-[11px] uppercase tracking-[0.06em] text-purple-700 font-bold">Amount received</label>
+                {tendered > 0 && (
+                  <span className={`ml-auto text-[11px] font-bold tabular-nums ${toAllocate === 0 ? 'text-success-600' : toAllocate > 0 ? 'text-marigold-700' : 'text-danger-600'}`}>
+                    {toAllocate > 0 ? 'Left' : toAllocate === 0 ? 'All allocated' : 'Over by'}{toAllocate !== 0 ? ` ${feeMoney(Math.abs(toAllocate))}` : ' ✓'}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center">
+                <span className="font-display text-2xl font-bold text-purple-400 mr-1">₹</span>
+                <input id="amt-received" type="number" inputMode="numeric" value={tendered ? String(tendered) : ''} placeholder="0" onChange={(e) => setTendered(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                  className="min-w-0 flex-1 bg-transparent outline-none font-display text-2xl font-extrabold tabular-nums text-slate-900 placeholder:text-slate-300" />
+              </div>
+            </div>
             {tendered > 0 && toAllocate > 0 && allOut.length > 0 && (
-              <button onClick={autoAllocateReceived} className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white bg-purple-500 hover:bg-purple-600 rounded-lg px-3 py-1.5">
+              <button onClick={autoAllocateReceived} className="mb-4 w-full sm:w-auto justify-center inline-flex items-center gap-1.5 text-[13px] font-semibold text-white bg-purple-500 hover:bg-purple-600 rounded-lg px-3 py-2 sm:py-1.5">
                 <Icon name="Wand2" size={14} /> Auto-allocate by priority
               </button>
             )}
@@ -1324,9 +1340,9 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                         const val = amounts[c.id] || 0;
                         const isPaid = val >= c.balance && c.balance > 0;
                         return (
-                          <div key={c.id} className={`flex flex-wrap items-center gap-2 px-4 py-3 ${val > 0 ? 'bg-purple-50/40' : ''}`}>
+                          <div key={c.id} className={`flex flex-wrap items-center gap-2 px-3 sm:px-4 py-3 ${val > 0 ? 'bg-purple-50/40' : ''}`}>
                             <div className="flex-1 min-w-[130px]"><div className="text-[14.5px] text-slate-800 truncate">{c.label}</div><div className="text-[12px] text-slate-500 mt-0.5">Balance {feeMoney(c.balance)}{c.dueDate ? ` · due ${fmtDate(c.dueDate)}` : ''}</div></div>
-                            <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                            <div className="flex flex-wrap justify-end items-center gap-1.5 sm:gap-2 ml-auto max-w-full">
                               {((c as any).paid || 0) === 0 && !/tuition|software|abacus|quick\s*math/i.test(`${h.key} ${h.name}`) && <button onClick={() => removeCharge(c.id, c.label)} className="text-slate-300 hover:text-danger-600 flex-shrink-0 p-1" title="Remove this fee (added by mistake)"><Icon name="Trash2" size={15} /></button>}
                               {/* Paid / Not received toggle — Paid collects the full balance now; Not received leaves it as a due. */}
                               <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-[12px] flex-shrink-0">
@@ -1334,7 +1350,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                                 <button onClick={() => setAmt(c.id, c.balance, c.balance)} className={`px-2.5 py-2 border-l border-slate-200 ${isPaid ? 'bg-success-500 text-white font-semibold' : 'text-slate-400 hover:bg-slate-50'}`} title="Collect the full amount now">Paid</button>
                               </div>
                               {tendered > 0 && toAllocate > 0 && <button onClick={() => putRest(c.id, c.balance)} className="text-[12px] font-semibold text-purple-600 hover:text-purple-800" title="Put the remaining received amount here">Rest</button>}
-                              <div className="w-20 flex-shrink-0"><Input type="number" value={val ? String(val) : ''} placeholder="0" onChange={(e) => setAmt(c.id, c.balance, e.target.value)} className="text-right tabular-nums py-2" title="Or type a partial amount" /></div>
+                              <div className="w-[4.5rem] sm:w-20 flex-shrink-0"><Input type="number" inputMode="numeric" value={val ? String(val) : ''} placeholder="0" onChange={(e) => setAmt(c.id, c.balance, e.target.value)} className="text-right tabular-nums py-2" title="Or type a partial amount" /></div>
                             </div>
                           </div>
                         );
