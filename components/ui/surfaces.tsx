@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '@/components/Icon';
 
 // ========== Card ==========
@@ -88,9 +89,11 @@ export function Drawer({ open, onClose, title, subtitle, footer, headerRight, ch
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  // Portalled to <body> so a drawer opened from inside the top bar (e.g. the
+  // student search) isn't trapped under the sidebar by the top bar's stacking context.
+  return createPortal(
     <div className="fixed inset-0 z-50">
       <div
         className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${show ? 'opacity-100' : 'opacity-0'}`}
@@ -119,6 +122,7 @@ export function Drawer({ open, onClose, title, subtitle, footer, headerRight, ch
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
         {footer && <div className="border-t border-slate-100 px-6 py-4 flex-shrink-0">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

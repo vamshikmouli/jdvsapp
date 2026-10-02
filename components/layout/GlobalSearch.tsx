@@ -156,7 +156,7 @@ export function GlobalSearch() {
       )}
 
       {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)}
-        onCollect={canCollect ? () => { const id = timeline.id; setTimeline(null); setCollectId(id); } : undefined} />}
+        onCollect={canCollect ? (id) => { setTimeline(null); setCollectId(id); } : undefined} />}
       {collectId && <CollectDrawer studentId={collectId} onClose={() => setCollectId(null)} onDone={() => setCollectId(null)} />}
     </>
   );

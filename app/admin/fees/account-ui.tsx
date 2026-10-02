@@ -28,9 +28,94 @@ function payMethodText(p: { method: string; tenders?: { method: string; amount: 
 }
 
 // Read-only payment-history drawer (the "Eye" drawer) — used by the Collection
-// list and the top-bar universal search. `onCollect` (users who can collect) adds
-// a "Collect payment" button that swaps this drawer for the Collect drawer.
-export function PaymentTimeline({ studentId, name, onClose, onCollect }: { studentId: string; name: string; onClose: () => void; onCollect?: () => void }) {
+// list and the top-bar universal search. "Add student" puts up to 3 students side
+// by side (e.g. siblings, or comparing accounts). `onCollect` (users who can
+// collect) adds a "Collect payment" button that swaps this drawer for the Collect drawer.
+const MAX_HISTORY = 3;
+
+export function PaymentTimeline({ studentId, name, onClose, onCollect }: { studentId: string; name: string; onClose: () => void; onCollect?: (studentId: string) => void }) {
+  const [list, setList] = useState<{ id: string; name: string }[]>([{ id: studentId, name }]);
+  const n = list.length;
+  const add = (st: { id: string; name: string }) => setList((l) => (l.some((x) => x.id === st.id) || l.length >= MAX_HISTORY ? l : [...l, st]));
+  const remove = (id: string) => setList((l) => (l.length > 1 ? l.filter((x) => x.id !== id) : l));
+
+  return (
+    <Drawer open onClose={onClose} title="Payment history" subtitle={list.map((x) => x.name).join(' · ')} width={n === 1 ? 560 : n === 2 ? 1080 : 1500}
+      footer={<div className="flex justify-end gap-2">
+        <Button onClick={onClose}>Close</Button>
+        {onCollect && n === 1 && <Button kind="primary" icon="IndianRupee" onClick={() => onCollect(list[0].id)}>Collect payment</Button>}
+      </div>}>
+      <div className="mb-4">
+        {n < MAX_HISTORY
+          ? <AddStudentPicker exclude={list.map((x) => x.id)} onPick={add} />
+          : <p className="text-xs text-slate-400">Showing {MAX_HISTORY} students — remove one (×) to add another.</p>}
+      </div>
+      <div className={`grid gap-6 grid-cols-1 ${n === 2 ? 'lg:grid-cols-2' : n === 3 ? 'lg:grid-cols-3' : ''}`}>
+        {list.map((st) => (
+          <TimelineColumn key={st.id} studentId={st.id} name={st.name} multi={n > 1}
+            onRemove={n > 1 ? () => remove(st.id) : undefined}
+            onCollect={onCollect && n > 1 ? () => onCollect(st.id) : undefined} />
+        ))}
+      </div>
+    </Drawer>
+  );
+}
+
+// Search box (same student search as the top bar) to add another student to the history view.
+function AddStudentPicker({ exclude, onPick }: { exclude: string[]; onPick: (s: { id: string; name: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<{ id: string; name: string; className: string | null; parent: string | null }[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const term = q.trim();
+    if (!term) { setRows([]); return; }
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/students?status=ACTIVE&q=${encodeURIComponent(term)}`);
+        const data = res.ok ? await res.json() : [];
+        setRows((Array.isArray(data) ? data : []).slice(0, 8).map((x: any) => ({ id: x.id, name: x.name, className: x.class?.name ?? null, parent: x.fatherName || x.guardianName || null })));
+      } catch { setRows([]); } finally { setLoading(false); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-purple-300 text-purple-700 hover:bg-purple-50 px-3 py-1.5 text-[13px] font-semibold">
+        <Icon name="UserPlus" size={15} /> Add student to compare
+      </button>
+    );
+  }
+  const shown = rows.filter((r) => !exclude.includes(r.id));
+  return (
+    <div className="relative max-w-md">
+      <div className="flex items-center gap-2 rounded-lg border border-purple-300 bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-purple-100">
+        <Icon name="Search" size={15} className="text-slate-400 flex-shrink-0" />
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, ID, father name or phone…"
+          className="flex-1 min-w-0 bg-transparent outline-none text-sm" />
+        <button onClick={() => { setOpen(false); setQ(''); }} className="text-slate-400 hover:text-slate-700" title="Cancel"><Icon name="X" size={15} /></button>
+      </div>
+      {q.trim() && (
+        <div className="absolute z-40 left-0 right-0 mt-1 rounded-xl border border-slate-200 bg-white shadow-lg max-h-72 overflow-y-auto">
+          {loading ? <div className="px-3 py-4 text-center text-sm text-slate-400">Searching…</div>
+            : shown.length === 0 ? <div className="px-3 py-4 text-center text-sm text-slate-400">{rows.length ? 'Already shown.' : 'No students found.'}</div>
+            : shown.map((r) => (
+              <button key={r.id} onClick={() => { onPick({ id: r.id, name: r.name }); setOpen(false); setQ(''); }}
+                className="w-full text-left px-3 py-2 hover:bg-purple-50 border-b border-slate-100 last:border-0">
+                <div className="text-sm font-medium text-slate-900">{r.name}</div>
+                <div className="text-[11px] text-slate-500">{shortClass(r.className)} · <span className="font-mono">{r.id}</span>{r.parent ? ` · ${r.parent}` : ''}</div>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One student's totals + receipt timeline (a column of the history drawer).
+function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { studentId: string; name: string; multi: boolean; onRemove?: () => void; onCollect?: () => void }) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -41,21 +126,29 @@ export function PaymentTimeline({ studentId, name, onClose, onCollect }: { stude
   const liveCount = pays.filter((p) => !p.voided).length;
 
   return (
-    <Drawer open onClose={onClose} title="Payment history" subtitle={name} width={560}
-      footer={<div className="flex justify-end gap-2">
-        <Button onClick={onClose}>Close</Button>
-        {onCollect && <Button kind="primary" icon="IndianRupee" onClick={onCollect}>Collect payment</Button>}
-      </div>}>
+    <div className="min-w-0">
+      {multi && (
+        <div className="flex items-start justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
+          <div className="min-w-0">
+            <div className="text-[15px] font-bold text-slate-900 truncate">{name}</div>
+            <div className="text-xs text-slate-500">{shortClass(data?.student?.className ?? null)} · <span className="font-mono">{studentId}</span></div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {onCollect && <Button size="sm" kind="primary" icon="IndianRupee" onClick={onCollect}>Collect</Button>}
+            {onRemove && <button onClick={onRemove} className="text-slate-300 hover:text-danger-600 p-1" title="Remove from view"><Icon name="X" size={16} /></button>}
+          </div>
+        </div>
+      )}
       {s && (
         <div className={`grid gap-3 mb-5 ${s.concession > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
           {/* Tap Total fee / Concession / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer.
               Right-hand boxes open their split leftwards so it stays on screen. */}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="stat" align="left" /></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalCharged} metric="charged" layout="stat" align="left" /></div>
           {s.concession > 0 && (
-            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.concession} metric="concession" layout="stat" align="left" /></div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.concession} metric="concession" layout="stat" align="left" /></div>
           )}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="stat" align="left" /></div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalPaid} metric="paid" layout="stat" align={s.concession > 0 ? 'auto' : 'left'} /></div>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-3"><HeadBreakdown heads={s.heads} total={s.totalBalance} metric="balance" layout="stat" align="right" /></div>
         </div>
       )}
 
@@ -75,9 +168,9 @@ export function PaymentTimeline({ studentId, name, onClose, onCollect }: { stude
               </div>
               <div className={`rounded-xl border p-3.5 ${p.voided ? 'border-slate-200 bg-slate-50/60' : 'border-slate-200 bg-white'}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <div className={`text-lg font-bold tabular-nums leading-none ${p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{feeMoney(p.total)}</div>
-                    <div className="mt-1 text-xs text-slate-500 flex items-center gap-1.5">
+                    <div className="mt-1 text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">{payMethodText(p)}</span>
                       <span className="font-mono text-slate-500">{p.receiptNo}</span>
                       {p.voided && <span className="text-danger-600 font-medium">· cancelled</span>}
@@ -100,7 +193,7 @@ export function PaymentTimeline({ studentId, name, onClose, onCollect }: { stude
           ))}
         </div>
       )}
-    </Drawer>
+    </div>
   );
 }
 
@@ -463,7 +556,8 @@ const HEAD_METRIC: Record<HeadMetric, { label: string; headerColor: string; stat
 };
 function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
   heads: HeadRowLite[]; total: number; metric: HeadMetric;
-  layout: 'stat' | 'header'; align?: 'left' | 'right';
+  // 'auto' = opens rightwards in the 2-column phone grid, leftwards in the 4-column grid (sm+).
+  layout: 'stat' | 'header'; align?: 'left' | 'right' | 'auto';
 }) {
   const [open, setOpen] = useState(false);
   const m = HEAD_METRIC[metric];
@@ -490,7 +584,7 @@ function HeadBreakdown({ heads, total, metric, layout, align = 'left' }: {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
-          <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+          <div className={`absolute z-40 mt-1 w-60 rounded-xl border border-slate-200 bg-white shadow-lg p-2 ${align === 'right' ? 'right-0' : align === 'auto' ? 'left-0 sm:left-auto sm:right-0' : 'left-0'}`}>
             <div className="text-[10.5px] uppercase tracking-wide text-slate-400 px-2 pb-1 text-left">{m.label} by fee head</div>
             {rows.length === 0 ? (
               <div className="px-2 py-2 text-xs text-slate-400 text-left">{metric === 'paid' ? 'No payments yet.' : metric === 'balance' ? 'Nothing pending.' : metric === 'concession' ? 'No approved concession.' : 'Nothing charged yet.'}</div>

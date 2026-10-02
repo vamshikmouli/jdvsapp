@@ -405,7 +405,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
       {openId && <CollectDrawer studentId={openId} onClose={() => setOpenId(null)} onDone={async () => { setOpenId(null); await fetchRows(); }} />}
       {multiId && <MultiCollectDrawer studentId={multiId} onClose={() => setMultiId(null)} onDone={async () => { setMultiId(null); await fetchRows(); }} />}
       {timeline && <PaymentTimeline studentId={timeline.id} name={timeline.name} onClose={() => setTimeline(null)}
-        onCollect={canCollect ? () => { const id = timeline.id; setTimeline(null); setOpenId(id); } : undefined} />}
+        onCollect={canCollect ? (id) => { setTimeline(null); setOpenId(id); } : undefined} />}
       {bulkOpen && (
         <BulkNotifyModal
           students={selectedRows.map((r) => ({ id: r.id, name: r.name, className: r.className, balance: r.totalBalance }))}
