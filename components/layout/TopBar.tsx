@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { NotificationBell } from '@/components/layout/NotificationBell';
 import { GlobalSearch } from '@/components/layout/GlobalSearch';
+import { NetSpeed } from '@/components/layout/NetSpeed';
 
 interface TopBarProps {
   title: string;
@@ -108,10 +109,12 @@ export function TopBar({ title, subtitle, onMenu, collapsed = false, onToggleCol
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-0.5 sm:gap-3">
         <YearSwitcher />
 
         <GlobalSearch />
+
+        <NetSpeed />
 
         <NotificationBell />
 
