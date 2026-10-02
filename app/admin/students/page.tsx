@@ -890,9 +890,8 @@ export default function StudentsPage() {
                   <option value="3B">3B</option>
                   <option value="SC">SC</option>
                   <option value="ST">ST</option>
-                  <option value="EWS">EWS</option>
                   {/* Keep a value that isn't in the list (e.g. from an Excel import) instead of blanking it. */}
-                  {form.category && !['General', 'OBC', '2A', '2B', '3A', '3B', 'SC', 'ST', 'EWS'].includes(form.category) && (
+                  {form.category && !['General', 'OBC', '2A', '2B', '3A', '3B', 'SC', 'ST'].includes(form.category) && (
                     <option value={form.category}>{form.category}</option>
                   )}
                 </Select>
