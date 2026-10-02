@@ -287,12 +287,12 @@ export default function StudentsPage() {
     setForm((f) => ({ ...f, classId }));
     clearErr('classId');
     setIdPreview('');
-    if (!classId || editing) return; // don't auto-touch roll/ID when editing
+    if (!classId || editing) return; // editing: the server gives the next roll if the class changes
     try {
       const r = await fetch(`/api/students/next-roll?classId=${classId}`);
       if (r.ok) {
         const d = await r.json();
-        setForm((f) => ({ ...f, roll: f.roll || d.roll || '' }));
+        setForm((f) => ({ ...f, roll: d.roll || '' }));
         setIdPreview(d.studentId || '');
       }
     } catch { /* preview is best-effort */ }
@@ -810,8 +810,8 @@ export default function StudentsPage() {
           <Field label="Full name" error={fieldErrors.name}>
             <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); clearErr('name'); }} placeholder="Student name" className={errRing('name')} />
           </Field>
-          <Field label="Roll no" hint={editing ? undefined : 'Auto-filled from the class — change only if you know it'}>
-            <Input value={form.roll} onChange={(e) => setForm({ ...form, roll: e.target.value })} placeholder="auto" />
+          <Field label="Roll no" hint={editing ? (editing.classId && form.classId !== editing.classId ? 'Next roll of the new class is given on save' : 'Fixed — set automatically') : 'Next roll of the class — set automatically'}>
+            <Input value={form.roll} readOnly tabIndex={-1} placeholder="auto" className="bg-slate-50 text-slate-600 cursor-not-allowed" />
           </Field>
           <Field label="Gender" error={fieldErrors.gender}>
             <Select value={form.gender} onChange={(e) => { setForm({ ...form, gender: e.target.value as '' | 'M' | 'F' }); clearErr('gender'); }} className={errRing('gender')}>

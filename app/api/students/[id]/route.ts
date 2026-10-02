@@ -7,7 +7,7 @@ import { pickPrimaryContact } from '@/lib/services/parents';
 import { normalizeContactTargets } from '@/lib/contactTargets';
 import { logActivity } from '@/lib/activity';
 import { getActiveYear } from '@/lib/services/fees';
-import { upsertEnrollment } from '@/lib/services/enrollment';
+import { upsertEnrollment, nextRollForClass } from '@/lib/services/enrollment';
 
 export async function GET(
   _req: NextRequest,
@@ -68,13 +68,18 @@ export async function PATCH(
     if (body.guardianName) body.guardianName = String(body.guardianName).trim().toUpperCase();
     body.smsFor = normalizeContactTargets(body.smsFor);
     const primary = pickPrimaryContact(body);
+    // Roll isn't editable: it stays as is, and a class change gets the next free roll
+    // in the new class.
+    const before = await prisma.student.findUnique({ where: { id: params.id }, select: { classId: true, roll: true } });
+    const newClassId = body.classId || null;
+    const roll = newClassId && newClassId !== before?.classId ? await nextRollForClass(newClassId, params.id) : before?.roll ?? null;
     const updated = await prisma.student.update({
       where: { id: params.id },
       data: {
         admissionNo: body.admissionNo || null,
         name: body.name,
         classId: body.classId || null,
-        roll: body.roll || null,
+        roll,
         gender: body.gender,
         dob: body.dob ? new Date(body.dob) : null,
         religion: body.religion || null,

@@ -5,6 +5,7 @@ import { can } from '@/lib/rbac/roles';
 import { prisma } from '@/lib/db';
 import { getActiveYear } from '@/lib/services/fees';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
+import { nextRollForClass } from '@/lib/services/enrollment';
 
 // Next roll number for a class + the student ID it would produce, so the Add
 // Student form can auto-fill the roll (staff don't have to remember it) and show
@@ -17,16 +18,7 @@ export async function GET(req: NextRequest) {
   const classId = req.nextUrl.searchParams.get('classId');
   if (!classId) return NextResponse.json({ error: 'classId required' }, { status: 400 });
 
-  const rows = await prisma.student.findMany({
-    where: { classId, status: 'ACTIVE' },
-    select: { roll: true },
-  });
-  let max = 0;
-  for (const r of rows) {
-    const n = parseInt(String(r.roll || '').replace(/\D/g, ''), 10);
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  const roll = String(max + 1).padStart(2, '0');
+  const roll = await nextRollForClass(classId);
   const year = await getActiveYear();
   const studentId = await generateAdmissionNo({ classId, roll, yearId: year.id });
   return NextResponse.json({ roll, studentId });

@@ -1,5 +1,19 @@
 import { prisma } from '@/lib/db';
 
+/** Next free roll number in a class ("01", "02"…) = highest active roll + 1. */
+export async function nextRollForClass(classId: string, excludeStudentId?: string): Promise<string> {
+  const rows = await prisma.student.findMany({
+    where: { classId, status: 'ACTIVE', ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}) },
+    select: { roll: true },
+  });
+  let max = 0;
+  for (const r of rows) {
+    const n = parseInt(String(r.roll || '').replace(/\D/g, ''), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return String(max + 1).padStart(2, '0');
+}
+
 /** Create or update a student's enrollment for a year (keeps class history in sync). */
 export async function upsertEnrollment(studentId: string, yearId: string, classId: string | null, sectionId?: string | null, roll?: string | null) {
   if (!classId) return;

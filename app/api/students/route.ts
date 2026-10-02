@@ -8,7 +8,7 @@ import { normalizePhone } from '@/lib/auth/provision';
 import { ensureParentUser, pickPrimaryContact } from '@/lib/services/parents';
 import { normalizeContactTargets } from '@/lib/contactTargets';
 import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
-import { upsertEnrollment } from '@/lib/services/enrollment';
+import { upsertEnrollment, nextRollForClass } from '@/lib/services/enrollment';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
 import { logActivity } from '@/lib/activity';
 
@@ -100,14 +100,8 @@ export async function POST(req: NextRequest) {
       (String(body.altGuardianName || '').trim() && String(body.altGuardianPhone || '').trim());
     if (!hasContact) return NextResponse.json({ error: 'Enter at least one contact (father, mother or guardian) with both a name and a phone number', field: 'contact' }, { status: 400 });
 
-    // Roll auto-assigns from the class when not given — staff needn't remember it.
-    let roll = String(body.roll ?? '').replace(/\D/g, '');
-    if (!roll) {
-      const rows = await prisma.student.findMany({ where: { classId: body.classId, status: 'ACTIVE' }, select: { roll: true } });
-      let max = 0;
-      for (const r of rows) { const n = parseInt(String(r.roll || '').replace(/\D/g, ''), 10); if (Number.isFinite(n) && n > max) max = n; }
-      roll = String(max + 1).padStart(2, '0');
-    }
+    // Roll is always auto-assigned (next free number in the class) — it can't be typed.
+    const roll = await nextRollForClass(body.classId);
 
     // System student ID: JDVS+YY+CC+RR — always structured, never a timestamp.
     // NOT the same as "Admission No." (the handwritten register number, stored below).
