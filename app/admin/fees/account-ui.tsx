@@ -1041,7 +1041,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
   }
 
   const sec = 'rounded-xl border border-slate-200 bg-white';
-  const secHead = 'px-5 py-3.5 border-b border-slate-100 text-[15px] font-bold font-display text-slate-900 flex items-center gap-2';
+  const secHead = 'px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-b border-slate-100 text-[15px] font-bold font-display text-slate-900 flex items-center gap-2';
   const subHead = 'text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2';
   const s = account.summary;
   const vanOk = Number(vanAmt) > 0, oldOk = Number(oldAmt) > 0;
@@ -1264,12 +1264,13 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
         {/* RIGHT — Collect */}
         <div className={sec}>
           <div className={secHead + ' justify-between gap-2 flex-wrap'}>
-            <span className="flex items-center gap-2 flex-shrink-0"><span className="w-6 h-6 rounded-lg bg-purple-50 text-purple-600 grid place-items-center"><Icon name="IndianRupee" size={14} /></span> Collect payment</span>
+            <span className="flex items-center gap-2 flex-shrink-0"><span className="w-6 h-6 rounded-lg bg-purple-50 text-purple-600 grid place-items-center"><Icon name="IndianRupee" size={14} /></span> Collect<span className="hidden sm:inline"> payment</span></span>
             <div className="flex items-center gap-2.5 ml-auto flex-wrap">
-              <div className="flex items-center rounded-xl border-[1.5px] border-purple-200 bg-purple-50/50 pl-3 pr-2 py-1.5">
-                <span className="text-[10px] uppercase tracking-[0.06em] text-purple-700/80 font-bold mr-2 whitespace-nowrap">Amount received</span>
-                <span className="font-display text-base font-bold text-slate-400 mr-0.5">₹</span>
-                <input type="number" value={tendered ? String(tendered) : ''} placeholder="0" onChange={(e) => setTendered(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-24 bg-transparent outline-none font-display text-lg font-extrabold tabular-nums text-slate-800 text-right" />
+              {/* Optional: the cash handed over — Auto-allocate splits it across the dues. */}
+              <div className="flex items-center rounded-lg sm:rounded-xl border sm:border-[1.5px] border-purple-200 bg-purple-50/50 pl-2 pr-1.5 py-0.5 sm:pl-3 sm:pr-2 sm:py-1.5">
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.06em] text-purple-700/80 font-bold mr-1 sm:mr-2 whitespace-nowrap">Received</span>
+                <span className="font-display text-sm sm:text-base font-bold text-slate-400 mr-0.5">₹</span>
+                <input type="number" inputMode="numeric" value={tendered ? String(tendered) : ''} placeholder="0" onChange={(e) => setTendered(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-16 sm:w-24 bg-transparent outline-none font-display text-sm sm:text-lg font-bold sm:font-extrabold tabular-nums text-slate-800 text-right" />
               </div>
               {tendered > 0 && (
                 <div className="text-right whitespace-nowrap">
@@ -1279,7 +1280,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
               )}
             </div>
           </div>
-          <div className="p-5">
+          <div className="p-3.5 sm:p-5">
             {tendered > 0 && toAllocate > 0 && allOut.length > 0 && (
               <button onClick={autoAllocateReceived} className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white bg-purple-500 hover:bg-purple-600 rounded-lg px-3 py-1.5">
                 <Icon name="Wand2" size={14} /> Auto-allocate by priority
