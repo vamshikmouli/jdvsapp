@@ -781,7 +781,7 @@ export default function StudentsPage() {
 
         {/* Photo — top of the form, optional */}
         <div className="flex items-center gap-4 mb-5">
-          <div className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+          <div className="w-[60px] h-20 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
             {form.photoUrl ? (<img src={form.photoUrl} alt="" className="w-full h-full object-cover" />) : (<Icon name="ImagePlus" size={26} className="text-slate-300" />)}
           </div>
           <div>
@@ -1442,15 +1442,16 @@ async function encodeWithinRange(draw: (size: number) => HTMLCanvasElement): Pro
   return last;
 }
 
-// Crop a chosen/captured image to a square before upload — drag to reposition,
-// slide to zoom. The slider starts in the middle (photo fills the square): left
-// zooms OUT so the whole photo fits (blank space is white), right zooms in.
+// Crop a chosen/captured image to a passport-shaped (3:4 portrait) frame before
+// upload — drag to reposition, slide to zoom. The slider starts where the photo
+// just fills the frame; left zooms out until the whole photo fits (only for photos
+// of another shape — any gap is white), right zooms in.
 // Saves a JPEG of 50–1000 KB. No external library.
 function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: () => void; onCropped: (blob: Blob) => void }) {
-  const V = 288;   // viewport square (px)
+  const VW = 240, VH = 320; // viewport, 3:4 portrait like a passport photo
   const [url, setUrl] = useState('');
   const [img, setImg] = useState<{ w: number; h: number } | null>(null);
-  // Slider position -1…0…1 → zoom minZoom…1…MAX_ZOOM (1 = photo just fills the square).
+  // Slider position -1…0…1 → zoom minZoom…1…MAX_ZOOM (1 = photo just fills the frame).
   const [slide, setSlide] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -1458,19 +1459,20 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
 
   useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
 
-  const base = img ? V / Math.min(img.w, img.h) : 1; // "cover" scale
+  const base = img ? Math.max(VW / img.w, VH / img.h) : 1; // "cover" scale
   const MAX_ZOOM = 3;
-  // Zoom out far enough that the whole photo fits, with some room to spare.
-  const minZoom = img ? Math.min(0.5, (Math.min(img.w, img.h) / Math.max(img.w, img.h)) * 0.9) : 0.5;
+  // Zoom out only until the whole photo fits ("contain") — no extra empty space.
+  const minZoom = img ? Math.min(1, Math.min(VW / img.w, VH / img.h) / base) : 1;
+  const canZoomOut = minZoom < 0.97; // a 3:4 photo already fits exactly
   const zoom = slide < 0 ? 1 + slide * (1 - minZoom) : 1 + slide * (MAX_ZOOM - 1);
   const scale = base * zoom;
   const dispW = img ? img.w * scale : 0;
   const dispH = img ? img.h * scale : 0;
 
   const clamp = (p: { x: number; y: number }) => {
-    // Bigger than the square: no gaps at the edges. Smaller: stays inside the square.
-    const maxX = Math.abs(dispW - V) / 2;
-    const maxY = Math.abs(dispH - V) / 2;
+    // Bigger than the frame: no gaps at the edges. Smaller: stays inside the frame.
+    const maxX = Math.abs(dispW - VW) / 2;
+    const maxY = Math.abs(dispH - VH) / 2;
     return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) };
   };
   useEffect(() => { setPan((p) => clamp(p)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [zoom, img]);
@@ -1482,25 +1484,27 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
   const [sizeErr, setSizeErr] = useState('');
   const doCrop = async () => {
     if (!img || !imgRef.current) return;
-    const imgLeft = V / 2 - dispW / 2 + pan.x;
-    const imgTop = V / 2 - dispH / 2 + pan.y;
+    const imgLeft = VW / 2 - dispW / 2 + pan.x;
+    const imgTop = VH / 2 - dispH / 2 + pan.y;
     const el = imgRef.current;
     // The border is part of the saved photo, so it shows on ID cards, certificates, etc.
+    // `size` = the photo's width; height is 4/3 of it.
     const draw = (size: number) => {
+      const W = size, H = Math.round(size * 4 / 3);
       const canvas = document.createElement('canvas');
-      canvas.width = size; canvas.height = size;
+      canvas.width = W; canvas.height = H;
       const ctx = canvas.getContext('2d');
       if (!ctx) return canvas;
-      const bw = Math.max(4, Math.round(size * PHOTO_BORDER));
-      const inner = size - 2 * bw;
-      const f = inner / V; // viewport px → canvas px
+      const bw = Math.max(4, Math.round(W * PHOTO_BORDER));
+      const iw = W - 2 * bw, ih = H - 2 * bw;
+      const fx = iw / VW, fy = ih / VH; // viewport px → canvas px
       ctx.fillStyle = PHOTO_BORDER_COLOR;
-      ctx.fillRect(0, 0, size, size);
-      ctx.fillStyle = '#ffffff'; // background when zoomed out
-      ctx.fillRect(bw, bw, inner, inner);
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffffff'; // only shows if the photo is a different shape
+      ctx.fillRect(bw, bw, iw, ih);
       ctx.save();
-      ctx.beginPath(); ctx.rect(bw, bw, inner, inner); ctx.clip();
-      ctx.drawImage(el, bw + imgLeft * f, bw + imgTop * f, dispW * f, dispH * f);
+      ctx.beginPath(); ctx.rect(bw, bw, iw, ih); ctx.clip();
+      ctx.drawImage(el, bw + imgLeft * fx, bw + imgTop * fy, dispW * fx, dispH * fy);
       ctx.restore();
       return canvas;
     };
@@ -1517,7 +1521,7 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
     <Modal open onClose={onCancel} title="Crop photo" width={360}
       footer={<div className="flex justify-end gap-2"><Button onClick={onCancel}>Cancel</Button><Button kind="primary" icon="Check" onClick={doCrop} disabled={!img}>Use photo</Button></div>}>
       <div className="flex flex-col items-center gap-3">
-        <div className="relative overflow-hidden bg-white ring-1 ring-slate-200 touch-none select-none cursor-move" style={{ width: V, height: V }}
+        <div className="relative overflow-hidden bg-white ring-1 ring-slate-200 touch-none select-none cursor-move" style={{ width: VW, height: VH }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
           {url && (
             <img ref={imgRef} src={url} alt="" draggable={false}
@@ -1525,18 +1529,18 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
               style={{ position: 'absolute', left: '50%', top: '50%', width: dispW || undefined, height: dispH || undefined, transform: `translate(${-dispW / 2 + pan.x}px, ${-dispH / 2 + pan.y}px)`, maxWidth: 'none' }} />
           )}
           {/* Preview of the frame that is saved with the photo */}
-          <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(V * PHOTO_BORDER))}px ${PHOTO_BORDER_COLOR}` }} />
+          <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(VW * PHOTO_BORDER))}px ${PHOTO_BORDER_COLOR}` }} />
         </div>
         <div className="flex items-center gap-2 w-full px-2">
-          <button type="button" onClick={() => setSlide((v) => Math.max(-1, +(v - 0.1).toFixed(2)))} aria-label="Zoom out" className="p-1 rounded hover:bg-slate-100"><Icon name="ZoomOut" size={18} className="text-slate-500" /></button>
+          <button type="button" onClick={() => setSlide((v) => Math.max(canZoomOut ? -1 : 0, +(v - 0.1).toFixed(2)))} aria-label="Zoom out" className="p-1 rounded hover:bg-slate-100"><Icon name="ZoomOut" size={18} className="text-slate-500" /></button>
           <div className="relative flex-1 flex items-center">
-            {/* centre tick = photo fills the square */}
-            <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 h-3 w-px bg-slate-300" />
-            <input type="range" min={-1} max={1} step={0.01} value={slide} onChange={(e) => setSlide(Number(e.target.value))} onDoubleClick={() => setSlide(0)} className="relative w-full accent-purple-600" aria-label="Zoom" />
+            {/* centre tick = photo just fills the frame */}
+            {canZoomOut && <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 h-3 w-px bg-slate-300" />}
+            <input type="range" min={canZoomOut ? -1 : 0} max={1} step={0.01} value={slide} onChange={(e) => setSlide(Number(e.target.value))} onDoubleClick={() => setSlide(0)} className="relative w-full accent-purple-600" aria-label="Zoom" />
           </div>
           <button type="button" onClick={() => setSlide((v) => Math.min(1, +(v + 0.1).toFixed(2)))} aria-label="Zoom in" className="p-1 rounded hover:bg-slate-100"><Icon name="ZoomIn" size={18} className="text-slate-500" /></button>
         </div>
-        <p className="text-[11px] text-slate-400">Drag to move · slide left to zoom out, right to zoom in · saved as {PHOTO_MIN_KB}–{PHOTO_MAX_KB} KB</p>
+        <p className="text-[11px] text-slate-400">Drag to move · slide to zoom · keep the face in the middle · saved as {PHOTO_MIN_KB}–{PHOTO_MAX_KB} KB</p>
         {sizeErr && <p className="text-xs text-danger-700 text-center">{sizeErr}</p>}
       </div>
     </Modal>

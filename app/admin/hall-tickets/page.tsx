@@ -322,7 +322,7 @@ function HallTicket({ student, cfg, school, examTitle, preview }: { student: any
           )}
         </div>
         {F.photo && (
-          <div className="w-20 h-24 border border-slate-400 rounded flex items-center justify-center flex-shrink-0 overflow-hidden bg-slate-50">
+          <div className="w-20 h-[107px] border border-slate-400 rounded flex items-center justify-center flex-shrink-0 overflow-hidden bg-slate-50">
             {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : <span className="text-[10px] text-slate-400 text-center">Affix<br />Photo</span>}
           </div>
         )}

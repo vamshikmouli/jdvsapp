@@ -257,7 +257,7 @@ function Certificate({ form, photoUrl, signatureUrl }: { form: Form; photoUrl: s
           <div className="text-base">Admission No: <span className="font-bold text-red-700">{form.admissionNo}</span></div>
           <div className="text-base">Name of the Institution: <span className="font-semibold border-b border-slate-800">{form.schoolName}</span></div>
         </div>
-        <div className="w-28 h-32 border border-slate-400 flex items-center justify-center text-center text-xs text-red-600 font-semibold flex-shrink-0 overflow-hidden">
+        <div className="w-28 h-[150px] border border-slate-400 flex items-center justify-center text-center text-xs text-red-600 font-semibold flex-shrink-0 overflow-hidden">
           {photoUrl ? <img src={photoUrl} alt="" className="w-full h-full object-cover" /> : <span>STICK<br />PHOTO</span>}
         </div>
       </div>
