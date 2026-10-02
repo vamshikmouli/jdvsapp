@@ -4,6 +4,7 @@ import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { parseVoice, getSpeechRecognition } from '@/lib/marksVoice';
+import { gradeOfMarks, marksForGrade, normGrade, type GradeBandLite } from '@/lib/grades';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
@@ -29,12 +30,14 @@ const STATUS_CHIP: Record<string, { tone: string; label: string }> = {
 };
 
 /* ---------------- Marks entry (teacher + admin) ---------------- */
-interface ClassGridSubject { id: string; name: string; max: number; status: 'DRAFT' | 'SUBMITTED' | 'APPROVED'; sheetId: string | null; canEdit: boolean; marks: Record<string, { marksObtained: number | null; isAbsent: boolean }> }
+// grades: the grade-scale labels when this is a grade-only subject (PE, Drawing…) — entered as a grade.
+interface ClassGridSubject { id: string; name: string; gradeOnly?: boolean; grades?: string[]; max: number; status: 'DRAFT' | 'SUBMITTED' | 'APPROVED'; sheetId: string | null; canEdit: boolean; marks: Record<string, { marksObtained: number | null; isAbsent: boolean }> }
 interface ClassGrid {
   assessment: { id: string; name: string; type: string; defaultMax: number };
   class: { id: string; name: string }; section: { id: string; name: string } | null;
   students: { id: string; name: string; roll: string | null }[];
   subjects: ClassGridSubject[]; isAdmin: boolean;
+  bands?: GradeBandLite[];
 }
 
 function StatusPill({ s }: { s: string }) {
@@ -42,7 +45,14 @@ function StatusPill({ s }: { s: string }) {
   return <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded ${map[s] || map.DRAFT}`}>{s}</span>;
 }
 
-const cellInvalid = (t: string, max: number) => { const s = (t || '').trim(); if (s === '' || /^a/i.test(s)) return false; const n = Number(s); return isNaN(n) || n < 0 || n > max; };
+// Absent: on number subjects any "A…" means AB; on grade subjects only "AB" (grades may start with A).
+const isAbsentText = (t: string, grades?: string[]) => (grades ? /^(ab|absent)$/i : /^a/i).test((t || '').trim());
+const cellInvalid = (t: string, max: number, grades?: string[]) => {
+  const s = (t || '').trim();
+  if (s === '' || isAbsentText(s, grades)) return false;
+  if (grades) return !grades.some((g) => normGrade(g) === normGrade(s));
+  const n = Number(s); return isNaN(n) || n < 0 || n > max;
+};
 
 // Whole-class grid: all subjects (columns) × all students (rows) in one screen.
 export function EntryTab() {
@@ -85,9 +95,18 @@ export function EntryTab() {
     const r = await fetch('/api/marks/grid?' + qs);
     if (r.ok) {
       const g: ClassGrid = await r.json();
+      const bands = g.bands || [];
+      for (const su of g.subjects) if (su.gradeOnly && bands.length) su.grades = bands.map((b) => b.label);
       setGrid(g);
       const v: Record<string, Record<string, string>> = {};
-      for (const su of g.subjects) { v[su.id] = {}; for (const st of g.students) { const m = su.marks[st.id]; v[su.id][st.id] = m ? (m.isAbsent ? 'AB' : (m.marksObtained != null ? String(m.marksObtained) : '')) : ''; } }
+      for (const su of g.subjects) {
+        v[su.id] = {};
+        for (const st of g.students) {
+          const m = su.marks[st.id];
+          v[su.id][st.id] = !m ? '' : m.isAbsent ? 'AB' : m.marksObtained == null ? ''
+            : su.grades ? (gradeOfMarks(m.marksObtained, su.max, bands) || String(m.marksObtained)) : String(m.marksObtained);
+        }
+      }
       setVals(v);
       setDirty(false);
     } else setError((await r.json().catch(() => ({}))).error || 'Failed to load');
@@ -99,7 +118,7 @@ export function EntryTab() {
   const setCell = (subId: string, stId: string, val: string) => { setVals((v) => ({ ...v, [subId]: { ...v[subId], [stId]: val } })); setDirty(true); };
   const filledCount = (subId: string) => grid ? grid.students.filter((st) => (vals[subId]?.[st.id] ?? '').trim() !== '').length : 0;
 
-  const anyInvalid = grid ? grid.subjects.some((su) => grid.students.some((st) => cellInvalid(vals[su.id]?.[st.id] ?? '', su.max))) : false;
+  const anyInvalid = grid ? grid.subjects.some((su) => grid.students.some((st) => cellInvalid(vals[su.id]?.[st.id] ?? '', su.max, su.grades))) : false;
   const editableSubjects = grid ? grid.subjects.filter((s) => s.canEdit) : [];
 
   const save = async (action: 'save' | 'submit') => {
@@ -111,7 +130,9 @@ export function EntryTab() {
         marks: grid.students.map((st) => {
           const t = (vals[su.id]?.[st.id] ?? '').trim();
           if (t === '') return { studentId: st.id, marksObtained: null, isAbsent: false };
-          if (/^a/i.test(t)) return { studentId: st.id, isAbsent: true, marksObtained: null };
+          if (isAbsentText(t, su.grades)) return { studentId: st.id, isAbsent: true, marksObtained: null };
+          // Grade-only subject: store the lowest mark of that grade's band (reports show the grade).
+          if (su.grades) return { studentId: st.id, marksObtained: marksForGrade(t, su.max, grid.bands || []), isAbsent: false };
           return { studentId: st.id, marksObtained: Number(t), isAbsent: false };
         }),
       }));
@@ -163,7 +184,7 @@ export function EntryTab() {
                   <button key={su.id} onClick={() => openFull(su.id, 'subject')} className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-purple-50">
                     <div className="flex-1 min-w-0">
                       <div className="text-[15px] font-semibold text-slate-900 flex items-center gap-1.5">{su.name}{!su.canEdit && <Icon name="Lock" size={13} className="text-slate-400" />}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">max {su.max} · <span className={n === grid.students.length ? 'text-success-700 font-semibold' : ''}>{n}/{grid.students.length} entered</span></div>
+                      <div className="text-xs text-slate-500 mt-0.5">{su.grades ? "grade" : `max ${su.max}`} · <span className={n === grid.students.length ? 'text-success-700 font-semibold' : ''}>{n}/{grid.students.length} entered</span></div>
                     </div>
                     <StatusPill s={su.status} />
                     <Icon name="ChevronRight" size={18} className="text-slate-300" />
@@ -179,7 +200,7 @@ export function EntryTab() {
                     {grid.subjects.map((su) => (
                       <th key={su.id} className="px-2 py-2 text-center border-b border-l border-slate-200 min-w-[76px] align-top">
                         <div className="text-xs font-semibold text-slate-700 whitespace-nowrap flex items-center justify-center gap-1">{su.name}{!su.canEdit && <Icon name="Lock" size={11} className="text-slate-400" />}</div>
-                        <div className="text-[10px] text-slate-400">max {su.max}</div>
+                        <div className="text-[10px] text-slate-400">{su.grades ? "grade" : `max ${su.max}`}</div>
                         <div className="mt-1"><StatusPill s={su.status} /></div>
                       </th>
                     ))}
@@ -194,10 +215,11 @@ export function EntryTab() {
                       </td>
                       {grid.subjects.map((su) => {
                         const t = vals[su.id]?.[st.id] ?? '';
-                        const bad = cellInvalid(t, su.max);
+                        const bad = cellInvalid(t, su.max, su.grades);
                         return (
                           <td key={su.id} className="px-1 py-1 text-center border-b border-l border-slate-100">
-                            <input value={t} disabled={!su.canEdit} onChange={(e) => setCell(su.id, st.id, e.target.value)}
+                            <input value={t} disabled={!su.canEdit} onChange={(e) => setCell(su.id, st.id, su.grades ? e.target.value.toUpperCase() : e.target.value)}
+                              title={su.grades ? `Grade: ${su.grades.join(' / ')} or AB` : undefined}
                               className={`w-14 text-center tabular-nums rounded border px-1 py-1 text-sm outline-none focus:ring-2 focus:ring-purple-500/20 ${bad ? 'border-danger-400 bg-danger-50 text-danger-700' : 'border-slate-200'} ${!su.canEdit ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''}`} />
                           </td>
                         );
@@ -236,7 +258,8 @@ export function EntryTab() {
           assessmentName={grid.assessment.name}
           className={shortClass(grid.class.name)}
           sectionName={grid.section?.name || null}
-          subjects={grid.subjects.filter((s) => s.canEdit).map((s) => ({ id: s.id, name: s.name, max: s.max }))}
+          subjects={grid.subjects.filter((s) => s.canEdit).map((s) => ({ id: s.id, name: s.name, max: s.max, grades: s.grades }))}
+          bands={grid.bands || []}
           students={grid.students}
           onClose={() => setUploadOpen(false)}
           onFill={(filled, summary) => {
@@ -266,12 +289,37 @@ const MODE_KEY = 'marksEntryMode';
 export const savedEntryMode = (): EntryMode => { try { return localStorage.getItem(MODE_KEY) === 'student' ? 'student' : 'subject'; } catch { return 'subject'; } };
 
 // One big-box row: label on the left, mark box + AB on the right.
-function MarkRow({ num, label, sub, value, max, canEdit, last, active, flash, inputRef, onChange, onNext, onFocusRow }: {
-  num: number; label: string; sub?: React.ReactNode; value: string; max: number; canEdit: boolean; last: boolean; active?: boolean; flash?: boolean;
+function MarkRow({ num, label, sub, value, max, grades, canEdit, last, active, flash, inputRef, onChange, onNext, onFocusRow }: {
+  num: number; label: string; sub?: React.ReactNode; value: string; max: number; grades?: string[]; canEdit: boolean; last: boolean; active?: boolean; flash?: boolean;
   inputRef: (el: HTMLInputElement | null) => void; onChange: (v: string) => void; onNext: () => void; onFocusRow?: () => void;
 }) {
-  const ab = /^a/i.test(value.trim());
-  const bad = cellInvalid(value, max);
+  const ab = isAbsentText(value, grades);
+  const bad = cellInvalid(value, max, grades);
+  // Grade-only subject (PE, Drawing…): one tap on a grade button instead of typing a number.
+  if (grades) {
+    inputRef(null);
+    const pick = (g: string) => { onFocusRow?.(); onChange(normGrade(value) === normGrade(g) ? '' : g); if (normGrade(value) !== normGrade(g)) onNext(); };
+    return (
+      <div data-active={active ? '1' : undefined} className={`px-4 py-2.5 border-b border-slate-100 ${bad ? 'bg-danger-50' : active ? 'bg-purple-50 shadow-[inset_4px_0_0_theme(colors.purple.500)]' : ''}`}>
+        <div className="flex items-baseline gap-3">
+          <span className="w-6 text-right text-xs text-slate-400 tabular-nums flex-shrink-0">{num}</span>
+          <div className="flex-1 min-w-0 text-[15px] leading-snug text-slate-900 break-words flex items-center gap-1.5">{label}{!canEdit && <Icon name="Lock" size={12} className="text-slate-400 flex-shrink-0" />}</div>
+          <span className="text-[11px] text-slate-400 flex-shrink-0">{sub || 'grade'}</span>
+        </div>
+        <div className={`mt-2 ml-9 flex flex-wrap gap-1.5 ${flash ? 'scale-[1.02]' : ''} transition-transform`}>
+          {[...grades, 'AB'].map((g) => {
+            const on = g === 'AB' ? ab : normGrade(value) === normGrade(g);
+            return (
+              <button key={g} type="button" disabled={!canEdit} onClick={() => pick(g)}
+                className={`min-w-[44px] h-10 px-2.5 rounded-lg border-2 text-[14px] font-bold disabled:opacity-40 ${on ? (g === 'AB' ? 'border-slate-700 bg-slate-700 text-white' : 'border-purple-600 bg-purple-600 text-white') : 'border-slate-200 text-slate-600 bg-white'}`}>
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
   const type = (raw: string) => {
     const v = raw.replace(/[^0-9.]/g, '').slice(0, 5);
     onChange(v);
@@ -337,10 +385,11 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   const voiceMoved = useRef(false);
   const handleRef = useRef<(text: string, final?: boolean, key?: string) => void>(() => {});
   const sessRef = useRef(0); // recogniser restarts — keeps result keys unique
-  type VRow = { subId: string; stId: string; max: number; canEdit: boolean; label: string; roll?: string | null };
+  type VRow = { subId: string; stId: string; max: number; grades?: string[]; canEdit: boolean; label: string; roll?: string | null };
   const rowsFor = (m: EntryMode, sIdx: number): VRow[] => m === 'subject'
-    ? grid.students.map((x) => ({ subId: su.id, stId: x.id, max: su.max, canEdit: su.canEdit, label: x.name, roll: x.roll }))
-    : grid.subjects.map((x) => ({ subId: x.id, stId: grid.students[sIdx].id, max: x.max, canEdit: x.canEdit, label: x.name }));
+    ? grid.students.map((x) => ({ subId: su.id, stId: x.id, max: su.max, grades: su.grades, canEdit: su.canEdit, label: x.name, roll: x.roll }))
+    : grid.subjects.map((x) => ({ subId: x.id, stId: grid.students[sIdx].id, max: x.max, grades: x.grades, canEdit: x.canEdit, label: x.name }));
+  const allGrades = (grid.bands || []).map((b) => b.label);
 
   // Position as of the last spoken mark — read/written synchronously, because live
   // (interim) results can arrive faster than React re-renders.
@@ -361,7 +410,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   // entered while the teacher is still talking, not after a pause.
   handleRef.current = (text: string, final = true, key = '') => {
     setHeard(final ? text.trim() : text.trim() + '…');
-    const acts = parseVoice(text, mode === 'student' ? grid.subjects : []);
+    const acts = parseVoice(text, mode === 'student' ? grid.subjects : [], allGrades);
     const done = appliedRef.current.get(key) || 0;
     let s = posRef.current.st;
     let rows = rowsFor(mode, s);
@@ -376,6 +425,8 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
     for (let i = done; i < acts.length; i++) {
       const a = acts[i];
       const last = i === acts.length - 1;
+      // A live grade at the end might still grow ("A" → "A1"): wait for the phrase.
+      if (!final && last && a.type === 'grade') break;
       // A live number at the end might still grow ("4" → "45", "forty" → "forty five"): wait.
       if (!final && last && a.type === 'num') {
         const max = idx < rows.length ? rows[idx].max : 100;
@@ -410,7 +461,12 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
         continue;
       }
       if (a.type === 'ab') { setCell(row.subId, row.stId, 'AB'); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: AB` }; advance(); continue; }
+      if (a.type === 'grade') {
+        if (!row.grades) { msg = { ok: false, text: `${row.label} needs a mark (max ${row.max}), not a grade.` }; break; }
+        setCell(row.subId, row.stId, a.label); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: ${a.label}` }; advance(); continue;
+      }
       if (a.type === 'num') {
+        if (row.grades) { msg = { ok: false, text: `${row.label} needs a grade (${row.grades.slice(0, 4).join(', ')}…), not a number.` }; break; }
         if (a.n < 0 || a.n > row.max) { msg = { ok: false, text: `Heard ${a.n} for ${row.label} — over max ${row.max}. Say it again.` }; break; }
         setCell(row.subId, row.stId, String(a.n)); flash(row.subId, row.stId); msg = { ok: true, text: `${row.label}: ${a.n}` }; advance();
       }
@@ -482,6 +538,8 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
     const el = inputs.current[i];
     if (el && !el.disabled) { el.focus(); el.select(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
     if (el?.disabled) return focusRow(i + 1); // skip locked subjects
+    const rowCount = mode === 'subject' ? total : grid.subjects.length;
+    if (!el && i < rowCount) return focusRow(i + 1); // grade rows have buttons, not a box
     // Past the last row: in "by student", carry on with the next student.
     if (mode === 'student' && stIdx < total - 1) { pendingFocus.current = true; setStIdx(stIdx + 1); return; }
     (document.activeElement as HTMLElement | null)?.blur();
@@ -494,7 +552,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   };
 
   const nSub = filledCount(su.id);
-  const badSub = grid.students.filter((x) => cellInvalid(cell(su.id, x.id), su.max)).length;
+  const badSub = grid.students.filter((x) => cellInvalid(cell(su.id, x.id), su.max, su.grades)).length;
   const nSt = st ? studentFilled(st.id) : 0;
 
   return createPortal(
@@ -506,7 +564,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-bold text-slate-900 truncate">{grid.assessment.name} · {shortClass(grid.class.name)}{grid.section ? ` ${grid.section.name}` : ''}</div>
             {mode === 'subject'
-              ? <div className="text-xs text-slate-500">{su.name} · max <b>{su.max}</b> · <span className={nSub === total ? 'text-success-700 font-semibold' : ''}>{nSub}/{total} entered</span>{badSub > 0 && <span className="text-danger-600 font-semibold"> · {badSub} over max</span>}</div>
+              ? <div className="text-xs text-slate-500">{su.name} · {su.grades ? <b>grade</b> : <>max <b>{su.max}</b></>} · <span className={nSub === total ? 'text-success-700 font-semibold' : ''}>{nSub}/{total} entered</span>{badSub > 0 && <span className="text-danger-600 font-semibold"> · {badSub} {su.grades ? 'not a valid grade' : 'over max'}</span>}</div>
               : <div className="text-xs text-slate-500">Student {stIdx + 1} of {total} · <span className={nSt === grid.subjects.length ? 'text-success-700 font-semibold' : ''}>{nSt}/{grid.subjects.length} subjects entered</span></div>}
           </div>
           {mode === 'subject' && <StatusPill s={su.status} />}
@@ -535,7 +593,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
               </div>
             )}
             {voiceMsg && <div className={`mt-0.5 font-semibold ${voiceMsg.ok ? 'text-success-700' : 'text-danger-700'}`}>{voiceMsg.ok ? '✓ ' : ''}{voiceMsg.text}</div>}
-            {listening && <div className="mt-0.5 text-[11px] text-slate-500">Say marks one after another · “absent” · “next” · “back” · “clear” · {mode === 'subject' ? '“roll 12”' : '“English 42”'} · “stop”</div>}
+            {listening && <div className="mt-0.5 text-[11px] text-slate-500">Say marks one after another{allGrades.length ? ` · grades like “${allGrades[0]}”` : ''} · “absent” · “next” · “back” · “clear” · {mode === 'subject' ? '“roll 12”' : '“English 42”'} · “stop”</div>}
           </div>
         )}
         {mode === 'subject' ? (
@@ -575,7 +633,7 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
           <>
             {grid.students.map((x, i) => (
               <MarkRow key={x.id} num={i + 1} label={x.name} sub={x.roll ? `Roll ${x.roll}` : undefined}
-                value={cell(su.id, x.id)} max={su.max} canEdit={su.canEdit} last={i === total - 1}
+                value={cell(su.id, x.id)} max={su.max} grades={su.grades} canEdit={su.canEdit} last={i === total - 1}
                 inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
                 flash={flashKey === `${su.id}|${x.id}`}
                 onChange={(v) => setCell(su.id, x.id, v)} onNext={() => focusRow(i + 1)} />
@@ -591,8 +649,8 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
         ) : st && (
           <>
             {grid.subjects.map((s, i) => (
-              <MarkRow key={s.id} num={i + 1} label={s.name} sub={<>max {s.max}{s.status !== 'DRAFT' ? ` · ${s.status.toLowerCase()}` : ''}</>}
-                value={cell(s.id, st.id)} max={s.max} canEdit={s.canEdit} last={i === grid.subjects.length - 1 && stIdx === total - 1}
+              <MarkRow key={s.id} num={i + 1} label={s.name} sub={<>{s.grades ? 'grade' : `max ${s.max}`}{s.status !== 'DRAFT' ? ` · ${s.status.toLowerCase()}` : ''}</>}
+                value={cell(s.id, st.id)} max={s.max} grades={s.grades} canEdit={s.canEdit} last={i === grid.subjects.length - 1 && stIdx === total - 1}
                 inputRef={(el) => { inputs.current[i] = el; }} active={listening && cur === i} onFocusRow={() => setCur(i)}
                 flash={flashKey === `${s.id}|${st.id}`}
                 onChange={(v) => setCell(s.id, st.id, v)} onNext={() => focusRow(i + 1)} />
@@ -646,7 +704,7 @@ function IssueBlock({ tone, title, items }: { tone: 'danger' | 'amber'; title: s
   );
 }
 
-interface UploadSubject { id: string; name: string; max: number }
+interface UploadSubject { id: string; name: string; max: number; grades?: string[] }
 interface UploadStudent { id: string; name: string; roll: string | null }
 
 const uNorm = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -673,10 +731,10 @@ function editDistance(a: string, b: string): number {
 }
 
 function UploadMarksModal({
-  assessmentName, className, sectionName, subjects, students, onClose, onFill,
+  assessmentName, className, sectionName, subjects, students, bands, onClose, onFill,
 }: {
   assessmentName: string; className: string; sectionName: string | null;
-  subjects: UploadSubject[]; students: UploadStudent[];
+  subjects: UploadSubject[]; students: UploadStudent[]; bands: GradeBandLite[];
   onClose: () => void;
   onFill: (filled: Record<string, Record<string, string>>, summary: string) => void;
 }) {
@@ -827,6 +885,15 @@ Save the result as a .csv (or Excel) file and upload it.`;
         for (const [col, su] of Object.entries(colToSubject)) {
           const raw = String(r[col] ?? '').trim();
           if (raw === '' || raw === '-' || raw === '—') continue; // no mark given
+          if (su.grades) {
+            // Grade-only subject: a grade label ("A1"), AB, or a number converted to its grade.
+            const lbl = su.grades.find((g) => normGrade(g) === normGrade(raw));
+            const asNum = Number(raw.replace(/[^0-9.]/g, ''));
+            const cell = /^(AB|ABS|ABSENT)$/i.test(raw) ? 'AB' : lbl || (raw.match(/^[0-9.]+$/) && !isNaN(asNum) && asNum <= su.max ? gradeOfMarks(Math.round(asNum), su.max, bands) : null);
+            if (!cell) { outOfRange.push(`${stu.name} · ${su.name}: "${raw}" is not a grade (${su.grades.join(', ')})`); continue; }
+            (filled[su.id] ||= {})[stu.id] = cell; filledStudents.add(stu.id); perSubjectCount[su.name] = (perSubjectCount[su.name] || 0) + 1; cells++;
+            continue;
+          }
           if (/^(AB|ABS|ABSENT|A)$/i.test(raw)) { (filled[su.id] ||= {})[stu.id] = 'AB'; filledStudents.add(stu.id); perSubjectCount[su.name] = (perSubjectCount[su.name] || 0) + 1; cells++; continue; }
           const n = Number(raw.replace(/[^0-9.]/g, ''));
           if (isNaN(n)) { outOfRange.push(`${stu.name} · ${su.name}: "${raw}" is not a number`); continue; }

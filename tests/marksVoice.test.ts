@@ -48,3 +48,24 @@ describe('parseVoice — dictated marks', () => {
     expect(parseVoice('go back').map((a) => a.type)).toEqual(['back']);
   });
 });
+
+describe('parseVoice — grades (grade-only subjects)', () => {
+  const g = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D', 'E'];
+  it('reads grade labels spoken as one token or letter + number', () => {
+    expect(parseVoice('A1 a two B. 1 bee two see one D', [], g)).toEqual([
+      { type: 'grade', label: 'A1' }, { type: 'grade', label: 'A2' }, { type: 'grade', label: 'B1' },
+      { type: 'grade', label: 'B2' }, { type: 'grade', label: 'C1' }, { type: 'grade', label: 'D' },
+    ]);
+  });
+  it('handles plus / minus scales and keeps numbers as numbers', () => {
+    expect(parseVoice('a plus b 45', [], ['A+', 'A', 'B+', 'B'])).toEqual([
+      { type: 'grade', label: 'A+' }, { type: 'grade', label: 'B' }, { type: 'num', n: 45 },
+    ]);
+  });
+  it('absent still wins over the letter A', () => {
+    expect(parseVoice('absent a b', [], g).map((a) => a.type)).toEqual(['ab', 'ab']);
+  });
+  it('without a grade scale, letters are ignored as before', () => {
+    expect(parseVoice('a one 45')).toEqual([{ type: 'num', n: 1 }, { type: 'num', n: 45 }]);
+  });
+});

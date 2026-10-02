@@ -86,19 +86,20 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
 
   const csubs = await prisma.classSubject.findMany({
     where: { classId: sel.classId },
-    include: { subject: { select: { id: true, name: true, order: true, active: true } } },
+    include: { subject: { select: { id: true, name: true, order: true, active: true, gradeOnly: true } } },
     orderBy: { order: 'asc' },
   });
   const subjects = csubs.map((c) => c.subject).filter((s) => s.active).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
   const students = await rosterForClass(assessment.yearId, sel.classId, sel.sectionId);
 
-  const [sheets, overrides] = await Promise.all([
+  const [sheets, overrides, bands] = await Promise.all([
     prisma.markSheet.findMany({
       where: { assessmentId: sel.assessmentId, classId: sel.classId, sectionId: sel.sectionId ?? null, subjectId: { in: subjects.map((s) => s.id) } },
       include: { marks: true },
     }),
     prisma.assessmentSubject.findMany({ where: { assessmentId: sel.assessmentId }, select: { subjectId: true, maxMarks: true } }),
+    prisma.gradeBand.findMany({ orderBy: [{ order: 'asc' }, { minPercent: 'desc' }], select: { label: true, minPercent: true, maxPercent: true } }),
   ]);
   const bySubject = new Map(sheets.map((sh) => [sh.subjectId, sh]));
   const maxOverride = new Map(overrides.map((o) => [o.subjectId, o.maxMarks]));
@@ -111,8 +112,10 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
       const sh = bySubject.get(s.id);
       const marks: Record<string, { marksObtained: number | null; isAbsent: boolean }> = {};
       if (sh) for (const m of sh.marks) marks[m.studentId] = { marksObtained: m.marksObtained, isAbsent: m.isAbsent };
-      return { id: s.id, name: s.name, max: sh?.maxMarks ?? maxOverride.get(s.id) ?? assessment.defaultMax, status: (sh?.status || 'DRAFT') as MarkSheetStatus, sheetId: sh?.id || null, marks };
+      return { id: s.id, name: s.name, gradeOnly: s.gradeOnly, max: sh?.maxMarks ?? maxOverride.get(s.id) ?? assessment.defaultMax, status: (sh?.status || 'DRAFT') as MarkSheetStatus, sheetId: sh?.id || null, marks };
     }),
+    // Grade scale — grade-only subjects (PE, Drawing…) are entered as these labels.
+    bands,
   };
 }
 

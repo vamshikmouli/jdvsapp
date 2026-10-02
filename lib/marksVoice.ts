@@ -13,7 +13,8 @@ export type VoiceAction =
   | { type: 'clear' }
   | { type: 'stop' }
   | { type: 'roll'; n: number }
-  | { type: 'subject'; id: string };
+  | { type: 'subject'; id: string }
+  | { type: 'grade'; label: string };
 
 const UNITS: Record<string, number> = {
   zero: 0, oh: 0, nil: 0, one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, tree: 3, four: 4, for: 4, fore: 4,
@@ -33,7 +34,19 @@ const ROLL_WORDS = new Set(['roll', 'role', 'rol', 'number', 'no']);
 // stripping it, commands were silently ignored on mobile.
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export function parseVoice(text: string, subjects: { id: string; name: string }[] = []): VoiceAction[] {
+// Spoken letter → grade letter ("a one" → A1, "bee two" → B2, "see" → C).
+const LETTERS: Record<string, string> = {
+  a: 'A', ay: 'A', eh: 'A', hey: 'A', b: 'B', be: 'B', bee: 'B', bi: 'B', c: 'C', see: 'C', sea: 'C', si: 'C',
+  d: 'D', dee: 'D', di: 'D', e: 'E', ee: 'E', f: 'F', ef: 'F',
+};
+const gnorm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9+\-]/g, '');
+
+/**
+ * `grades` = the school's grade-scale labels (A1, A2, B1… or A+, A, B…). When given,
+ * spoken grades become { type: 'grade' } actions ("A1", "a one", "B two", "A plus").
+ */
+export function parseVoice(text: string, subjects: { id: string; name: string }[] = [], grades: string[] = []): VoiceAction[] {
+  const gradeByNorm = new Map(grades.map((g) => [gnorm(g), g]));
   // "a b" → "ab"; "point" between numbers → decimal handled below.
   const words = text.toLowerCase().replace(/\b(a)\s+(b)\b/g, 'ab').split(/[\s,;]+/).map((w) => w.trim()).filter(Boolean);
   const subjectByWord = new Map<string, string>();
@@ -95,6 +108,19 @@ export function parseVoice(text: string, subjects: { id: string; name: string }[
       const n = readNumber();
       if (n !== null) out.push({ type: 'roll', n });
       continue;
+    }
+    // Grades (only when the school has a grade scale): "A1" / "a one" / "B two" / "A plus" / "Pass".
+    if (gradeByNorm.size) {
+      const direct = gradeByNorm.get(gnorm(w));
+      const L = LETTERS[ww] || (/^[a-f]$/.test(ww) ? ww.toUpperCase() : '');
+      if (L) {
+        const nx = words[i + 1] !== undefined ? norm(words[i + 1]) : '';
+        const digit = /^[0-9]$/.test(nx) ? nx : (nx in UNITS && UNITS[nx] >= 0 && UNITS[nx] <= 9 ? String(UNITS[nx]) : '');
+        const suffix = digit || (nx === 'plus' ? '+' : nx === 'minus' ? '-' : '');
+        if (suffix && gradeByNorm.has(L + suffix)) { out.push({ type: 'grade', label: gradeByNorm.get(L + suffix)! }); i += 2; continue; }
+        if (gradeByNorm.has(L) && !direct) { out.push({ type: 'grade', label: gradeByNorm.get(L)! }); i++; continue; }
+      }
+      if (direct) { out.push({ type: 'grade', label: direct }); i++; continue; }
     }
     // Two-word subject names ("social science") then single words.
     const two = words[i + 1] !== undefined ? norm(w + words[i + 1]) : '';
