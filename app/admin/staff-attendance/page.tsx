@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { Button, Card, Chip, Modal, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { STATUS_LABEL, statusTone, fmtMins, fmtTime } from '@/lib/staffAttendance/display';
+import { fmtDate } from '@/lib/dateFormat';
 
 interface Row {
   staffId: string;
@@ -288,7 +289,7 @@ function ManageModal({ row, date, onClose, onDone }: { row: Row; date: string; o
   };
 
   return (
-    <Modal open onClose={onClose} title={`Manage — ${row.name}`} subtitle={new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}>
+    <Modal open onClose={onClose} title={`Manage — ${row.name}`} subtitle={fmtDate(date)}>
       <div className="flex flex-wrap gap-1 mb-4 text-sm">
         {([['punch', 'Add punch'], ['status', 'Set status'], ['pin', 'Attendance PIN'], ['device', 'Device']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md ${tab === k ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>

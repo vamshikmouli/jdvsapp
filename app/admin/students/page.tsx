@@ -33,6 +33,7 @@ import { parseCustomFieldDefs, type CustomFieldDef } from '@/lib/customFields';
 import { downloadBackup } from '@/lib/utils';
 import { parseContactTargets, normalizeContactTargets, contactTargetsLabel, type ContactTarget } from '@/lib/contactTargets';
 import * as XLSX from 'xlsx';
+import { fmtDate } from '@/lib/dateFormat';
 
 interface SchoolClass {
   id: string;
@@ -1023,11 +1024,11 @@ export default function StudentsPage() {
             </div>
             <DetailRow label="Student ID" value={viewing.id} />
             <DetailRow label="Admission no." value={viewing.admissionNo} />
-            <DetailRow label="Admission date" value={viewing.joinedDate ? String(viewing.joinedDate).slice(0, 10) : null} />
+            <DetailRow label="Admission date" value={viewing.joinedDate ? fmtDate(String(viewing.joinedDate).slice(0, 10)) : null} />
             <DetailRow label="Class" value={viewing.class?.name || 'Unassigned'} />
             <DetailRow label="Roll no" value={viewing.roll} />
             <DetailRow label="Gender" value={viewing.gender === 'F' ? 'Girl' : 'Boy'} />
-            <DetailRow label="Date of birth" value={viewing.dob ? String(viewing.dob).slice(0, 10) : null} />
+            <DetailRow label="Date of birth" value={viewing.dob ? fmtDate(String(viewing.dob).slice(0, 10)) : null} />
             <DetailRow label="Place of birth" value={viewing.placeOfBirth} />
             <DetailRow label="Religion" value={viewing.religion} />
             <DetailRow label="Category" value={viewing.category} />

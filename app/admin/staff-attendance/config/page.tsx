@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Button, Card, Field, Input, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { getPosition, fmtMins } from '@/lib/staffAttendance/display';
+import { fmtDate } from '@/lib/dateFormat';
 
 interface Cfg {
   staffAttEnabled: boolean;
@@ -210,7 +211,7 @@ function HolidaysCard() {
         <div className="mt-3 divide-y divide-slate-100">
           {list.map((h) => (
             <div key={h.id} className="flex items-center justify-between py-2 text-sm">
-              <span><span className="font-medium text-slate-700">{new Date(h.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span> <span className="text-slate-500">— {h.name}</span></span>
+              <span><span className="font-medium text-slate-700">{fmtDate(h.date)}</span> <span className="text-slate-500">— {h.name}</span></span>
               <button onClick={() => remove(h.date)} className="text-xs text-danger-600 hover:text-danger-700">Remove</button>
             </div>
           ))}

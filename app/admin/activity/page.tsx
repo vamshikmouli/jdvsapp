@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Button, Input, Select, EmptyState, Skeleton, Chip } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 /* ---------- shared bits ---------- */
 const CATEGORIES = ['FEES', 'STUDENTS', 'STAFF', 'PAYROLL', 'ROLES', 'CONFIG', 'MARKS'] as const;
@@ -18,7 +19,7 @@ const CAT_META: Record<string, { label: string; icon: string; chip: string }> = 
 };
 const catMeta = (c: string) => CAT_META[c] || CAT_META.OTHER;
 
-const fmtWhen = (s: string) => new Date(s).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const fmtWhen = (s: string) => fmtDateTime(s);
 function deviceLabel(ua: string | null): string {
   if (!ua) return 'Unknown device';
   const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad|iOS/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'Mac' : /Linux/i.test(ua) ? 'Linux' : '';

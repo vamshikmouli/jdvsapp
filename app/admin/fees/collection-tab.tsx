@@ -18,6 +18,7 @@ import { CollectionSettingsPanel } from './collection-settings';
 import { useQuery } from '@tanstack/react-query';
 import { jsonFetcher } from '@/lib/query';
 import { shortClass } from './_shared';
+import { fmtDate } from '@/lib/dateFormat';
 
 /* ============================ Collection ============================ */
 
@@ -163,7 +164,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
       .filter((r) => r.totalBalance > 0)
       .sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
     if (!list.length) { toast.info('No students with a pending balance to print.'); return; }
-    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const now = fmtDate(new Date());
     const chits = list
       .map(
         (r) => {
@@ -204,7 +205,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
   const printList = () => {
     const list = [...sorted].sort((a, b) => (a.className || '').localeCompare(b.className || '') || a.name.localeCompare(b.name));
     if (!list.length) return;
-    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const now = fmtDate(new Date());
     const filterLabel: Record<string, string> = { all: 'All students', due: 'With balance', paid: 'Fully paid', overdue: 'Overdue', van: 'Van students' };
     const clsName = classId === 'all' ? 'All classes' : (classList.find((c) => c.id === classId)?.name || 'Class');
     const sub = `${clsName} · ${filterLabel[filter] || 'All students'}${search ? ` · "${esc(search)}"` : ''} · ${list.length} students · ${now}`;
@@ -354,7 +355,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
                   <td className="py-3 px-6 text-right tabular-nums text-slate-700">{feeMoney(r.totalCharged)}</td>
                   <td className="py-3 px-6 text-right tabular-nums text-success-700">
                     <div>{feeMoney(r.totalPaid)}</div>
-                    {r.lastPaidAt && <div className="text-[11px] font-normal text-slate-400 mt-0.5">Last {new Date(r.lastPaidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</div>}
+                    {r.lastPaidAt && <div className="text-[11px] font-normal text-slate-400 mt-0.5">Last {fmtDate(r.lastPaidAt)}</div>}
                   </td>
                   <td className="py-3 px-6 text-right tabular-nums font-semibold text-slate-900">{feeMoney(r.totalBalance)}</td>
                   <td className="py-3 px-6">
@@ -400,7 +401,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
                   <div className="text-right flex-shrink-0">
                     <div className="font-semibold tabular-nums text-slate-900">{feeMoney(r.totalBalance)}</div>
                     <div className="mt-0.5"><Chip tone={statusTone(r.status)}>{statusLabel(r.status)}</Chip></div>
-                    {r.lastPaidAt && <div className="mt-0.5 text-[10px] text-slate-400">Last paid {new Date(r.lastPaidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>}
+                    {r.lastPaidAt && <div className="mt-0.5 text-[10px] text-slate-400">Last paid {fmtDate(r.lastPaidAt)}</div>}
                     {itemsDueTotal(r) > 0 && <div className="mt-0.5 text-[10px] font-semibold text-marigold-700 inline-flex items-center gap-0.5"><Icon name="Shirt" size={10} /> Uniform/items due</div>}
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); setTimeline({ id: r.id, name: r.name }); }}

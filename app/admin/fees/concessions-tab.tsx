@@ -17,6 +17,7 @@ import { CollectionSettingsPanel } from './collection-settings';
 import { useQuery } from '@tanstack/react-query';
 import { jsonFetcher } from '@/lib/query';
 import { shortClass } from './_shared';
+import { fmtDate } from '@/lib/dateFormat';
 
 /* ============================ Concessions (admin approval) ============================ */
 
@@ -104,7 +105,7 @@ export function ConcessionsTab() {
                   <td className="px-4 py-3 text-slate-700">{r.feeTypeName}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">{feeMoney(r.amount)}</td>
                   <td className="px-4 py-3 text-slate-600 max-w-[16rem] truncate" title={r.reason}>{r.reason}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{r.requestedBy || '—'}<div className="text-slate-400">{new Date(r.createdAt).toLocaleDateString('en-IN')}</div></td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{r.requestedBy || '—'}<div className="text-slate-400">{fmtDate(r.createdAt)}</div></td>
                   <td className="px-6 py-3 text-right">
                     {r.status === 'PENDING' ? (
                       <div className="flex items-center justify-end gap-2">

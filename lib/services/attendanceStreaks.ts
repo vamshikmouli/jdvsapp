@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { getActiveYear } from '@/lib/services/fees';
 import { sendTextTemplate, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { fmtDate } from '@/lib/dateFormat';
 
 // Admin-summary template: "⚠️ {{1}} student(s) have been away (absent/leave) 3+ days
 // in a row as of {{2}}:\n{{3}}\nPlease follow up. — Jnana Deepika Vidhya Samsthe"
@@ -15,7 +16,7 @@ const cleanClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '');
 
 function labelFromKey(key: string): string {
   const [y, m, d] = key.split('-').map(Number);
-  return `${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
+  return `${String(d).padStart(2, '0')}-${MONTHS[m - 1]}`;
 }
 
 // A day counts as "away" when the student did not attend for any reason (absent or
@@ -121,7 +122,7 @@ export async function sendAbsenceStreakSummary(opts: { minStreak?: number; dry?:
   if (!recipients.length) return res;
 
   const today = new Date();
-  const dateLabel = `${String(today.getUTCDate()).padStart(2, '0')} ${MONTHS[today.getUTCMonth()]} ${today.getUTCFullYear()}`;
+  const dateLabel = fmtDate(today);
   const list = rows
     .map((r) => `• ${r.name}${r.className ? ` (${cleanClass(r.className)})` : ''} — ${r.streak} days (${labelFromKey(r.fromKey)}–${labelFromKey(r.toKey)})`)
     .join('\n');

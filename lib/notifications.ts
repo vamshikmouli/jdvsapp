@@ -9,6 +9,7 @@ import type { Permission, PunchType } from '@prisma/client';
 import { sendPushToUsers } from '@/lib/push';
 import { whatsappConfigured, toWaNumber, sendTextTemplate } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
 
 /** User ids of active users whose active role grants `permission`. */
 export async function userIdsWithPermission(permission: Permission): Promise<string[]> {
@@ -70,7 +71,7 @@ export async function notifyStaffPunch(input: {
 /** Format a calendar date in the school timezone, e.g. "24 Aug 2026". */
 function fmtDate(at: Date, timezone: string): string {
   try {
-    return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: timezone }).format(at);
+    void timezone; return fmtDateApp(at);
   } catch {
     return at.toISOString().slice(0, 10);
   }

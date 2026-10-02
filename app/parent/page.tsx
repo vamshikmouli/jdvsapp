@@ -7,6 +7,7 @@ import { feeMoney } from '@/lib/fees';
 import { PushOptIn } from '@/components/PushOptIn';
 import { useBranding } from '@/components/useBranding';
 import { StreakCard } from '@/components/StreakCard';
+import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 
 interface Child {
   id: string;
@@ -325,7 +326,7 @@ function ChildFees({ data, loading }: { data: FeeData | null; loading: boolean }
             {data.payments.map((p) => (
               <div key={p.id} className="flex items-center justify-between text-xs">
                 <span className="text-slate-500 font-mono truncate">{p.receiptNo}</span>
-                <span className="text-slate-400">{new Date(p.paidAt).toLocaleDateString('en-IN')}</span>
+                <span className="text-slate-400">{fmtDate(p.paidAt)}</span>
                 <span className="font-semibold tabular-nums text-slate-900">{feeMoney(p.total)}</span>
               </div>
             ))}
@@ -418,7 +419,7 @@ function CircularsScreen() {
           <div className="flex items-center gap-2 mb-1.5">
             {c.category && <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CAT_TONE[c.category] || 'bg-slate-100 text-slate-600'}`}>{c.category}</span>}
             {c.pinned && <span className="inline-flex items-center gap-1 text-[11px] text-purple-600"><Icon name="Pin" size={12} /> Pinned</span>}
-            <span className="ml-auto text-[11px] text-slate-400">{new Date(c.publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+            <span className="ml-auto text-[11px] text-slate-400">{fmtDate(c.publishedAt)}</span>
           </div>
           <h3 className="font-semibold text-slate-900">{c.title}</h3>
           <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{c.body}</p>
@@ -785,7 +786,7 @@ export default function ParentPage() {
             </div>
             <h1 className="text-xl font-bold mt-0.5">{heading}</h1>
             {tab === 'home' && (
-              <div className="text-xs text-purple-100/80 mt-0.5">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+              <div className="text-xs text-purple-100/80 mt-0.5">{fmtDateWeekday(new Date(), true)}</div>
             )}
           </div>
           <div className="flex items-center gap-1">

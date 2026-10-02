@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Button, Card, Chip, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import type { ChipTone } from '@/lib/staffAttendance/display';
+import { fmtDate } from '@/lib/dateFormat';
 
 interface Leave {
   id: string; type: string; fromDate: string; toDate: string; halfDay: boolean; halfSession: string | null;
@@ -18,7 +19,7 @@ const SELECTABLE_TYPES = ['EARNED', 'SICK', 'EMERGENCY', 'UNPAID'] as const;
 function statusTone(s: string): ChipTone {
   return s === 'APPROVED' ? 'success' : s === 'PENDING' ? 'warn' : s === 'REJECTED' ? 'danger' : 'neutral';
 }
-function fmt(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
+function fmt(d: string) { return fmtDate(d); }
 function halfLabel(s: string | null) { return s === 'AFTERNOON' ? 'afternoon' : s === 'MORNING' ? 'morning' : ''; }
 function range(l: Leave) {
   const half = l.halfDay ? ` (half${halfLabel(l.halfSession) ? ` · ${halfLabel(l.halfSession)}` : ''})` : '';

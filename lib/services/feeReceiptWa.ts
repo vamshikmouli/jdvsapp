@@ -5,6 +5,7 @@ import { sendTextTemplate, sendImageTemplate, uploadWhatsAppMedia, feeWaRecipien
 import { renderReceiptImage, receiptImageAvailable } from '@/lib/services/receiptImage';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 import { feeMoney, PAY_METHOD_LABEL } from '@/lib/fees';
+import { fmtDate } from '@/lib/dateFormat';
 
 // WhatsApp fee receipts.
 //
@@ -77,7 +78,7 @@ export async function sendFeeReceiptWhatsApp(paymentId: string): Promise<boolean
   const rs = (n: number) => 'Rs. ' + feeMoney(n).slice(1);
   const lang = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
   const feeImgTpl = process.env.WHATSAPP_FEE_RECEIPT_IMAGE_TEMPLATE || 'fee_receipt_image';
-  const date = new Date(payment.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const date = fmtDate(payment.paidAt);
   const method = PAY_METHOD_LABEL[payment.method as keyof typeof PAY_METHOD_LABEL] || payment.method;
 
   // THIS transaction only — never the cumulative statement. Only the FEE receipt

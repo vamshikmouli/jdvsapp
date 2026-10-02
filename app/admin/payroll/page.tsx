@@ -6,6 +6,7 @@ import { usePermissions } from '@/lib/hooks/usePermissions';
 import { Button, Chip, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { toast } from '@/lib/toast';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 interface RunSummary { id: string; periodMonth: string; status: string; creditOn: string; staffCount: number; netTotal: number; paidCount: number }
 interface Item {
@@ -30,10 +31,6 @@ function prevMonthKey() {
 const statusTone = (s: string) => (s === 'PAID' ? 'success' : s === 'APPROVED' ? 'info' : 'warn') as any;
 // The "Net" = gross − LOP − other deductions + bonus. This is the ESI base.
 const netPre = (it: Item) => it.grossSalary - it.lopAmount - it.otherDeductions + it.bonus;
-function fmtDateTime(iso: string | null) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
-}
 function initials(name: string) {
   const p = name.trim().split(/\s+/);
   return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '?';
@@ -202,7 +199,7 @@ export default function PayrollPage() {
               <div className="rounded-2xl p-4 text-white shadow-sm bg-gradient-to-br from-purple-600 to-purple-500">
                 <div className="flex items-center gap-1.5 text-purple-100 text-xs font-medium"><Icon name="Wallet" size={14} /> Total payable</div>
                 <div className="text-2xl font-bold mt-1.5 tracking-tight">{rupee(totals.net)}</div>
-                <div className="text-[11px] text-purple-100 mt-0.5">Credit on {new Date(detail.creditOn).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
+                <div className="text-[11px] text-purple-100 mt-0.5">Credit on {fmtDate(detail.creditOn)}</div>
               </div>
               <StatCard icon="Users" label="Staff" value={String(totalCount)} sub={noBank > 0 ? `${noBank} missing bank details` : 'all have bank details'} subTone={noBank > 0 ? 'danger' : 'ok'} />
               <StatCard icon="Banknote" label="Gross" value={rupeeK(totals.gross)} sub={`net ${rupeeK(totals.netPre)} before PF/ESI`} />
@@ -420,7 +417,7 @@ export default function PayrollPage() {
         <PayslipModal
           item={payslip}
           period={monthLabel(detail.periodMonth)}
-          creditOn={new Date(detail.creditOn).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+          creditOn={fmtDate(detail.creditOn)}
           branding={branding}
           onClose={() => setPayslip(null)}
         />

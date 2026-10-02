@@ -16,6 +16,7 @@ import { CollectionSettingsPanel } from './collection-settings';
 import { useQuery } from '@tanstack/react-query';
 import { jsonFetcher } from '@/lib/query';
 import { shortClass } from './_shared';
+import { fmtDate } from '@/lib/dateFormat';
 
 // A student row returned by the /api/students search, as used to attach an
 // existing student to a counter-bill row.
@@ -315,7 +316,7 @@ export function CounterTab() {
           <div className="text-center pb-3 border-b border-slate-200">
             <div className="font-bold text-slate-900">Jnana Deepika</div>
             <div className="text-xs text-slate-500">Counter bill{parentName.trim() ? ` · ${parentName.trim()}` : ''}</div>
-            <div className="text-[11px] text-slate-400">{new Date().toLocaleDateString('en-IN')}</div>
+            <div className="text-[11px] text-slate-400">{fmtDate(new Date())}</div>
           </div>
           {grandTotal === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">Add children and pick items to build the bill.</p>

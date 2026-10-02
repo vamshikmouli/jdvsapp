@@ -8,6 +8,7 @@ import { Card, Chip, Skeleton, EmptyState, Button, Input, Select } from '@/compo
 import { Icon } from '@/components/Icon';
 import { fmtTime } from '@/lib/staffAttendance/display';
 import { AttendanceCalendar, type CalDay } from '@/components/AttendanceCalendar';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const TYPE_LABEL: Record<string, string> = { CASUAL: 'Casual', SICK: 'Sick', EARNED: 'Earned', EMERGENCY: 'Emergency', UNPAID: 'Unpaid', OTHER: 'Other' };
 
@@ -134,7 +135,7 @@ export default function StaffAttendanceDetailPage() {
               <div key={i} className="flex items-center justify-between px-4 py-2 text-sm">
                 <span className="flex items-center gap-2">
                   <span className={`font-medium ${p.type === 'IN' ? 'text-success-700' : 'text-danger-700'}`}>{p.type}</span>
-                  <span className="text-slate-500">{new Date(p.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                  <span className="text-slate-500">{fmtDateTime(p.at)}</span>
                 </span>
                 <span className="flex items-center gap-2 text-xs text-slate-400">
                   <span>{p.source.toLowerCase()}</span>

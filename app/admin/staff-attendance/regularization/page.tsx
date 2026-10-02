@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { Button, Card, Chip, Modal, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { fmtTime } from '@/lib/staffAttendance/display';
+import { fmtDate } from '@/lib/dateFormat';
 
 interface RegularizationRequest {
   id: string;
@@ -80,7 +81,7 @@ export default function RegularizationPage() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-slate-900">{req.staff.name}</div>
                   <div className="text-sm text-slate-500 mt-1">
-                    {new Date(req.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+                    {fmtDate(req.date)}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
                     <Chip tone="info">
@@ -162,7 +163,7 @@ function ReviewModal({
         <div>
           <div className="text-xs text-slate-500">Date</div>
           <div className="font-medium">
-            {new Date(request.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+            {fmtDate(request.date)}
           </div>
         </div>
         <div>

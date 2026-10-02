@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 // Two-way WhatsApp inbox, styled like a chat app. Parent replies land here; the
 // office can reply within WhatsApp's 24h window. Everything the app sent to a number
@@ -24,7 +25,7 @@ const DELIVERY_LABEL: Record<string, string> = { SENT: 'Sent', DELIVERED: 'Deliv
 const WA_GREEN = '#d9fdd3';           // outgoing bubble (like WhatsApp)
 const WA_BG = '#efeae2';              // chat background
 
-const fmtTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+const fmtTime = (iso: string) => fmtDateTime(iso);
 function windowLeft(iso: string | null): string {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - Date.now();

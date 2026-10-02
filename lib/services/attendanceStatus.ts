@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { sendTextTemplate, toWaNumber, whatsappConfigured } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { fmtDate } from '@/lib/dateFormat';
 
 // Admin digest template: which classes have SUBMITTED student attendance today and
 // which are still PENDING. Suggested Utility template (3 vars):
@@ -47,7 +48,7 @@ export async function getClassAttendanceStatus(dateKey?: string): Promise<Attend
     else pending.push(name);
   }
   submitted.sort(naturalSort); started.sort(naturalSort); pending.sort(naturalSort);
-  return { dateKey: dk, dateLabel: `${String(d).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`, submitted, started, pending };
+  return { dateKey: dk, dateLabel: fmtDate(dk), submitted, started, pending };
 }
 
 /** Recipients for this report — the in-app list (Settings), managed on the WhatsApp

@@ -16,6 +16,7 @@ import { CollectionSettingsPanel } from './collection-settings';
 import { useQuery } from '@tanstack/react-query';
 import { jsonFetcher } from '@/lib/query';
 import { shortClass } from './_shared';
+import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 
 /* ============================ Reports ============================ */
 
@@ -138,7 +139,7 @@ export function ReportsTab() {
       {/* Who hasn't paid in the selected range (with dues, zero payments in range) */}
       {data.rangeActive && (
         <Card padded={false} title={<div className="flex items-center justify-between w-full">
-          <span className="inline-flex items-center gap-2"><Icon name="UserX" size={16} className="text-danger-600" /> Not paid {from ? `since ${new Date(from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}{to ? ` – ${new Date(to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}</span>
+          <span className="inline-flex items-center gap-2"><Icon name="UserX" size={16} className="text-danger-600" /> Not paid {from ? `since ${fmtDate(from)}` : ''}{to ? ` – ${fmtDate(to)}` : ''}</span>
           <span className="text-sm font-normal"><span className="text-slate-500">{data.notPaidInRangeCount} student{data.notPaidInRangeCount === 1 ? '' : 's'} · </span><span className="text-danger-700 font-semibold tabular-nums">{feeMoney(data.notPaidInRangeTotal)}</span></span>
         </div>}>
           <ReportRows
@@ -151,7 +152,7 @@ export function ReportsTab() {
 
       {/* Daily collection (newest day first) — tap a day for who paid. */}
       <BarList title="Daily collection" icon="CalendarDays" accent="success"
-        rows={data.byDay.map((r) => ({ key: r.day, name: new Date(r.day).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }), amount: r.amount }))}
+        rows={data.byDay.map((r) => ({ key: r.day, name: fmtDateWeekday(r.day), amount: r.amount }))}
         empty="No collection yet" onRow={(r) => setDayDrill(r.key!)} />
 
       {/* Class-wise: collected vs pending, with headcounts. Click a class → its students. */}
@@ -385,7 +386,7 @@ function DayCollectionDrawer({ date, onClose }: { date: string; onClose: () => v
     queryKey: ['fees', 'day-collection', date],
     queryFn: () => jsonFetcher<{ date: string; total: number; count: number; rows: { studentId: string; student: string; className: string | null; amount: number; mode: string; receiptNo: string }[]; byMethod: { method: string; amount: number }[] }>(`/api/fees/reports/day-collection?date=${encodeURIComponent(date)}`),
   });
-  const dayLabel = new Date(date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+  const dayLabel = fmtDateWeekday(date);
   return (
     <Drawer open onClose={onClose} title="Who paid on this day" width={560}
       subtitle={data ? `${dayLabel} · ${data.count} receipt${data.count === 1 ? '' : 's'} · ${feeMoney(data.total)}` : dayLabel}
@@ -486,7 +487,7 @@ function HeadPaymentsDrawer({ headKey, headName, from, to, onClose }: { headKey:
                 <tbody>
                   {data.rows.map((r, i) => (
                     <tr key={i} className="border-t border-slate-100">
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-700">{new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-700">{fmtDate(r.date)}</td>
                       <td className="px-3 py-2"><div className="text-slate-900">{r.student}</div>{r.label && !/^tuition|software|id\s*card/i.test(r.label) && <div className="text-[11px] text-slate-400">{r.label}</div>}</td>
                       <td className="px-3 py-2 text-slate-600">{shortClass(r.className)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-900">{feeMoney(r.amount)}</td>

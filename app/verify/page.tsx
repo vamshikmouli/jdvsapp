@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { feeMoney } from '@/lib/fees';
 import { Icon } from '@/components/Icon';
+import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
 
 interface Result {
   valid: boolean;
@@ -15,7 +16,7 @@ interface Result {
   voided?: boolean;
 }
 
-const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+const fmtDate = (d?: string) => fmtDateApp(d);
 
 function VerifyInner() {
   const sp = useSearchParams();

@@ -4,9 +4,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { PageHeader, Button, Card, Field, Input, Select, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { toast } from '@/lib/toast';
+import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
 
 const shortClass = (n: string | null) => (n ? n.replace(/\s?STD$/i, '') : '—');
-const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
+const fmtDate = (d: string | null) => fmtDateApp(d);
 
 interface AssessmentOpt { id: string; name: string; type: string; term: string | null }
 interface TTRow { date: string; day: string; subject: string; session: string; time: string; custom?: Record<string, string> }

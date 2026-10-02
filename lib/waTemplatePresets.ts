@@ -47,7 +47,7 @@ export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
       'Dear {{1}},\n' +
       'This is to inform you that {{2}} was marked {{3}} in school on {{4}}.\n' +
       'For any queries, please contact the school office. Thank you.',
-    examples: ['Ramesh', 'ASHA', 'absent', '02 Oct 2026'],
+    examples: ['Ramesh', 'ASHA', 'absent', '02-Oct-2026'],
     header: 'NONE',
   },
   {
@@ -62,7 +62,7 @@ export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
       'Submitted: {{2}}\n' +
       'Pending: {{3}}\n' +
       'Please make sure the pending classes submit attendance today.',
-    examples: ['02 Oct 2026', 'LKG · UKG · 1st · 2nd', '3rd (not submitted) · 4th'],
+    examples: ['02-Oct-2026', 'LKG · UKG · 1st · 2nd', '3rd (not submitted) · 4th'],
     header: 'NONE',
   },
 ];

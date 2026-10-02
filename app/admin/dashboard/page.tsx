@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { PushOptIn } from '@/components/PushOptIn';
 import { MonthlyLeavesCard } from '@/components/MonthlyLeavesCard';
 import { AttendanceCoverageCard } from '@/components/AttendanceCoverageCard';
+import { fmtDateWeekday } from '@/lib/dateFormat';
 
 interface DashboardData {
   kpis: { studentsTotal: number; studentsActive: number; staffTotal: number; classesTotal: number };
@@ -23,7 +24,7 @@ function shortClassName(name: string) {
 }
 
 function todayHeading() {
-  return new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return fmtDateWeekday(new Date(), true);
 }
 
 function relativeTime(iso: string) {

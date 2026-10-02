@@ -2,6 +2,8 @@
  * Utility functions for Jnana Deepika ERP
  */
 
+import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
+
 // Download a page's data as an Excel backup. `group` is one of
 // students | classes | fees | attendance | staff (omit for a full backup).
 // The file re-imports losslessly via Settings → Backup & restore.
@@ -36,12 +38,7 @@ export function getAvatarTone(name: string): 'purple' | 'blue' | 'green' | 'yell
 }
 
 export function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return new Intl.DateTimeFormat('en-IN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(d);
+  return fmtDateApp(date);
 }
 
 export function formatTime(date: Date | string): string {

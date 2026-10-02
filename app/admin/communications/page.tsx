@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, Button, Card, Drawer, Field, Input, Select, Chip, EmptyState, Skeleton } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { feeMoney } from '@/lib/fees';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 interface CircularItem {
   id: string; title: string; body: string; category: string | null; kind: 'CIRCULAR' | 'FEE_REMINDER';
@@ -84,7 +85,7 @@ export default function CommunicationsPage() {
                 <div className="flex items-center gap-2 mb-0.5">
                   {c.category && <Chip tone={c.kind === 'FEE_REMINDER' ? 'danger' : 'info'}>{c.category}</Chip>}
                   {c.pinned && <span className="text-[11px] text-purple-600 inline-flex items-center gap-1"><Icon name="Pin" size={12} />Pinned</span>}
-                  <span className="text-[11px] text-slate-400">{new Date(c.publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                  <span className="text-[11px] text-slate-400">{fmtDate(c.publishedAt)}</span>
                 </div>
                 <div className="font-semibold text-slate-900">{c.title}</div>
                 <p className="text-sm text-slate-600 mt-0.5 line-clamp-2 whitespace-pre-line">{c.body}</p>
@@ -115,7 +116,7 @@ export default function CommunicationsPage() {
 
 /* ---------- Continuous absentees: students away (absent/leave) 3+ days in a row ---------- */
 interface StreakRow { studentId: string; name: string; className: string | null; streak: number; fromKey: string; toKey: string }
-const dayLabel = (k: string) => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+const dayLabel = (k: string) => fmtDate(k);
 
 function ContinuousAbsentees() {
   const [rows, setRows] = useState<StreakRow[] | null>(null);
@@ -377,7 +378,7 @@ function DeliveryReportCard({ report, filter, setFilter, onRefresh, busy }: { re
           <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
             <div className="min-w-0">
               <div className="truncate"><span className="font-medium text-slate-800">{r.student}</span> <span className="text-slate-400">{(r.className || '').replace(/\s?STD$/i, '')}</span></div>
-              <div className="text-[12px] text-slate-500 truncate">{r.recipient}{r.phone !== '—' ? ` · ${r.phone}` : ''}{r.at ? ` · ${new Date(r.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+              <div className="text-[12px] text-slate-500 truncate">{r.recipient}{r.phone !== '—' ? ` · ${r.phone}` : ''}{r.at ? ` · ${fmtDateTime(r.at)}` : ''}</div>
             </div>
             <span className={`flex-shrink-0 text-[11.5px] font-semibold text-right max-w-[50%] truncate ${DELIVERY_META[r.status].text}`} title={r.error || DELIVERY_META[r.status].hint}>
               {DELIVERY_META[r.status].label}{r.status === 'FAILED' && r.error ? `: ${r.error}` : ''}
@@ -396,7 +397,7 @@ interface ReplyThread {
 }
 interface ThreadMsg { id: string; direction: string; text: string | null; type: string; at: string; error: string | null; contactName: string | null; system?: boolean; kind?: string | null; status?: string | null }
 
-const fmtTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+const fmtTime = (iso: string) => fmtDateTime(iso);
 function windowLeft(iso: string | null): string {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - Date.now();
@@ -631,7 +632,7 @@ function AnalyticsPanel() {
             <button onClick={() => toggle(b.batchId)} className="w-full flex items-center justify-between gap-3 p-4 text-left">
               <div className="min-w-0">
                 <div className="font-semibold text-slate-900 truncate">{b.title || defaultTitle(b.kind)}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {total} number{total === 1 ? '' : 's'}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{fmtDateTime(b.at)} · {total} number{total === 1 ? '' : 's'}</div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Chip tone="success">{(b.stats ? b.stats.DELIVERED + b.stats.READ : b.sent)} delivered</Chip>
@@ -678,7 +679,6 @@ function DevicesPanel() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
     <div className="mt-5 max-w-3xl">

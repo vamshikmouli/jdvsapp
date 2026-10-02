@@ -9,6 +9,7 @@ import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptySt
 import { renderDailyBoardPng } from '@/lib/services/attendanceImage';
 import { whatsappConfigured, toWaNumber, uploadWhatsAppMedia, sendImageTemplate } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,8 +105,8 @@ async function handler(req: NextRequest) {
     };
   });
 
-  const dateLabel = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ });
-  const dateShort = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ });
+  const dateLabel = fmtDateWeekday(now, true);
+  const dateShort = fmtDate(now);
   const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TZ });
 
   const png = renderDailyBoardPng({ dateLabel, timeLabel, rows, schoolName: SCHOOL, alert: backupAlert() });

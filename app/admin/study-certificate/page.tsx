@@ -4,9 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, Button, Card, Field, Input, Select, EmptyState } from '@/components/Primitives';
 import { usePermissions } from '@/lib/hooks/usePermissions';
 import { toast } from '@/lib/toast';
+import { fmtDate as fmtDateApp } from '@/lib/dateFormat';
 
 const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-') : '';
+  fmtDateApp(d);
 
 const toDateInput = (d: string | null | undefined) => (d ? String(d).slice(0, 10) : '');
 const todayInput = () => new Date().toISOString().slice(0, 10);

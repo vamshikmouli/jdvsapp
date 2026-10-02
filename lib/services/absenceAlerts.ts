@@ -26,13 +26,13 @@ const CONTACT_SELECT = {
   smsFor: true, whatsappEnabled: true,
 } as const;
 
-/** "2026-09-17" → "17 Sep 2026" (no timezone maths — reads the stored date parts). */
+/** "2026-09-17" → "17-Sep-2026" (no timezone maths — reads the stored date parts). */
 function dateLabelFrom(d: Date): string {
   const yyyy = d.getUTCFullYear();
   const mm = d.getUTCMonth();
   const dd = d.getUTCDate();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${String(dd).padStart(2, '0')} ${months[mm]} ${yyyy}`;
+  return `${String(dd).padStart(2, '0')}-${months[mm]}-${yyyy}`;
 }
 
 /** Natural status phrase for the alert body ("...your child X was absent on..."). */

@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { feeMoney, PAY_METHOD_LABEL } from '@/lib/fees';
 import { useBranding } from '@/components/useBranding';
 import QRCode from 'qrcode';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 interface Receipt {
   receiptNo: string;
@@ -108,7 +109,7 @@ function ReceiptCopy({ r, copy }: { r: Receipt; copy: string }) {
           <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Fee Receipt</div>
           <div className="text-sm font-mono font-semibold text-slate-900 mt-0.5">{r.receiptNo}</div>
           {r.manualReceiptNo && <div className="text-[11px] text-slate-500">Book no. {r.manualReceiptNo}</div>}
-          <div className="text-xs text-slate-500 mt-0.5">{new Date(r.paidAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+          <div className="text-xs text-slate-500 mt-0.5">{fmtDateTime(r.paidAt)}</div>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import { PageHeader, Button, Card, Modal, Drawer, Field, Input, Select, Avatar, 
 import { Icon } from '@/components/Icon';
 import { downloadBackup } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { fmtDateWeekday } from '@/lib/dateFormat';
 
 type Status = 'PRESENT' | 'ABSENT' | 'LEAVE' | 'LATE';
 
@@ -54,10 +55,7 @@ function shortClassName(name: string) {
 }
 
 function formatHeaderDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d
-    .toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-    .toUpperCase();
+  return fmtDateWeekday(dateStr, true).toUpperCase();
 }
 
 export default function AttendancePage() {

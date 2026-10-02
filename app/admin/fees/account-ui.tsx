@@ -11,6 +11,7 @@ import { feeMoney, PAY_METHOD_LABEL, type AccountSummary } from '@/lib/fees';
 import { VILLAGE_VAN_FEES } from '@/lib/feeStructure';
 import { useBranding } from '@/components/useBranding';
 import QRCode from 'qrcode';
+import { fmtDate } from '@/lib/dateFormat';
 
 export function shortClass(name: string | null) {
   return name ? name.replace(/\s?STD$/, '') : '—';
@@ -182,7 +183,7 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className="text-sm font-semibold text-slate-700 tabular-nums">{new Date(p.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    <div className="text-sm font-semibold text-slate-700 tabular-nums">{fmtDate(p.paidAt)}</div>
                   </div>
                 </div>
                 <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1">
@@ -297,7 +298,7 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
                       <tr key={c.id} className="text-xs text-slate-500">
                         <td className="pl-6 pr-3 py-1">
                           {c.label.replace(h.name, '').replace(/^[\s—-]+/, '') || c.label}
-                          {c.dueDate && <span className="ml-1 text-slate-400">· due {c.dueDate}</span>}
+                          {c.dueDate && <span className="ml-1 text-slate-400">· due {fmtDate(c.dueDate)}</span>}
                         </td>
                         <td className="px-3 py-1 text-right tabular-nums">{feeMoney(c.amount)}</td>
                         <td className="px-3 py-1 text-right tabular-nums">{feeMoney(c.paid)}</td>
@@ -324,7 +325,7 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
                     <span className={p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}>{p.receiptNo}</span>
                     {p.voided && <span className="text-[10px] font-semibold text-danger-700 bg-danger-50 rounded px-1.5 py-0.5">CANCELLED</span>}
                   </div>
-                  <div className="text-xs text-slate-500">{new Date(p.paidAt).toLocaleDateString('en-IN')} · {payMethodText(p)} · {p.voided ? (p.voidReason || 'Reversed') : p.allocations.map((a) => a.label).join(', ')}</div>
+                  <div className="text-xs text-slate-500">{fmtDate(p.paidAt)} · {payMethodText(p)} · {p.voided ? (p.voidReason || 'Reversed') : p.allocations.map((a) => a.label).join(', ')}</div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`text-sm font-semibold tabular-nums ${p.voided ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{feeMoney(p.total)}</span>
@@ -879,7 +880,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
       return words.length > 1 ? words.map((w) => w[0]).join('').toUpperCase() : t.slice(0, 4).toUpperCase();
     };
     const method = payMethodText(pay);
-    const dt = (pay.paidAt || '').slice(0, 10);
+    const dt = fmtDate(pay.paidAt);
     const bookNo = pay.manualReceiptNo ? ` · Book ${esc(pay.manualReceiptNo)}` : '';
     const stu = `<b>${esc(account.student.name)}</b> · ${esc(shortClass(account.student.className) || '—')}<br>${esc(pay.receiptNo)}${bookNo} · ${dt} · ${esc(method)}`;
     const allocs = ((pay.allocations || []) as { amount: number; label: string }[]).filter((a) => a.amount > 0);
@@ -1268,7 +1269,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                         const isPaid = val >= c.balance && c.balance > 0;
                         return (
                           <div key={c.id} className={`flex flex-wrap items-center gap-2 px-4 py-3 ${val > 0 ? 'bg-purple-50/40' : ''}`}>
-                            <div className="flex-1 min-w-[130px]"><div className="text-[14.5px] text-slate-800 truncate">{c.label}</div><div className="text-[12px] text-slate-500 mt-0.5">Balance {feeMoney(c.balance)}{c.dueDate ? ` · due ${c.dueDate}` : ''}</div></div>
+                            <div className="flex-1 min-w-[130px]"><div className="text-[14.5px] text-slate-800 truncate">{c.label}</div><div className="text-[12px] text-slate-500 mt-0.5">Balance {feeMoney(c.balance)}{c.dueDate ? ` · due ${fmtDate(c.dueDate)}` : ''}</div></div>
                             <div className="flex items-center gap-2 ml-auto flex-shrink-0">
                               {((c as any).paid || 0) === 0 && !/tuition|software|abacus|quick\s*math/i.test(`${h.key} ${h.name}`) && <button onClick={() => removeCharge(c.id, c.label)} className="text-slate-300 hover:text-danger-600 flex-shrink-0 p-1" title="Remove this fee (added by mistake)"><Icon name="Trash2" size={15} /></button>}
                               {/* Paid / Not received toggle — Paid collects the full balance now; Not received leaves it as a due. */}
@@ -1359,7 +1360,7 @@ export function CollectDrawer({ studentId, onClose, onDone }: { studentId: strin
                 <div key={p.id} className={`px-3 py-3 ${p.voided ? 'opacity-60' : ''}`}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 text-[12.5px] text-slate-500 min-w-0">
-                      <span className="tabular-nums whitespace-nowrap">{p.paidAt.slice(0, 10)}</span>
+                      <span className="tabular-nums whitespace-nowrap">{fmtDate(p.paidAt)}</span>
                       <span className="text-slate-300">·</span>
                       <span className="font-mono text-slate-500 truncate">{p.receiptNo}</span>
                       {p.voided && <span className="text-danger-600 font-medium whitespace-nowrap">(cancelled)</span>}

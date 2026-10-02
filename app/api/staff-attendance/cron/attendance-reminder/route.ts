@@ -8,6 +8,7 @@ import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 import { whatsappConfigured, toWaNumber, sendTextTemplate } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { fmtDate } from '@/lib/dateFormat';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,7 @@ async function handler(req: NextRequest) {
   const now = new Date();
   const dateKey = localDayInfo(now, cfg.timezone).dateKey;
   const date = new Date(`${dateKey}T00:00:00Z`);
-  const dateShort = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ });
+  const dateShort = fmtDate(now);
 
   const [staff, days, holiday, leaves] = await Promise.all([
     prisma.staff.findMany({
