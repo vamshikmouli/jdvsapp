@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
-import { createImageTemplate } from '@/lib/services/whatsapp';
+import { createImageTemplate, createTextTemplate } from '@/lib/services/whatsapp';
 import { renderDailyBoardPng, renderAttendanceCalendarPng } from '@/lib/services/attendanceImage';
 import { WA_TEMPLATE_PRESETS } from '@/lib/waTemplatePresets';
 import { prisma } from '@/lib/db';
@@ -39,7 +39,10 @@ export async function POST(req: NextRequest) {
       const p = WA_TEMPLATE_PRESETS.find((x) => x.key === b.preset);
       if (!p) return NextResponse.json({ ok: false, error: 'Unknown template' }, { status: 400 });
       const schoolName = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { schoolName: true } }))?.schoolName || 'Jnana Deepika Vidhya Samsthe';
-      const result = await createImageTemplate({ name: p.name, category: p.category, body: p.body, footer: schoolName.slice(0, 60), sample: sampleCalendar(schoolName), examples: p.examples });
+      const footer = schoolName.slice(0, 60);
+      const result = p.header === 'NONE'
+        ? await createTextTemplate({ name: p.name, category: p.category, body: p.body, footer, examples: p.examples })
+        : await createImageTemplate({ name: p.name, category: p.category, body: p.body, footer, sample: sampleCalendar(schoolName), examples: p.examples });
       if (!result.ok) return NextResponse.json(result, { status: 400 });
       return NextResponse.json(result);
     }

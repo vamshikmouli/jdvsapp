@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { AttendanceStatus } from '@prisma/client';
 import { feeWaRecipients, sendTextTemplate, whatsappConfigured } from '@/lib/services/whatsapp';
 import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
+import { ABSENCE_ALERT_TEMPLATE } from '@/lib/waTemplatePresets';
 
 // Approved Meta template for the "child absent / on leave" alert to the guardian.
 // Suggested body (4 variables):
@@ -10,7 +11,8 @@ import { recordWaDeliveries, type WaDeliveryInput } from '@/lib/services/waLog';
 //    office. Thank you."
 // params are [parentName, studentName, statusLabel, dateLabel], where statusLabel
 // is "absent" or "on leave" — chosen so the sentence reads naturally either way.
-const ABSENCE_TEMPLATE = process.env.WHATSAPP_ABSENCE_TEMPLATE_NAME || 'student_absent';
+// UTILITY template (lib/waTemplatePresets): {{1}} parent, {{2}} student, {{3}} "absent" / "on leave", {{4}} date.
+const ABSENCE_TEMPLATE = process.env.WHATSAPP_ABSENCE_TEMPLATE_NAME || ABSENCE_ALERT_TEMPLATE;
 const TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 
 // Everything feeWaRecipients() needs to resolve who to message (father / mother /

@@ -188,7 +188,7 @@ export default function WhatsAppAdminPage() {
                         <Button size="sm" kind="primary" icon="Send" disabled={!!presetBusy || !data.configured} onClick={() => createPreset(p.key)}>{presetBusy === p.key ? 'Submitting…' : 'Create in Meta'}</Button>
                       )}
                     </div>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 border border-slate-100 p-2.5 text-[12.5px] text-slate-700 font-sans">[Image: month calendar]{'\n'}{p.body}</pre>
+                    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 border border-slate-100 p-2.5 text-[12.5px] text-slate-700 font-sans">{p.header === 'MONTHLY_CALENDAR' ? '[Image: month calendar]\n' : ''}{p.body}</pre>
                     {existing?.category === 'MARKETING' && <p className="mt-1.5 text-xs text-danger-700">Meta has put this one in Marketing. Delete it in WhatsApp Manager and create it again, or create a new name.</p>}
                   </div>
                 );

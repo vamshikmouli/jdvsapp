@@ -123,12 +123,12 @@ export async function createImageTemplate(opts: {
 
 /** Create a TEXT-only template (no image header) — e.g. a reminder. */
 export async function createTextTemplate(opts: {
-  name: string; category: 'UTILITY' | 'MARKETING'; body: string; footer?: string;
+  name: string; category: 'UTILITY' | 'MARKETING'; body: string; footer?: string; examples?: string[];
 }): Promise<{ ok: boolean; status?: string; id?: string; error?: string }> {
   const token = process.env.WHATSAPP_TOKEN;
   const waba = process.env.WHATSAPP_WABA_ID;
   if (!token || !waba) return { ok: false, error: 'WhatsApp not fully configured (need token, WABA id)' };
-  const components: any[] = [{ type: 'BODY', text: opts.body, ...(bodyExample(opts.body) ? { example: bodyExample(opts.body) } : {}) }];
+  const components: any[] = [{ type: 'BODY', text: opts.body, ...(bodyExample(opts.body, opts.examples) ? { example: bodyExample(opts.body, opts.examples) } : {}) }];
   if (opts.footer) components.push({ type: 'FOOTER', text: opts.footer });
   const r = await fetch(`${GRAPH}/${waba}/message_templates`, {
     method: 'POST',
