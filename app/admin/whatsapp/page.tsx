@@ -28,13 +28,6 @@ function statusTone(s: string): 'success' | 'warn' | 'danger' | 'neutral' {
 export default function WhatsAppAdminPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
-  const [recipients, setRecipients] = useState('');
-  const [savingR, setSavingR] = useState(false);
-  const [attNums, setAttNums] = useState<string[]>([]);   // attendance-status recipients
-  const [attInput, setAttInput] = useState('');
-  const [savingAtt, setSavingAtt] = useState(false);
-  const [testTo, setTestTo] = useState('');
-  const [busy, setBusy] = useState('');
 
   // create-template form
   const [tName, setTName] = useState('');
@@ -56,33 +49,10 @@ export default function WhatsAppAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch('/api/admin/whatsapp');
-    if (res.ok) { const d = await res.json(); setData(d); setRecipients(d.recipients || ''); setAttNums((d.attendanceRecipients || '').split(',').map((x: string) => x.trim()).filter(Boolean)); }
+    if (res.ok) setData(await res.json());
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
-
-  // Attendance-status recipients: add / remove numbers, auto-saved.
-  const saveAtt = async (nums: string[]) => {
-    setSavingAtt(true);
-    const res = await fetch('/api/admin/whatsapp', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ attendanceRecipients: nums.join(',') }) });
-    if (res.ok) { const j = await res.json(); setAttNums((j.attendanceRecipients || '').split(',').map((x: string) => x.trim()).filter(Boolean)); }
-    else toast.error('Could not save.');
-    setSavingAtt(false);
-  };
-  const addAtt = () => {
-    const n = attInput.replace(/[^\d+]/g, '');
-    if (n.length < 10 || attNums.includes(n)) { setAttInput(''); return; }
-    const next = [...attNums, n]; setAttNums(next); setAttInput(''); saveAtt(next);
-  };
-  const removeAtt = (n: string) => { const next = attNums.filter((x) => x !== n); setAttNums(next); saveAtt(next); };
-
-  const saveRecipients = async () => {
-    setSavingR(true);
-    const res = await fetch('/api/admin/whatsapp', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipients }) });
-    if (res.ok) { const j = await res.json(); setRecipients(j.recipients || ''); toast.success('Saved recipients.'); }
-    else toast.error('Could not save.');
-    setSavingR(false);
-  };
 
   const createTemplate = async () => {
     setCreating(true);
@@ -93,22 +63,9 @@ export default function WhatsAppAdminPage() {
     setCreating(false);
   };
 
-  const test = async (kind: 'daily' | 'weekly') => {
-    if (!testTo.trim()) { toast.error('Enter a test number first.'); return; }
-    setBusy(kind);
-    const url = kind === 'daily'
-      ? `/api/staff-attendance/cron/daily-admin-report?to=${encodeURIComponent(testTo)}`
-      : `/api/staff-attendance/cron/weekly-report?to=${encodeURIComponent(testTo)}`;
-    const res = await fetch(url, { method: 'POST' });
-    const j = await res.json().catch(() => ({}));
-    if (res.ok) toast.success(`Test ${kind}: ${j.sent ?? 0} sent, ${j.failed ?? 0} failed.`);
-    else toast.error(`Test failed: ${j.error || 'error'}`);
-    setBusy('');
-  };
-
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
-      <PageHeader eyebrow="Administration" title="WhatsApp" meta="Manage message templates, recipients, and connection." />
+      <PageHeader eyebrow="Administration" title="WhatsApp" meta="Manage message templates and the WhatsApp connection." />
 
       {loading ? <Skeleton height={120} /> : !data ? (
         <Card><p className="text-sm text-slate-500">Could not load.</p></Card>
@@ -196,46 +153,10 @@ export default function WhatsAppAdminPage() {
             </div>
           </Card>
 
-          {/* Recipients */}
           <Card>
-            <h2 className="font-semibold text-slate-800">Daily digest recipients</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Admin numbers that receive the twice-daily all-staff board (10:30 AM &amp; 5 PM). Comma-separated, with country code.</p>
-            <div className="mt-3 space-y-2">
-              <Input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="919742417262, 919632465456" />
-              <Button kind="primary" icon="Save" disabled={savingR} onClick={saveRecipients}>{savingR ? 'Saving…' : 'Save recipients'}</Button>
-            </div>
-          </Card>
-
-          {/* Attendance-status recipients (add/remove) */}
-          <Card>
-            <h2 className="font-semibold text-slate-800">Attendance status recipients</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Numbers that get the daily <b>11 AM</b> class-attendance status (which classes submitted / pending). Add or remove numbers below — saved automatically.</p>
-            <div className="mt-3 flex gap-2">
-              <Input value={attInput} onChange={(e) => setAttInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAtt(); } }} placeholder="9198XXXXXXXX (with or without 91)" className="flex-1" />
-              <Button icon="Plus" disabled={savingAtt || attInput.replace(/[^\d]/g, '').length < 10} onClick={addAtt}>Add</Button>
-            </div>
-            {attNums.length === 0 ? (
-              <p className="text-[13px] text-slate-400 mt-3">No recipients yet — add the numbers that should get the 11 AM report.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2 mt-3">
-                {attNums.map((n) => (
-                  <span key={n} className="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-full pl-3 pr-1.5 py-1 text-[13px] text-slate-700">
-                    {n}
-                    <button onClick={() => removeAtt(n)} disabled={savingAtt} className="text-slate-400 hover:text-danger-600 rounded-full p-0.5" title="Remove"><Icon name="X" size={13} /></button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Test */}
-          <Card>
-            <h2 className="font-semibold text-slate-800">Send a test</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Send a one-off to a single number to check delivery.</p>
-            <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-end">
-              <div className="flex-1"><Field label="Test number (with country code)"><Input value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="919742417262" /></Field></div>
-              <Button disabled={!!busy} onClick={() => test('daily')} icon="Send">{busy === 'daily' ? 'Sending…' : 'Daily board'}</Button>
-              <Button disabled={!!busy} onClick={() => test('weekly')} icon="Send">{busy === 'weekly' ? 'Sending…' : 'Weekly calendar'}</Button>
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Icon name="Clock" size={16} className="text-purple-500" />
+              Recipients and test sends for the daily reports are in <a href="/admin/schedulers" className="font-semibold text-purple-700 hover:underline">Administration → Schedulers</a>.
             </div>
           </Card>
         </>
