@@ -149,6 +149,11 @@ export function ReportsTab() {
         </Card>
       )}
 
+      {/* Daily collection (newest day first) — tap a day for who paid. */}
+      <BarList title="Daily collection" icon="CalendarDays" accent="success"
+        rows={data.byDay.map((r) => ({ key: r.day, name: new Date(r.day).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }), amount: r.amount }))}
+        empty="No collection yet" onRow={(r) => setDayDrill(r.key!)} />
+
       {/* Class-wise: collected vs pending, with headcounts. Click a class → its students. */}
       <ClassBreakdown rows={data.classSummary} onClass={(r) => setClassDrill({ classId: r.classId || 'unassigned', name: r.name })} />
 
@@ -157,9 +162,6 @@ export function ReportsTab() {
           rows={data.byHead} empty="No collection yet" onRow={(r) => setHeadDrill({ key: r.key!, name: r.name })} />
         <BarList title="Collection by payment mode" icon="Wallet" accent="info"
           rows={data.byMethod.map((m) => ({ name: PAY_METHOD_LABEL[m.method as keyof typeof PAY_METHOD_LABEL] || m.method, amount: m.amount }))} empty="No collection yet" />
-        <BarList title="Daily collection" icon="CalendarDays" accent="success"
-          rows={data.byDay.map((r) => ({ key: r.day, name: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }), amount: r.amount }))}
-          empty="No collection yet" onRow={(r) => setDayDrill(r.key!)} />
       </div>
 
       {/* Uniform — collected per item (White Uniform, School Uniform…) + pending drill-down */}
