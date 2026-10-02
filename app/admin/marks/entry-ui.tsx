@@ -1,7 +1,8 @@
 'use client';
 
 import { toast } from '@/lib/toast';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
@@ -55,6 +56,9 @@ export function EntryTab() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
+  // Full-screen, one-subject-at-a-time entry (the phone-friendly view). Holds the subject shown.
+  const [fullSubject, setFullSubject] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => { (async () => {
     const [a, c] = await Promise.all([fetch('/api/assessments'), fetch('/api/classes')]);
@@ -68,8 +72,11 @@ export function EntryTab() {
 
   const canLoad = !!(aId && cId && (sections.length === 0 || secId));
 
-  const loadGrid = useCallback(async () => {
-    setLoading(true); setError(''); setGrid(null);
+  // `refresh` = reload after a save: keep the current grid on screen (so the
+  // full-screen entry stays open) instead of blanking it to a skeleton.
+  const loadGrid = useCallback(async (refresh = false) => {
+    if (!refresh) { setLoading(true); setGrid(null); }
+    setError('');
     const qs = new URLSearchParams({ assessmentId: aId, classId: cId });
     if (secId) qs.set('sectionId', secId);
     const r = await fetch('/api/marks/grid?' + qs);
@@ -79,12 +86,15 @@ export function EntryTab() {
       const v: Record<string, Record<string, string>> = {};
       for (const su of g.subjects) { v[su.id] = {}; for (const st of g.students) { const m = su.marks[st.id]; v[su.id][st.id] = m ? (m.isAbsent ? 'AB' : (m.marksObtained != null ? String(m.marksObtained) : '')) : ''; } }
       setVals(v);
+      setDirty(false);
     } else setError((await r.json().catch(() => ({}))).error || 'Failed to load');
-    setLoading(false);
+    if (!refresh) setLoading(false);
   }, [aId, cId, secId]);
   useEffect(() => { if (canLoad) loadGrid(); }, [canLoad, loadGrid]);
+  useEffect(() => { setFullSubject(null); }, [aId, cId, secId]);
 
-  const setCell = (subId: string, stId: string, val: string) => setVals((v) => ({ ...v, [subId]: { ...v[subId], [stId]: val } }));
+  const setCell = (subId: string, stId: string, val: string) => { setVals((v) => ({ ...v, [subId]: { ...v[subId], [stId]: val } })); setDirty(true); };
+  const filledCount = (subId: string) => grid ? grid.students.filter((st) => (vals[subId]?.[st.id] ?? '').trim() !== '').length : 0;
 
   const anyInvalid = grid ? grid.subjects.some((su) => grid.students.some((st) => cellInvalid(vals[su.id]?.[st.id] ?? '', su.max))) : false;
   const editableSubjects = grid ? grid.subjects.filter((s) => s.canEdit) : [];
@@ -105,7 +115,7 @@ export function EntryTab() {
       const r = await fetch('/api/marks/grid', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assessmentId: aId, classId: cId, sectionId: secId || null, action, subjects }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || 'Failed');
-      setToast(action === 'submit' ? 'Submitted for approval' : 'Saved'); await loadGrid(); setTimeout(() => setToast(''), 2500);
+      setToast(action === 'submit' ? 'Submitted for approval' : 'Saved'); await loadGrid(true); setTimeout(() => setToast(''), 2500);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); } finally { setBusy(false); }
   };
 
@@ -135,8 +145,24 @@ export function EntryTab() {
             <div className="p-6"><EmptyState icon="Users" title="No students" body="This class/section has no active students." /></div>
           ) : (
             <>
-            <div className="sm:hidden px-4 pt-2 text-[11px] text-slate-400 flex items-center gap-1"><Icon name="MoveHorizontal" size={13} />Swipe sideways to see all subjects</div>
-            <div className="overflow-x-auto">
+            {/* Phones: pick a subject → full-screen entry (the table is too cramped to type into). */}
+            <div className="sm:hidden divide-y divide-slate-100">
+              <div className="px-4 pt-3 pb-2 text-[12px] text-slate-500">Tap a subject to enter marks.</div>
+              {grid.subjects.map((su) => {
+                const n = filledCount(su.id);
+                return (
+                  <button key={su.id} onClick={() => setFullSubject(su.id)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-purple-50">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[15px] font-semibold text-slate-900 flex items-center gap-1.5">{su.name}{!su.canEdit && <Icon name="Lock" size={13} className="text-slate-400" />}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">max {su.max} · <span className={n === grid.students.length ? 'text-success-700 font-semibold' : ''}>{n}/{grid.students.length} entered</span></div>
+                    </div>
+                    <StatusPill s={su.status} />
+                    <Icon name="ChevronRight" size={18} className="text-slate-300" />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
               <table className="text-sm border-collapse min-w-full">
                 <thead>
                   <tr className="bg-slate-50">
@@ -179,6 +205,7 @@ export function EntryTab() {
             <div className="text-xs text-slate-500">Type a mark, or <b>A</b> for absent. {anyInvalid && <span className="text-danger-600 font-medium">Some marks exceed the max.</span>}</div>
             <div className="flex items-center gap-2">
               {toast && <span className="text-xs text-success-600 inline-flex items-center gap-1"><Icon name="Check" size={14} />{toast}</span>}
+              {grid.subjects.length > 0 && grid.students.length > 0 && <span className="hidden sm:inline-flex"><Button icon="Maximize2" onClick={() => setFullSubject((editableSubjects[0] || grid.subjects[0]).id)}>Full-screen entry</Button></span>}
               {editableSubjects.length > 0 && <Button icon="Upload" onClick={() => setUploadOpen(true)}>Upload marks</Button>}
               {editableSubjects.length > 0 ? (<>
                 <Button onClick={() => save('save')} disabled={busy || anyInvalid}>Save draft</Button>
@@ -187,6 +214,12 @@ export function EntryTab() {
             </div>
           </div>
         </Card>
+      )}
+
+      {fullSubject && grid && (
+        <FullScreenEntry grid={grid} vals={vals} subjectId={fullSubject} onSubject={setFullSubject}
+          setCell={setCell} filledCount={filledCount} dirty={dirty} busy={busy} anyInvalid={anyInvalid} toast={toast} error={error}
+          canSave={editableSubjects.length > 0} onSave={save} onClose={() => setFullSubject(null)} />
       )}
 
       {uploadOpen && grid && (
@@ -204,12 +237,144 @@ export function EntryTab() {
               return nv;
             });
             setUploadOpen(false);
+            setDirty(true);
             setToast(summary);
             setTimeout(() => setToast(''), 4500);
           }}
         />
       )}
     </div>
+  );
+}
+
+/* ---------------- Full-screen entry (phone-friendly, one subject at a time) ---------------- */
+function FullScreenEntry({ grid, vals, subjectId, onSubject, setCell, filledCount, dirty, busy, anyInvalid, toast, error, canSave, onSave, onClose }: {
+  grid: ClassGrid; vals: Record<string, Record<string, string>>; subjectId: string; onSubject: (id: string) => void;
+  setCell: (subId: string, stId: string, v: string) => void; filledCount: (subId: string) => number;
+  dirty: boolean; busy: boolean; anyInvalid: boolean; toast: string; error: string;
+  canSave: boolean; onSave: (a: 'save' | 'submit') => void; onClose: () => void;
+}) {
+  const su = grid.subjects.find((s) => s.id === subjectId) || grid.subjects[0];
+  const idx = grid.subjects.findIndex((s) => s.id === su.id);
+  const next = grid.subjects[idx + 1];
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const n = filledCount(su.id);
+  const total = grid.students.length;
+  const badHere = grid.students.filter((st) => cellInvalid(vals[su.id]?.[st.id] ?? '', su.max)).length;
+
+  // Lock the page behind; keep the active subject chip in view.
+  useEffect(() => { const o = document.body.style.overflow; document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = o; }; }, []);
+  useEffect(() => {
+    tabsRef.current?.querySelector(`[data-sub="${su.id}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    inputs.current = [];
+  }, [su.id]);
+
+  const focusRow = (i: number) => {
+    const el = inputs.current[i];
+    if (el) { el.focus(); el.select(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    else (document.activeElement as HTMLElement | null)?.blur();
+  };
+  const onType = (i: number, stId: string, raw: string) => {
+    const v = raw.replace(/[^0-9.]/g, '').slice(0, 5);
+    setCell(su.id, stId, v);
+    // Auto-advance once another digit could only exceed the max (max 50: "4" waits, "45" / "6" move on).
+    const num = Number(v);
+    if (v !== '' && !v.endsWith('.') && !isNaN(num) && num <= su.max && num * 10 > su.max) focusRow(i + 1);
+  };
+  const close = () => {
+    if (dirty && !window.confirm('You have unsaved marks. Close anyway? (They stay on the page until you leave it — tap Save draft to keep them.)')) return;
+    onClose();
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] bg-white flex flex-col">
+      {/* Header */}
+      <div className="flex-shrink-0 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+          <button onClick={close} className="p-2 -ml-1 rounded-lg text-slate-500 hover:bg-slate-100" title="Close"><Icon name="ArrowLeft" size={20} /></button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-bold text-slate-900 truncate">{grid.assessment.name} · {shortClass(grid.class.name)}{grid.section ? ` ${grid.section.name}` : ''}</div>
+            <div className="text-xs text-slate-500">{su.name} · max <b>{su.max}</b> · <span className={n === total ? 'text-success-700 font-semibold' : ''}>{n}/{total} entered</span>{badHere > 0 && <span className="text-danger-600 font-semibold"> · {badHere} over max</span>}</div>
+          </div>
+          <StatusPill s={su.status} />
+        </div>
+        <div ref={tabsRef} className="flex gap-1.5 overflow-x-auto px-3 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {grid.subjects.map((s) => {
+            const c = filledCount(s.id);
+            const on = s.id === su.id;
+            return (
+              <button key={s.id} data-sub={s.id} onClick={() => onSubject(s.id)}
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold ${on ? 'border-purple-500 bg-purple-600 text-white' : 'border-slate-200 text-slate-600 bg-white'}`}>
+                {!s.canEdit && <Icon name="Lock" size={12} />}{s.name}
+                <span className={`text-[11px] font-medium ${on ? 'text-white/80' : c === total ? 'text-success-600' : 'text-slate-400'}`}>{c}/{total}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {!su.canEdit && <div className="flex-shrink-0 px-4 py-2 bg-slate-50 text-xs text-slate-500 flex items-center gap-1.5"><Icon name="Lock" size={13} /> {su.status === 'APPROVED' ? 'Approved — locked.' : 'You can view these marks but not change them.'}</div>}
+
+      {/* Students */}
+      <div className="flex-1 overflow-y-auto overscroll-contain">
+        {grid.students.map((st, i) => {
+          const t = vals[su.id]?.[st.id] ?? '';
+          const ab = /^a/i.test(t.trim());
+          const bad = cellInvalid(t, su.max);
+          return (
+            <div key={st.id} className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 ${bad ? 'bg-danger-50' : ''}`}>
+              <span className="w-6 text-right text-xs text-slate-400 tabular-nums flex-shrink-0">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[15px] leading-snug text-slate-900 break-words">{st.name}</div>
+                {st.roll && <div className="text-[11px] text-slate-400">Roll {st.roll}</div>}
+              </div>
+              <input
+                ref={(el) => { inputs.current[i] = el; }}
+                value={ab ? 'AB' : t}
+                readOnly={ab || !su.canEdit}
+                disabled={!su.canEdit}
+                inputMode="decimal" enterKeyHint={i === total - 1 ? 'done' : 'next'} autoComplete="off"
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => onType(i, st.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusRow(i + 1); } }}
+                placeholder="—"
+                className={`w-[72px] h-12 flex-shrink-0 rounded-xl border-2 text-center text-xl font-bold tabular-nums outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/15
+                  ${bad ? 'border-danger-400 text-danger-700 bg-white' : ab ? 'border-slate-200 bg-slate-100 text-slate-500 text-base' : 'border-slate-200 text-slate-900'} ${!su.canEdit ? 'bg-slate-50 text-slate-400' : ''}`} />
+              <button type="button" disabled={!su.canEdit}
+                onClick={() => { setCell(su.id, st.id, ab ? '' : 'AB'); if (!ab) focusRow(i + 1); }}
+                className={`w-12 h-12 flex-shrink-0 rounded-xl border-2 text-[13px] font-bold ${ab ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-200 text-slate-500'} disabled:opacity-40`}
+                title="Absent">AB</button>
+            </div>
+          );
+        })}
+        {next && (
+          <div className="p-4">
+            <button onClick={() => onSubject(next.id)} className="w-full rounded-xl border-2 border-dashed border-purple-300 text-purple-700 py-3 text-sm font-semibold inline-flex items-center justify-center gap-1.5">
+              Next subject: {next.name} <Icon name="ArrowRight" size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex-shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        {error && <div className="mb-2 text-xs text-danger-700">{error}</div>}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 text-[11px] leading-tight">
+            {toast ? <span className="text-success-600 font-semibold inline-flex items-center gap-1"><Icon name="Check" size={13} />{toast}</span>
+              : anyInvalid ? <span className="text-danger-600 font-semibold">Fix marks above the max to save.</span>
+              : dirty ? <span className="text-marigold-700 font-semibold">Unsaved changes</span>
+              : <span className="text-slate-400">All saved</span>}
+          </div>
+          {canSave && <>
+            <Button onClick={() => onSave('save')} disabled={busy || anyInvalid || !dirty}>{busy ? 'Saving…' : 'Save draft'}</Button>
+            <Button kind="primary" icon="Send" onClick={() => onSave('submit')} disabled={busy || anyInvalid}>Submit</Button>
+          </>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
