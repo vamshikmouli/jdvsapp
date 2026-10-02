@@ -2,7 +2,8 @@
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can, getClassScope } from '@/lib/rbac/roles';
+import { can, canAny, getClassScope } from '@/lib/rbac/roles';
+import { SUPER_TOOLS_ANY } from '@/lib/rbac/permissions';
 import { getActiveYear } from '@/lib/services/fees';
 
 export async function GET(req: NextRequest) {
@@ -17,7 +18,8 @@ export async function GET(req: NextRequest) {
     const archFilter = { archived: showArchived };
 
     // Scope to assigned classes unless the user can access all classes
-    const scope = await getClassScope(session);
+    // (Super Tools — hall tickets / certificates — work across every class).
+    const scope = canAny(session, SUPER_TOOLS_ANY) ? { all: true, classIds: [] as string[] } : await getClassScope(session);
     const where = scope.all ? { ...archFilter } : { id: { in: scope.classIds }, ...archFilter };
 
     const classes = await prisma.schoolClass.findMany({

@@ -216,6 +216,12 @@ export const MARKS_READ_ANY: Permission[] = [
   'MARKS_VIEW', 'MARKS_ENTER', 'MARKS_APPROVE', 'MARKS_SETUP', ...MARKS_SETUP_TABS,
 ];
 
+// Super Tools permissions (Hall tickets / certificates). Their pages look up any
+// student and read exams / subjects, so these also unlock those READ endpoints.
+export const SUPER_TOOLS_ANY: Permission[] = [
+  'HALL_TICKETS_ACCESS', 'ADMISSION_EXTRACT_ACCESS', 'STUDY_CERTIFICATE_ACCESS', 'RURAL_CERTIFICATE_ACCESS',
+];
+
 /**
  * The 4 built-in system roles (isSystem: true).
  */

@@ -2,7 +2,8 @@
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can, getClassScope } from '@/lib/rbac/roles';
+import { can, canAny, getClassScope } from '@/lib/rbac/roles';
+import { SUPER_TOOLS_ANY } from '@/lib/rbac/permissions';
 import { normalizePhone } from '@/lib/auth/provision';
 import { ensureParentUser, pickPrimaryContact } from '@/lib/services/parents';
 import { normalizeContactTargets } from '@/lib/contactTargets';
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
     const enrWhere: any = { yearId: year.id };
     if (where.classId) enrWhere.classId = where.classId;
 
-    const scope = await getClassScope(session);
+    // Super Tools (certificates / hall tickets) are school-wide office work — look up any student.
+    const scope = canAny(session, SUPER_TOOLS_ANY) ? { all: true, classIds: [] as string[] } : await getClassScope(session);
     if (!scope.all) {
       if (enrWhere.classId) {
         if (!scope.classIds.includes(enrWhere.classId)) return NextResponse.json([]);

@@ -9,7 +9,7 @@ import { MARKS_READ_ANY } from '@/lib/rbac/permissions';
 // Returns { map: { [classId]: subjectId[] } }.
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, [...MARKS_READ_ANY, 'HALL_TICKETS_ACCESS'])) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const links = await prisma.classSubject.findMany({ select: { classId: true, subjectId: true } });
   const map: Record<string, string[]> = {};
   for (const l of links) (map[l.classId] ||= []).push(l.subjectId);

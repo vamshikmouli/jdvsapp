@@ -10,7 +10,7 @@ import type { AssessmentType } from '@prisma/client';
 // GET /api/assessments — assessments for the active year, with mark-sheet progress.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !canAny(session, MARKS_READ_ANY)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, [...MARKS_READ_ANY, 'HALL_TICKETS_ACCESS'])) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const year = await getActiveYear();
   const showArchived = new URL(req.url).searchParams.get('archived') === '1';
   const items = await prisma.assessment.findMany({

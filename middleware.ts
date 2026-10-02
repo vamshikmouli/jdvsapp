@@ -8,10 +8,11 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/attendance/register', perm: ['ATTENDANCE_REGISTER', 'SETTINGS_MANAGE'] },
   { prefix: '/admin/attendance', perm: 'ATTENDANCE_VIEW' },
   { prefix: '/admin/students', perm: 'STUDENTS_VIEW' },
-  { prefix: '/admin/hall-tickets', perm: 'STUDENTS_MANAGE' },
-  { prefix: '/admin/admission-extract', perm: 'STUDENTS_MANAGE' },
-  { prefix: '/admin/study-certificate', perm: 'STUDENTS_MANAGE' },
-  { prefix: '/admin/rural-certificate', perm: 'STUDENTS_MANAGE' },
+  // Super Tools: each page's own permission (Roles & access → Super Tools), or STUDENTS_MANAGE.
+  { prefix: '/admin/hall-tickets', perm: ['HALL_TICKETS_ACCESS', 'STUDENTS_MANAGE'] },
+  { prefix: '/admin/admission-extract', perm: ['ADMISSION_EXTRACT_ACCESS', 'STUDENTS_MANAGE'] },
+  { prefix: '/admin/study-certificate', perm: ['STUDY_CERTIFICATE_ACCESS', 'STUDENTS_MANAGE'] },
+  { prefix: '/admin/rural-certificate', perm: ['RURAL_CERTIFICATE_ACCESS', 'STUDENTS_MANAGE'] },
   { prefix: '/admin/classes', perm: 'CLASSES_VIEW' },
   // More-specific prefixes MUST come before '/admin/staff' (first match wins).
   { prefix: '/admin/staff-attendance', perm: 'STAFF_ATTENDANCE_VIEW' },

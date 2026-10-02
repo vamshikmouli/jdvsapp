@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can } from '@/lib/rbac/roles';
+import { can, canAny } from '@/lib/rbac/roles';
 import { pickPrimaryContact } from '@/lib/services/parents';
 import { normalizeContactTargets } from '@/lib/contactTargets';
 import { logActivity } from '@/lib/activity';
@@ -36,8 +36,27 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !can(session, 'STUDENTS_UPDATE')) {
-      return NextResponse.json({ error: 'Admin only' }, { status: 403 });
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!can(session, 'STUDENTS_UPDATE')) {
+      // Admission extract / Study certificate "Save to student": a role with only that
+      // tool may update just the certificate fields those tools edit — nothing else.
+      if (!canAny(session, ['ADMISSION_EXTRACT_ACCESS', 'STUDY_CERTIFICATE_ACCESS'])) {
+        return NextResponse.json({ error: 'Admin only' }, { status: 403 });
+      }
+      const b = await req.json();
+      const data: Record<string, unknown> = {};
+      const txt = (k: string, upper = false) => { if (k in b) data[k] = b[k] ? (upper ? String(b[k]).trim().toUpperCase() : String(b[k]).trim()) : null; };
+      const day = (k: string) => { if (k in b) data[k] = b[k] ? new Date(b[k]) : null; };
+      const num = (k: string) => { if (k in b) data[k] = b[k] != null && b[k] !== '' ? Number(b[k]) : null; };
+      if (b.name) data.name = String(b.name).trim().toUpperCase();
+      if (b.gender === 'M' || b.gender === 'F') data.gender = b.gender;
+      txt('fatherName', true);
+      ['motherTongue', 'previousSchool', 'village', 'taluk', 'district', 'tcNo', 'studyFromYear', 'studyToYear', 'studyFromStandard', 'studyToStandard'].forEach((k) => txt(k));
+      ['dob', 'joinedDate', 'tcDate', 'schoolLeavingDate'].forEach(day);
+      num('annualIncome'); num('noOfDependents');
+      const updated = await prisma.student.update({ where: { id: params.id }, data, include: { class: { select: { id: true, name: true } } } });
+      void logActivity(session, { category: 'STUDENTS', action: 'STUDENT_UPDATED', entityType: 'Student', entityId: updated.id, summary: `Updated certificate details of ${updated.name} (${updated.id})`, req });
+      return NextResponse.json(updated);
     }
 
     const body = await req.json();
