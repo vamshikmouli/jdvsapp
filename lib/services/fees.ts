@@ -146,6 +146,7 @@ export async function getStudentAccount(studentId: string, yearId: string) {
     student: {
       id: student.id,
       name: student.name,
+      photoUrl: student.photoUrl,
       classId: enrollment?.classId ?? student.classId,
       className: enrollment?.class?.name ?? student.class?.name ?? null,
       section: enrollment?.section?.name ?? student.section?.name ?? null,
@@ -250,7 +251,7 @@ export async function getReminderAccounts(yearId: string, studentIds: string[]):
     const enr = enrByStu.get(st.id);
     out.set(st.id, {
       student: {
-        id: st.id, name: st.name,
+        id: st.id, name: st.name, photoUrl: st.photoUrl,
         className: enr?.class?.name ?? st.class?.name ?? null,
         fatherName: st.fatherName, fatherPhone: st.fatherPhone,
         motherName: st.motherName, motherPhone: st.motherPhone,
@@ -403,6 +404,7 @@ export async function listAccounts(
     return {
       id: s.id,
       name: s.name,
+      photoUrl: s.photoUrl || null,
       fatherName: s.fatherName || null,
       phone: s.guardianPhone || s.fatherPhone || s.motherPhone || null,
       classId: e.classId,

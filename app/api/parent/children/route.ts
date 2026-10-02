@@ -80,6 +80,7 @@ export async function GET() {
       return {
         id: c.id,
         name: c.name,
+        photoUrl: c.photoUrl,
         className: c.class?.name || 'Unassigned',
         roll: c.roll,
         gender: c.gender,

@@ -1022,7 +1022,7 @@ export default function StudentsPage() {
               {viewing.photoUrl ? (
                 <img src={viewing.photoUrl} alt={viewing.name} className="w-12 h-12 rounded-full object-cover" />
               ) : (
-                <Avatar name={viewing.name} size="md" />
+                <Avatar name={viewing.name} size="md" src={viewing.photoUrl} />
               )}
               <div>
                 <div className="font-semibold text-slate-900">{viewing.name}</div>

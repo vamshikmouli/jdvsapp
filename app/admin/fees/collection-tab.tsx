@@ -25,6 +25,7 @@ import { fmtDate } from '@/lib/dateFormat';
 interface AccountRow {
   id: string;
   name: string;
+  photoUrl?: string | null;
   fatherName: string | null;
   phone: string | null;
   classId: string | null;
@@ -330,7 +331,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
                   )}
                   <td className="py-3 px-6">
                     <div className="flex items-center gap-3">
-                      <Avatar name={r.name} size="sm" />
+                      <Avatar name={r.name} size="sm" src={r.photoUrl} />
                       <div>
                         <div className="font-medium text-slate-900">{r.name}</div>
                         {r.fatherName && <div className="text-xs text-slate-500">S/o {r.fatherName}</div>}
@@ -391,7 +392,7 @@ export function CollectionTab({ refreshKey, canCollect, canVoid, canNotify, canM
                       {r.totalBalance > 0 && <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />}
                     </div>
                   )}
-                  <Avatar name={r.name} size="sm" />
+                  <Avatar name={r.name} size="sm" src={r.photoUrl} />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-slate-900 truncate">{r.name}</div>
                     {r.fatherName && <div className="text-[11px] text-slate-500 truncate">S/o {r.fatherName}</div>}

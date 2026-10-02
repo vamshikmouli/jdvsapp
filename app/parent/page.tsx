@@ -12,6 +12,7 @@ import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 interface Child {
   id: string;
   name: string;
+  photoUrl?: string | null;
   className: string;
   roll: string | null;
   gender?: string;
@@ -209,9 +210,13 @@ function ChildCard({ child, fee }: { child: Child; fee: FeeData | null }) {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* gradient header w/ circular avatar */}
       <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-purple-50 to-white">
-        <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold flex-shrink-0 ring-2 ring-white shadow">
-          {initials(child.name)}
-        </div>
+        {child.photoUrl ? (
+          <img src={child.photoUrl} alt={child.name} className="w-12 h-12 rounded-full object-cover bg-slate-100 flex-shrink-0 ring-2 ring-white shadow" />
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold flex-shrink-0 ring-2 ring-white shadow">
+            {initials(child.name)}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="font-bold text-slate-900 truncate">{child.name}</div>
           <div className="text-xs text-slate-500">{child.className}{child.roll ? ` · Roll ${child.roll}` : ''}</div>
@@ -466,7 +471,7 @@ function PhotosScreen() {
 // ---------- Marks / report card screen ----------
 interface ReportSubject { name: string; marks: number | null; isAbsent: boolean; max: number; grade: string | null; gradeOnly: boolean }
 interface ReportAssessment { id: string; name: string; type: 'FORMATIVE' | 'SUMMATIVE'; term: string | null; subjects: ReportSubject[]; totalObtained: number; totalMax: number; percent: number | null; grade: string | null }
-interface Report { year: string; student: { id: string; name: string; className: string | null; section: string | null }; assessments: ReportAssessment[]; hasGrades: boolean }
+interface Report { year: string; student: { id: string; name: string; photoUrl?: string | null; className: string | null; section: string | null }; assessments: ReportAssessment[]; hasGrades: boolean }
 
 function marksInitials(name: string) {
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
@@ -644,7 +649,9 @@ function MarksScreen() {
       {shown.map((rep) => (
         <div key={rep.student.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">{marksInitials(rep.student.name)}</div>
+            {rep.student.photoUrl
+              ? <img src={rep.student.photoUrl} alt={rep.student.name} className="w-10 h-10 rounded-xl object-cover bg-slate-100 flex-shrink-0" />
+              : <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">{marksInitials(rep.student.name)}</div>}
             <div className="min-w-0">
               <div className="font-semibold text-slate-900 truncate">{rep.student.name}</div>
               <div className="text-xs text-slate-500">{(rep.student.className || '').replace(/\s?STD$/i, '')}{rep.student.section ? ` · ${rep.student.section}` : ''} · {rep.year}</div>

@@ -214,7 +214,7 @@ export function MiniToggle({ on, disabled, onChange }: { on: boolean; disabled?:
 }
 
 export interface Account {
-  student: { id: string; name: string; className: string | null; section: string | null; guardianName: string; guardianPhone: string; village: string | null; whatsappEnabled?: boolean };
+  student: { id: string; name: string; photoUrl?: string | null; className: string | null; section: string | null; guardianName: string; guardianPhone: string; village: string | null; whatsappEnabled?: boolean };
   assignment: { oldDue: number; concession: number; concessionReason: string | null } | null;
   summary: AccountSummary;
   payments: { id: string; receiptNo: string; manualReceiptNo?: string | null; method: string; tenders?: { method: string; amount: number }[] | null; total: number; note: string | null; paidAt: string; voided?: boolean; voidReason?: string | null; allocations: { amount: number; label: string }[] }[];
@@ -246,7 +246,7 @@ export function AccountView({ account, canRequestConcession, canVoid, canNotify,
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-        <Avatar name={account.student.name} size="md" />
+        <Avatar name={account.student.name} size="md" src={account.student.photoUrl} />
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-slate-900">{account.student.name}</div>
           <div className="text-xs text-slate-500">{account.student.guardianName} · {account.student.guardianPhone}{account.student.village ? ` · ${account.student.village}` : ''}</div>
@@ -413,7 +413,7 @@ export function NotifyParentModal({ account, onClose }: { account: Account; onCl
       <div className="space-y-4">
         {error && <div className="bg-danger-50 border border-danger-100 rounded-md p-3 text-sm text-danger-700">{error}</div>}
         <div className="flex items-center gap-2.5 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5">
-          <Avatar name={account.student.name} size="sm" />
+          <Avatar name={account.student.name} size="sm" src={account.student.photoUrl} />
           <div className="min-w-0 text-sm">
             <div className="font-medium text-slate-900">To: {account.student.guardianName || '—'}</div>
             <div className="text-xs text-slate-500">{account.student.guardianPhone || 'no phone on file'} · delivered in the parent app</div>

@@ -12,6 +12,7 @@ import { PaymentTimeline, CollectDrawer } from '@/app/admin/fees/account-ui';
 interface Stu {
   id: string;
   name: string;
+  photoUrl?: string | null;
   admissionNo: string | null;
   gender: 'M' | 'F';
   className: string | null;
@@ -53,7 +54,7 @@ export function GlobalSearch() {
         const res = await fetch(`/api/students?status=ACTIVE&q=${encodeURIComponent(term)}`);
         const data = res.ok ? await res.json() : [];
         const list: Stu[] = (Array.isArray(data) ? data : []).slice(0, 12).map((s: any) => ({
-          id: s.id, name: s.name, admissionNo: s.admissionNo ?? null, gender: s.gender,
+          id: s.id, name: s.name, photoUrl: s.photoUrl ?? null, admissionNo: s.admissionNo ?? null, gender: s.gender,
           className: s.class?.name ?? null, fatherName: s.fatherName ?? null, guardianName: s.guardianName,
           fatherPhone: s.fatherPhone ?? null, guardianPhone: s.guardianPhone, village: s.village ?? null,
         }));
@@ -84,7 +85,7 @@ export function GlobalSearch() {
         const phone = s.guardianPhone || s.fatherPhone;
         return (
           <div key={s.id} className="flex items-start gap-3 px-3 py-2.5 border-b border-slate-100 last:border-0 hover:bg-slate-50">
-            <Avatar name={s.name} size="sm" />
+            <Avatar name={s.name} size="sm" src={s.photoUrl} />
             <div className="flex-1 min-w-0">
               <div className="font-medium text-slate-900 truncate">{s.name}</div>
               <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">

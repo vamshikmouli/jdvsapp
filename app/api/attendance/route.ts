@@ -44,9 +44,9 @@ export async function GET(req: NextRequest) {
     const enr = await prisma.enrollment.findMany({
       where: { yearId: year.id, classId, status: 'ACTIVE', student: { status: 'ACTIVE' } },
       orderBy: [{ student: { name: 'asc' } }],
-      include: { student: { select: { id: true, name: true, gender: true, guardianName: true } } },
+      include: { student: { select: { id: true, name: true, gender: true, guardianName: true, photoUrl: true } } },
     });
-    const roster = enr.map((e) => ({ id: e.student.id, name: e.student.name, roll: e.roll, gender: e.student.gender, guardianName: e.student.guardianName }));
+    const roster = enr.map((e) => ({ id: e.student.id, name: e.student.name, roll: e.roll, gender: e.student.gender, guardianName: e.student.guardianName, photoUrl: e.student.photoUrl }));
 
     // Existing session (if attendance was taken)
     const attendanceSession = await prisma.attendanceSession.findUnique({

@@ -238,7 +238,7 @@ export async function decideMarkSheet(sheetId: string, action: 'approve' | 'retu
  * student's APPROVED subject marks, totals, percentage and grade.
  */
 export async function getStudentReport(studentId: string, yearId: string) {
-  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true, name: true } });
+  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true, name: true, photoUrl: true } });
   if (!student) return null;
 
   // The class/section to grade against is the student's enrollment FOR THIS YEAR.
@@ -247,7 +247,7 @@ export async function getStudentReport(studentId: string, yearId: string) {
     include: { class: { select: { name: true } }, section: { select: { name: true } } },
   });
   if (!enrollment) {
-    return { student: { id: student.id, name: student.name, className: null, section: null }, assessments: [], hasGrades: false };
+    return { student: { id: student.id, name: student.name, photoUrl: student.photoUrl, className: null, section: null }, assessments: [], hasGrades: false };
   }
   const classId = enrollment.classId;
   const enrSectionId = enrollment.sectionId;
@@ -297,7 +297,7 @@ export async function getStudentReport(studentId: string, yearId: string) {
   }
 
   return {
-    student: { id: student.id, name: student.name, className: enrollment.class?.name || null, section: enrollment.section?.name || null },
+    student: { id: student.id, name: student.name, photoUrl: student.photoUrl, className: enrollment.class?.name || null, section: enrollment.section?.name || null },
     assessments: out,
     hasGrades: bands.length > 0,
   };

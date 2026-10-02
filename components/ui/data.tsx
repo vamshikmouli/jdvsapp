@@ -88,20 +88,23 @@ export function Avatar({ name, size = 'md', src }: AvatarProps) {
   const colors = ['bg-purple-100', 'bg-blue-100', 'bg-green-100', 'bg-yellow-100', 'bg-pink-100'];
   const colorIndex = name.charCodeAt(0) % colors.length;
 
-  if (src) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [src]);
+
+  if (src && !failed) {
     return (
       <img
         src={src}
         alt={name}
         loading="lazy"
-        className={`${sizeClasses[size]} rounded-full object-cover bg-slate-100`}
-        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+        className={`${sizeClasses[size]} flex-shrink-0 rounded-full object-cover bg-slate-100`}
+        onError={() => setFailed(true)}
       />
     );
   }
 
   return (
-    <div className={`${sizeClasses[size]} ${colors[colorIndex]} rounded-full flex items-center justify-center font-semibold text-slate-700`}>
+    <div className={`${sizeClasses[size]} ${colors[colorIndex]} flex-shrink-0 rounded-full flex items-center justify-center font-semibold text-slate-700`}>
       {initials}
     </div>
   );

@@ -30,6 +30,7 @@ interface RosterStudent {
   roll: string | null;
   gender: 'M' | 'F';
   guardianName: string;
+  photoUrl?: string | null;
 }
 
 // Fallback until Settings load
@@ -562,7 +563,7 @@ export default function AttendancePage() {
                 <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="py-3 px-4 sm:px-6">
                     <div className="flex items-center gap-3">
-                      <Avatar name={student.name} size="sm" />
+                      <Avatar name={student.name} size="sm" src={student.photoUrl} />
                       <span className="font-medium text-slate-900">{student.name}</span>
                     </div>
                   </td>
