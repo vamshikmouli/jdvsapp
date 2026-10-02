@@ -70,6 +70,10 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File)) return NextResponse.json({ error: 'No file' }, { status: 400 });
     if (!file.type.startsWith('image/')) return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
     if (file.size > 5 * 1024 * 1024) return NextResponse.json({ error: 'Image must be under 5 MB' }, { status: 400 });
+    // Student photos: 50 KB – 1000 KB (the app's cropper saves within this range).
+    if (folder === 'students' && (file.size < 50 * 1024 || file.size > 1000 * 1024)) {
+      return NextResponse.json({ error: `Photo must be between 50 KB and 1000 KB (this one is ${Math.round(file.size / 1024)} KB).` }, { status: 400 });
+    }
 
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
     const filename = `${randomUUID()}.${ext}`;

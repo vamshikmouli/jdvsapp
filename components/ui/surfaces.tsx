@@ -40,10 +40,12 @@ export interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, subtitle, footer, children, width = 500 }: ModalProps) {
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  // Portalled to <body> and stacked above drawers (z-60), so a dialog opened from a
+  // drawer — e.g. the photo cropper in the student form — is on top and clickable.
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
       <div
         className="relative bg-white rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto w-full"
@@ -62,7 +64,8 @@ export function Modal({ open, onClose, title, subtitle, footer, children, width 
         <div className="py-6">{children}</div>
         {footer && <div className="border-t border-slate-100 pt-4">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

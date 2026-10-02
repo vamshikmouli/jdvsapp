@@ -345,6 +345,15 @@ export default function StudentsPage() {
 
   const [uploading, setUploading] = useState(false);
   const [cropFile, setCropFile] = useState<File | null>(null); // pending image to crop before upload
+  // Student photos are stored between 50 KB and 1000 KB. A chosen photo under 50 KB is
+  // too low-quality to use; bigger ones (e.g. phone camera photos) are fine — the
+  // cropper saves them at a size within the range.
+  const pickPhoto = (f: File) => {
+    if (!f.type.startsWith('image/')) { setFormError('Please choose an image file (JPG / PNG).'); return; }
+    if (f.size < PHOTO_MIN_KB * 1024) { setFormError(`This photo is too small (${Math.round(f.size / 1024)} KB). Please use a clearer photo of at least ${PHOTO_MIN_KB} KB.`); return; }
+    setFormError('');
+    setCropFile(f);
+  };
   const uploadPhoto = async (file: File) => {
     setUploading(true);
     setFormError('');
@@ -774,15 +783,15 @@ export default function StudentsPage() {
             <div className="flex items-center gap-3">
               <label className="inline-flex items-center gap-1.5 text-sm font-medium text-purple-600 hover:text-purple-700 cursor-pointer">
                 <Icon name="Upload" size={15} /> {uploading ? 'Uploading…' : form.photoUrl ? 'Change photo' : 'Upload photo'}
-                <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+                <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.currentTarget.value = ''; }} />
               </label>
               <label className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-purple-700 cursor-pointer">
                 <Icon name="Camera" size={15} /> Camera
-                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.currentTarget.value = ''; }} />
+                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.currentTarget.value = ''; }} />
               </label>
             </div>
             {form.photoUrl && (<button type="button" onClick={() => setForm({ ...form, photoUrl: '' })} className="block text-xs text-slate-400 hover:text-danger-600 mt-1">Remove</button>)}
-            <p className="text-[11px] text-slate-400 mt-1">Optional · JPG/PNG up to 5 MB. You can crop before saving.</p>
+            <p className="text-[11px] text-slate-400 mt-1">Optional · JPG/PNG, at least 50 KB. You can crop before saving — it is saved as 50–1000 KB.</p>
           </div>
         </div>
 
@@ -1402,11 +1411,28 @@ function ImportDrawer({ open, onClose, onImported }: { open: boolean; onClose: (
   );
 }
 
+const PHOTO_MIN_KB = 50;
+const PHOTO_MAX_KB = 1000;
+
+// Encode the crop as a JPEG between PHOTO_MIN_KB and PHOTO_MAX_KB: start at 600 px /
+// quality 0.9, step quality down if too big, and size / quality up if too small.
+async function encodeWithinRange(draw: (size: number) => HTMLCanvasElement): Promise<Blob | null> {
+  const toBlob = (c: HTMLCanvasElement, q: number) => new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', q));
+  const tries: [number, number][] = [[600, 0.9], [600, 0.8], [600, 0.7], [520, 0.65], [480, 0.55], [600, 0.95], [800, 0.95], [1024, 0.97], [1200, 1]];
+  let last: Blob | null = null;
+  for (const [size, q] of tries) {
+    const b = await toBlob(draw(size), q);
+    if (!b) continue;
+    last = b;
+    if (b.size >= PHOTO_MIN_KB * 1024 && b.size <= PHOTO_MAX_KB * 1024) return b;
+  }
+  return last;
+}
+
 // Crop a chosen/captured image to a square before upload — drag to reposition,
-// slide to zoom. Outputs a 512×512 JPEG. No external library.
+// slide to zoom. Saves a JPEG of 50–1000 KB. No external library.
 function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: () => void; onCropped: (blob: Blob) => void }) {
   const V = 288;   // viewport square (px)
-  const OUT = 512; // output square (px)
   const [url, setUrl] = useState('');
   const [img, setImg] = useState<{ w: number; h: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -1432,19 +1458,28 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
   const onMove = (e: React.PointerEvent) => { if (!drag.current) return; setPan(clamp({ x: drag.current.px + (e.clientX - drag.current.x), y: drag.current.py + (e.clientY - drag.current.y) })); };
   const onUp = () => { drag.current = null; };
 
-  const doCrop = () => {
+  const [sizeErr, setSizeErr] = useState('');
+  const doCrop = async () => {
     if (!img || !imgRef.current) return;
     const imgLeft = V / 2 - dispW / 2 + pan.x;
     const imgTop = V / 2 - dispH / 2 + pan.y;
     const srcX = (0 - imgLeft) / scale;
     const srcY = (0 - imgTop) / scale;
     const srcSize = V / scale;
-    const canvas = document.createElement('canvas');
-    canvas.width = OUT; canvas.height = OUT;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(imgRef.current, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
-    canvas.toBlob((b) => { if (b) onCropped(b); }, 'image/jpeg', 0.9);
+    const el = imgRef.current;
+    const draw = (size: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      canvas.getContext('2d')?.drawImage(el, srcX, srcY, srcSize, srcSize, 0, 0, size, size);
+      return canvas;
+    };
+    const b = await encodeWithinRange(draw);
+    if (!b) return;
+    if (b.size < PHOTO_MIN_KB * 1024 || b.size > PHOTO_MAX_KB * 1024) {
+      setSizeErr(`Couldn't save this photo between ${PHOTO_MIN_KB} KB and ${PHOTO_MAX_KB} KB (got ${Math.round(b.size / 1024)} KB). Try zooming in less, or a clearer photo.`);
+      return;
+    }
+    onCropped(b);
   };
 
   return (
@@ -1465,7 +1500,8 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
           <input type="range" min={1} max={3} step={0.01} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-1 accent-purple-600" />
           <Icon name="ZoomIn" size={16} className="text-slate-400" />
         </div>
-        <p className="text-[11px] text-slate-400">Drag to reposition · slide to zoom</p>
+        <p className="text-[11px] text-slate-400">Drag to reposition · slide to zoom · saved as {PHOTO_MIN_KB}–{PHOTO_MAX_KB} KB</p>
+        {sizeErr && <p className="text-xs text-danger-700 text-center">{sizeErr}</p>}
       </div>
     </Modal>
   );
