@@ -25,16 +25,15 @@ export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [
     category: 'UTILITY',
     title: 'Monthly attendance report',
     usedFor: 'Communications → Monthly attendance (calendar image + counts for each student)',
-    // One item per line. WhatsApp shows only the first 2–3 lines under an image
-    // ("Read more" hides the rest), so the % and Absent come first — no greeting /
-    // blank line before them.
     body:
-      'Attendance of {{1}} for {{2}}: {{3}}%\n' +
-      'Absent: {{4}} days\n' +
-      'Present: {{5}} days\n' +
-      'Leave: {{6}} days\n\n' +
+      'Dear {{1}},\n' +
+      'This is the attendance report of {{2}} for {{3}}.\n\n' +
+      'Present: {{4}} days\n' +
+      'Absent: {{5}} days\n' +
+      'Leave: {{6}} days\n' +
+      'Attendance: {{7}}%\n\n' +
       'The day-wise attendance calendar is attached. For any correction, please contact the school office.',
-    examples: ['ASHA', 'September 2025', '96', '1', '23', '2'],
+    examples: ['Ramesh', 'ASHA', 'September 2025', '23', '1', '2', '96'],
     header: 'MONTHLY_CALENDAR',
   },
   {
