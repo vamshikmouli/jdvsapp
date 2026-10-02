@@ -4,6 +4,7 @@ import { toast } from '@/lib/toast';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { parseVoice, getSpeechRecognition } from '@/lib/marksVoice';
+import { detectBrowser, voiceProblem } from '@/lib/browserCheck';
 import { gradeOfMarks, marksForGrade, normGrade, type GradeBandLite } from '@/lib/grades';
 import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
@@ -486,7 +487,10 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
   };
   const startVoice = () => {
     const SR = getSpeechRecognition();
-    if (!SR) { setVoiceMsg({ ok: false, text: 'Voice entry needs Chrome or Edge (computer / Android) or Safari (iPhone).' }); return; }
+    // Tell the teacher exactly why voice can't start here (browser / https / offline).
+    const browser = detectBrowser(navigator.userAgent, navigator.maxTouchPoints || 0);
+    const problem = voiceProblem(browser, { secure: window.isSecureContext, hasVoice: !!SR, online: navigator.onLine });
+    if (problem || !SR) { setVoiceMsg({ ok: false, text: `${problem || 'Voice entry is not available here.'} (You are using ${browser.label}.)` }); return; }
     const rec = new SR();
     rec.lang = 'en-IN';
     // Android Chrome's continuous mode repeats / merges results; there, listen phrase
@@ -504,9 +508,18 @@ function FullScreenEntry({ grid, vals, subjectId, onSubject, startMode, setCell,
     rec.onerror = (e: any) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         wantRef.current = false; setListening(false);
-        setVoiceMsg({ ok: false, text: 'Microphone is blocked. Allow microphone access for this site in the browser, then try again.' });
+        const ios = /iPhone|iPad/i.test(navigator.userAgent);
+        setVoiceMsg({ ok: false, text: ios
+          ? 'Microphone is blocked. On iPhone: Settings → Safari → Microphone → Allow (and Settings → Privacy → Speech Recognition → Safari on), then try again.'
+          : 'Microphone is blocked. Tap the lock icon next to the web address → Permissions → Microphone → Allow, then try again.' });
       } else if (e.error === 'network') {
-        setVoiceMsg({ ok: false, text: 'Voice needs an internet connection.' });
+        setVoiceMsg({ ok: false, text: 'Voice needs an internet connection (speech is turned into text online).' });
+      } else if (e.error === 'audio-capture') {
+        wantRef.current = false; setListening(false);
+        setVoiceMsg({ ok: false, text: 'No microphone found, or another app is using it. Close other apps using the mic and try again.' });
+      } else if (e.error === 'language-not-supported') {
+        wantRef.current = false; setListening(false);
+        setVoiceMsg({ ok: false, text: 'English (India) speech isn\'t installed. On Android, update the "Google" and "Speech Services by Google" apps in the Play Store.' });
       }
     };
     // Browsers stop listening after a pause — keep going until the teacher says "stop".
