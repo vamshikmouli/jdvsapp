@@ -221,6 +221,14 @@ function SubjectsTab() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); } finally { setBusy(false); }
   };
   const patch = async (id: string, data: any) => { await fetch('/api/subjects', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...data }) }); load(); };
+  // Rename (name + code) — works any time, also after marks are approved / published:
+  // marks are linked to the subject, so report cards just show the new name.
+  const [editing, setEditing] = useState<{ id: string; name: string; code: string } | null>(null);
+  const saveEdit = async () => {
+    if (!editing || !editing.name.trim()) return;
+    await patch(editing.id, { name: editing.name.trim(), code: editing.code.trim() });
+    setEditing(null);
+  };
   const del = async (s: Subject) => {
     if (!confirm(`Delete subject "${s.name}"?`)) return;
     const r = await fetch(`/api/subjects?id=${s.id}`, { method: 'DELETE' });
@@ -262,10 +270,24 @@ function SubjectsTab() {
                     <button disabled={i === items.length - 1} onClick={() => move(i, 1)} className="text-slate-300 hover:text-purple-600 disabled:opacity-25 disabled:hover:text-slate-300 -my-0.5" title="Move down"><Icon name="ChevronDown" size={16} /></button>
                   </div>
                   <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0 text-xs font-bold">{(s.code || s.name).slice(0, 3).toUpperCase()}</div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-slate-900">{s.name}{!s.active && <span className="ml-2 text-[11px] text-slate-400">(inactive)</span>}{s.gradeOnly && <span className="ml-2 text-[10px] font-semibold text-purple-600 bg-purple-50 rounded px-1.5 py-0.5">GRADE ONLY</span>}</div>
-                    <div className="text-xs text-slate-500">{s.code ? s.code + ' · ' : ''}{s.classCount} class{s.classCount === 1 ? '' : 'es'}</div>
+                  {editing?.id === s.id ? (
+                    <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+                      <input autoFocus value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                        placeholder="Subject name" className="flex-1 min-w-[140px] rounded-md border border-purple-300 px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-purple-500/20" />
+                      <input value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                        placeholder="Code" className="w-20 rounded-md border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-purple-500/20" />
+                      <button onClick={saveEdit} disabled={!editing.name.trim()} className="rounded-md bg-purple-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Save</button>
+                      <button onClick={() => setEditing(null)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
+                  ) : (
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-900">{s.name}{!s.active && <span className="ml-2 text-[11px] text-slate-400">(inactive)</span>}{s.gradeOnly && <span className="ml-2 text-[10px] font-semibold text-purple-600 bg-purple-50 rounded px-1.5 py-0.5">GRADE ONLY</span>}</div>
+                      <div className="text-xs text-slate-500">{s.code ? s.code + ' · ' : ''}{s.classCount} class{s.classCount === 1 ? '' : 'es'}</div>
+                    </div>
+                    <button onClick={() => setEditing({ id: s.id, name: s.name, code: s.code || '' })} className="text-slate-300 hover:text-purple-600 p-1 flex-shrink-0" title="Rename subject"><Icon name="Pencil" size={14} /></button>
                   </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 pl-11 sm:pl-0">
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer" title="Show a grade and exclude this subject from the marks total">
@@ -594,7 +616,7 @@ function MaxMarksDrawer({ assessment, onClose, onSaved }: { assessment: Assessme
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-slate-400 mt-3">Changing a max updates draft/submitted sheets too. Approved sheets keep their max.</p>
+          <p className="text-[11px] text-slate-400 mt-3">Changing a max updates every sheet of this exam — approved and published ones too. It's refused if a student already has more than the new max.</p>
         </>
       )}
     </Drawer>

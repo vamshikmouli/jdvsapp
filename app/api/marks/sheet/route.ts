@@ -71,7 +71,8 @@ export async function PUT(req: NextRequest) {
       remark: m.remark || null,
     })) : [];
     const userId = (session.user as any)?.id || null;
-    const res = await saveMarkSheet({ assessmentId, classId, subjectId, sectionId }, marks, action, userId);
+    // An approver correcting approved marks keeps them approved (and visible to parents).
+    const res = await saveMarkSheet({ assessmentId, classId, subjectId, sectionId }, marks, action, userId, { keepApproved: isAdmin });
     return NextResponse.json(res);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to save' }, { status: 400 });

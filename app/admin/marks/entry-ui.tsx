@@ -234,7 +234,8 @@ export function EntryTab() {
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-100">
-            <div className="text-xs text-slate-500">Type a mark, or <b>A</b> for absent. {anyInvalid && <span className="text-danger-600 font-medium">Some marks exceed the max.</span>}</div>
+            <div className="text-xs text-slate-500">Type a mark, or <b>A</b> for absent. {anyInvalid && <span className="text-danger-600 font-medium">Some marks exceed the max.</span>}
+              {grid.subjects.some((s) => s.canEdit && s.status === 'APPROVED') && <div className="mt-0.5 text-success-700">Approved subjects you change stay approved — parents see the corrected marks straight away.</div>}</div>
             <div className="flex items-center gap-2">
               {toast && <span className="text-xs text-success-600 inline-flex items-center gap-1"><Icon name="Check" size={14} />{toast}</span>}
               {grid.subjects.length > 0 && grid.students.length > 0 && <span className="hidden sm:inline-flex"><Button icon="Maximize2" onClick={() => openFull((editableSubjects[0] || grid.subjects[0]).id, savedEntryMode())}>Full-screen entry</Button></span>}

@@ -149,8 +149,12 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
 
 export interface MarkInput { studentId: string; marksObtained: number | null; isAbsent?: boolean; remark?: string | null }
 
-/** Save the grid (create sheet on first save). action: 'save' → DRAFT, 'submit' → SUBMITTED. */
-export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], action: 'save' | 'submit', userId: string | null) {
+/**
+ * Save the grid (create sheet on first save). action: 'save' → DRAFT, 'submit' → SUBMITTED.
+ * keepApproved: an approver correcting an already-approved sheet — it stays APPROVED, so
+ * published report cards update at once instead of the marks vanishing until re-approval.
+ */
+export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], action: 'save' | 'submit', userId: string | null, opts: { keepApproved?: boolean } = {}) {
   const assessment = await prisma.assessment.findUnique({ where: { id: sel.assessmentId } });
   if (!assessment) throw new Error('Assessment not found');
 
@@ -166,7 +170,8 @@ export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], acti
     }
   }
 
-  const status: MarkSheetStatus = action === 'submit' ? 'SUBMITTED' : 'DRAFT';
+  const keep = !!opts.keepApproved && sheet?.status === 'APPROVED';
+  const status: MarkSheetStatus = keep ? 'APPROVED' : action === 'submit' ? 'SUBMITTED' : 'DRAFT';
 
   if (!sheet) {
     sheet = await prisma.markSheet.create({
@@ -179,10 +184,9 @@ export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], acti
   } else {
     sheet = await prisma.markSheet.update({
       where: { id: sheet.id },
-      data: {
-        status, enteredById: userId,
-        submittedAt: action === 'submit' ? new Date() : sheet.submittedAt,
-      },
+      data: keep
+        ? { status, approvedById: userId, approvedAt: new Date() }
+        : { status, enteredById: userId, submittedAt: action === 'submit' ? new Date() : sheet.submittedAt },
     });
   }
 
@@ -318,13 +322,25 @@ export async function getAssessmentSubjectMaxes(assessmentId: string) {
   };
 }
 
-/** Save per-subject max overrides; sync existing non-approved sheets to the new max. */
+/** Save per-subject max overrides; sync existing sheets (approved / published too) to the new max. */
 export async function setAssessmentSubjectMaxes(assessmentId: string, items: { subjectId: string; max: number }[]) {
   const a = await prisma.assessment.findUnique({ where: { id: assessmentId }, select: { defaultMax: true } });
   if (!a) throw new Error('Assessment not found');
+  // Refuse a max below a mark already entered (checked for all subjects before saving any).
   for (const it of items) {
     const max = Math.round(Number(it.max));
     if (!(max > 0)) throw new Error('Max marks must be greater than 0');
+    let customCls: string[] = [];
+    try { customCls = (await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: it.subjectId }, select: { classId: true } })).map((x) => x.classId); } catch { /* table not created yet */ }
+    const over = await prisma.mark.findFirst({
+      where: { marksObtained: { gt: max }, markSheet: { assessmentId, subjectId: it.subjectId, ...(customCls.length ? { classId: { notIn: customCls } } : {}) } },
+      select: { marksObtained: true, markSheet: { select: { subject: { select: { name: true } }, class: { select: { name: true } } } } },
+      orderBy: { marksObtained: 'desc' },
+    });
+    if (over) throw new Error(`${over.markSheet.subject.name}: a mark of ${over.marksObtained} is already entered in ${over.markSheet.class.name.replace(/\s?STD$/i, '')} — max can't be below that.`);
+  }
+  for (const it of items) {
+    const max = Math.round(Number(it.max));
     if (max === a.defaultMax) {
       await prisma.assessmentSubject.deleteMany({ where: { assessmentId, subjectId: it.subjectId } });
     } else {
@@ -334,11 +350,11 @@ export async function setAssessmentSubjectMaxes(assessmentId: string, items: { s
         update: { maxMarks: max },
       });
     }
-    // Keep already-created (not-yet-approved) sheets in sync with the new max — except in
+    // Keep already-created sheets (approved ones too) in sync with the new max — except in
     // classes whose exam setup sets their own max for this subject.
     let custom: string[] = [];
     try { custom = (await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: it.subjectId }, select: { classId: true } })).map((x) => x.classId); } catch { /* table not created yet */ }
-    await prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, status: { not: 'APPROVED' }, ...(custom.length ? { classId: { notIn: custom } } : {}) }, data: { maxMarks: max } });
+    await prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, ...(custom.length ? { classId: { notIn: custom } } : {}) }, data: { maxMarks: max } });
   }
   return { ok: true };
 }
@@ -436,8 +452,9 @@ export async function setClassExamSetup(assessmentId: string, classId: string, i
   await prisma.$transaction([
     prisma.assessmentClassSubject.deleteMany({ where: { assessmentId, classId } }),
     prisma.assessmentClassSubject.createMany({ data: clean.map((x, i) => ({ assessmentId, classId, subjectId: x.subjectId, maxMarks: x.max, order: i })) }),
-    // Existing (not approved) sheets of this class follow the new max.
-    ...clean.map((x) => prisma.markSheet.updateMany({ where: { assessmentId, classId, subjectId: x.subjectId, status: { not: 'APPROVED' } }, data: { maxMarks: x.max } })),
+    // Existing sheets of this class (approved / published too) follow the new max —
+    // marks above it were refused above.
+    ...clean.map((x) => prisma.markSheet.updateMany({ where: { assessmentId, classId, subjectId: x.subjectId }, data: { maxMarks: x.max } })),
   ]);
   return { ok: true, customised: true };
 }
