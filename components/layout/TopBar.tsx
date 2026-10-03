@@ -30,6 +30,15 @@ function YearSwitcher() {
   const [newId, setNewId] = useState('');
   const [err, setErr] = useState('');
 
+  // Narrow screen? (option text can't change with CSS, so read the width.)
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const on = () => setCompact(mq.matches);
+    on(); mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+
   const loadYears = () => fetch('/api/years').then((r) => (r.ok ? r.json() : { years: [] })).then((d) => { setYears(d.years || []); setCurrent(d.currentId || ''); }).catch(() => {});
   useEffect(() => { loadYears(); }, []);
 
@@ -55,16 +64,18 @@ function YearSwitcher() {
   };
 
   if (years.length === 0) return null;
+  // Phones: a short label ("26-27 •") so the top bar fits and the ☰ menu button stays tappable.
+  const short = (l: string) => l.replace(/^20(\d\d)-(\d\d)$/, '$1-$2');
   return (
-    <div className="relative flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md pl-2.5 pr-1.5 py-1.5" title="Academic year — applies to the whole app">
-      <Icon name="CalendarRange" size={16} className="text-slate-400 flex-shrink-0" />
-      <select value={current} disabled={busy} onChange={(e) => change(e.target.value)}
-        className="bg-transparent border-0 outline-none text-sm font-medium text-slate-800 pr-1 cursor-pointer disabled:opacity-50">
-        {years.map((y) => <option key={y.id} value={y.id}>{y.label}{y.isActive ? ' (current)' : ''}</option>)}
+    <div className="relative flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md pl-1.5 sm:pl-2.5 pr-1 sm:pr-1.5 py-1 sm:py-1.5" title="Academic year — applies to the whole app">
+      <Icon name="CalendarRange" size={16} className="hidden sm:block text-slate-400 flex-shrink-0" />
+      <select value={current} disabled={busy} onChange={(e) => change(e.target.value)} aria-label="Academic year"
+        className="bg-transparent border-0 outline-none text-[13px] sm:text-sm font-medium text-slate-800 pr-0.5 sm:pr-1 cursor-pointer disabled:opacity-50">
+        {years.map((y) => <option key={y.id} value={y.id}>{compact ? short(y.label) : y.label}{y.isActive ? (compact ? ' •' : ' (current)') : ''}</option>)}
       </select>
       {canManage && (
         <button onClick={() => { setAdding((v) => !v); setErr(''); }} title="Add academic year"
-          className="ml-0.5 p-0.5 text-slate-400 hover:text-purple-600 rounded flex-shrink-0">
+          className="hidden sm:block ml-0.5 p-0.5 text-slate-400 hover:text-purple-600 rounded flex-shrink-0">
           <Icon name={adding ? 'X' : 'Plus'} size={15} />
         </button>
       )}
@@ -91,10 +102,11 @@ export function TopBar({ title, subtitle, onMenu, collapsed = false, onToggleCol
   const { data: session } = useSession();
   const isParent = !!(session?.user as any)?.isParent;
   return (
-    <header className={`fixed left-0 right-0 top-0 h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-20 transition-all duration-200 ${collapsed ? 'lg:left-16' : 'lg:left-60'}`}>
-      <div className="flex items-center gap-2 min-w-0">
+    <header className={`fixed left-0 right-0 top-0 h-14 bg-white border-b border-slate-200 flex items-center justify-between gap-2 px-2 sm:px-6 lg:px-8 z-20 transition-all duration-200 ${collapsed ? 'lg:left-16' : 'lg:left-60'}`}>
+      {/* min-w keeps room for the ☰ button, so nothing on the right can ever cover it. */}
+      <div className="flex items-center gap-2 min-w-[40px] lg:min-w-0 overflow-hidden">
         {/* Hamburger — mobile/tablet only */}
-        <button onClick={onMenu} className="lg:hidden p-2 -ml-2 hover:bg-slate-100 rounded-md flex-shrink-0">
+        <button onClick={onMenu} aria-label="Open menu" className="lg:hidden p-2 hover:bg-slate-100 rounded-md flex-shrink-0">
           <Icon name="Menu" size={20} />
         </button>
         {/* Collapse toggle — desktop only */}
@@ -109,7 +121,7 @@ export function TopBar({ title, subtitle, onMenu, collapsed = false, onToggleCol
         </div>
       </div>
 
-      <div className="flex items-center gap-0.5 sm:gap-3">
+      <div className="flex items-center gap-0 sm:gap-3 flex-shrink-0">
         <YearSwitcher />
 
         <GlobalSearch />
