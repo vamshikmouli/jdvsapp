@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || !can(session, 'MARKS_ASSESSMENTS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const b = await req.json();
+  if (b.duplicateFrom) return duplicate(String(b.duplicateFrom), b.names);
   const name = String(b.name || '').trim();
   const type: AssessmentType = b.type === 'SUMMATIVE' ? 'SUMMATIVE' : 'FORMATIVE';
   const defaultMax = Math.round(Number(b.defaultMax) || 0);
@@ -43,6 +44,34 @@ export async function POST(req: NextRequest) {
     data: { yearId: year.id, name, type, term: b.term ? String(b.term).trim() : null, defaultMax, order: (max._max.order ?? 0) + 1 },
   });
   return NextResponse.json(created, { status: 201 });
+}
+
+// Duplicate an assessment's setup under new names (e.g. FA1 → FA2, FA3, FA4): type, term,
+// max marks, per-subject maxes and per-class subjects. Not copied: marks, exam dates,
+// published state — each copy starts fresh and hidden from parents.
+async function duplicate(fromId: string, rawNames: unknown) {
+  const src = await prisma.assessment.findUnique({ where: { id: fromId }, include: { subjectMaxes: true, classSubjects: true } });
+  if (!src) return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
+  const names = Array.from(new Set((Array.isArray(rawNames) ? rawNames : []).map((n) => String(n || '').trim()).filter(Boolean)));
+  if (!names.length) return NextResponse.json({ error: 'Give at least one name for the copy' }, { status: 400 });
+  if (names.length > 12) return NextResponse.json({ error: 'At most 12 copies at a time' }, { status: 400 });
+  const taken = await prisma.assessment.findMany({ where: { yearId: src.yearId, name: { in: names }, archived: false }, select: { name: true } });
+  if (taken.length) return NextResponse.json({ error: `Already exists: ${taken.map((t) => t.name).join(', ')}` }, { status: 400 });
+  const max = await prisma.assessment.aggregate({ where: { yearId: src.yearId }, _max: { order: true } });
+  let order = max._max.order ?? 0;
+  const created = await prisma.$transaction(async (tx) => {
+    const out = [];
+    for (const name of names) {
+      const a = await tx.assessment.create({
+        data: { yearId: src.yearId, name, type: src.type, term: src.term, defaultMax: src.defaultMax, order: ++order, publishedToParents: false },
+      });
+      if (src.subjectMaxes.length) await tx.assessmentSubject.createMany({ data: src.subjectMaxes.map((x) => ({ assessmentId: a.id, subjectId: x.subjectId, maxMarks: x.maxMarks })) });
+      if (src.classSubjects.length) await tx.assessmentClassSubject.createMany({ data: src.classSubjects.map((x) => ({ assessmentId: a.id, classId: x.classId, subjectId: x.subjectId, maxMarks: x.maxMarks, order: x.order })) });
+      out.push({ id: a.id, name: a.name });
+    }
+    return out;
+  });
+  return NextResponse.json({ created }, { status: 201 });
 }
 
 // PATCH /api/assessments — edit fields or toggle publishedToParents.

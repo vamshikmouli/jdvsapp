@@ -402,6 +402,7 @@ function AssessmentsTab() {
   const [edit, setEdit] = useState<Partial<Assessment> | null>(null);
   const [maxFor, setMaxFor] = useState<Assessment | null>(null);
   const [classSubFor, setClassSubFor] = useState<Assessment | null>(null);
+  const [dupFor, setDupFor] = useState<Assessment | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
@@ -453,6 +454,7 @@ function AssessmentsTab() {
                       <span className="text-[11px] text-slate-400">Published</span>
                       <Toggle on={a.publishedToParents} onChange={(v) => patch(a.id, { publishedToParents: v })} />
                     </div>
+                    <button onClick={() => setDupFor(a)} className="text-slate-300 hover:text-purple-600 p-1" title="Duplicate — make FA2, FA3… with the same setup"><Icon name="Copy" size={16} /></button>
                     <button onClick={() => setEdit(a)} className="text-slate-300 hover:text-purple-600 p-1" title="Edit"><Icon name="Pencil" size={16} /></button>
                     <button onClick={() => del(a)} className="text-slate-300 hover:text-amber-600 p-1" title="Archive"><Icon name="Archive" size={16} /></button>
                   </>)}
@@ -466,6 +468,7 @@ function AssessmentsTab() {
       {edit && <AssessmentModal initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
       {maxFor && <MaxMarksDrawer assessment={maxFor} onClose={() => setMaxFor(null)} onSaved={() => { setMaxFor(null); load(); }} />}
       {classSubFor && <ClassSubjectsDrawer assessment={classSubFor} onClose={() => setClassSubFor(null)} />}
+      {dupFor && items && <DuplicateAssessmentModal source={dupFor} existing={items.map((x) => x.name)} onClose={() => setDupFor(null)} onDone={() => { setDupFor(null); load(); }} />}
     </div>
   );
 }
@@ -620,6 +623,64 @@ function MaxMarksDrawer({ assessment, onClose, onSaved }: { assessment: Assessme
         </>
       )}
     </Drawer>
+  );
+}
+
+/** Next free names after `name`: "FA1" → FA2, FA3, FA4 (skipping ones that exist). */
+function suggestCopyNames(name: string, existing: string[], count = 3): string[] {
+  const taken = new Set(existing.map((n) => n.trim().toLowerCase()));
+  const m = name.match(/^(.*?)(\d+)\s*$/);
+  const out: string[] = [];
+  if (m) {
+    for (let n = Number(m[2]) + 1; out.length < count && n < Number(m[2]) + 50; n++) {
+      const cand = `${m[1]}${n}`;
+      if (!taken.has(cand.toLowerCase())) out.push(cand);
+    }
+  } else {
+    for (let n = 2; out.length < 1; n++) { const cand = `${name} ${n}`; if (!taken.has(cand.toLowerCase())) out.push(cand); }
+  }
+  return out;
+}
+
+// Copy an exam's setup (type, term, max marks, per-subject maxes, per-class subjects) to
+// new exams — e.g. FA1 → FA2, FA3, FA4. Marks, exam dates and "Published" are not copied.
+function DuplicateAssessmentModal({ source, existing, onClose, onDone }: { source: Assessment; existing: string[]; onClose: () => void; onDone: () => void }) {
+  const [names, setNames] = useState<string[]>(() => suggestCopyNames(source.name, existing));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const clean = names.map((n) => n.trim()).filter(Boolean);
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      const r = await fetch('/api/assessments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duplicateFrom: source.id, names: clean }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      toast.success(`Created ${d.created.map((x: { name: string }) => x.name).join(', ')} — same setup as ${source.name}`);
+      onDone();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} title={`Duplicate ${source.name}`} width={440}
+      footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button kind="primary" icon="Copy" onClick={save} disabled={busy || !clean.length}>{busy ? 'Creating…' : `Create ${clean.length || ''} ${clean.length === 1 ? 'copy' : 'copies'}`}</Button></div>}>
+      <p className="text-sm text-slate-600">Makes new exams with the same setup as <b>{source.name}</b>:</p>
+      <ul className="mt-1.5 text-xs text-slate-500 space-y-0.5 list-disc pl-5">
+        <li>{source.type === 'SUMMATIVE' ? 'Summative' : 'Formative'}{source.term ? ` · ${source.term}` : ''} · max {source.defaultMax}</li>
+        <li>Per-subject max marks and each class&apos;s subjects</li>
+        <li>Not copied: marks, exam dates, Published — each copy starts empty and hidden from parents</li>
+      </ul>
+      <div className="mt-4 space-y-2">
+        {names.map((n, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Input value={n} onChange={(e) => setNames((arr) => arr.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Name, e.g. FA2" />
+            <button onClick={() => setNames((arr) => arr.filter((_, j) => j !== i))} className="text-slate-300 hover:text-danger-600 p-1" title="Remove"><Icon name="X" size={16} /></button>
+          </div>
+        ))}
+        <button onClick={() => setNames((arr) => [...arr, suggestCopyNames(source.name, [...existing, ...arr], 1)[0] || ''])} className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700">
+          <Icon name="Plus" size={13} /> Add another
+        </button>
+      </div>
+      {error && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-md p-2.5 text-sm text-danger-700">{error}</div>}
+    </Modal>
   );
 }
 
