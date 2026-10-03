@@ -242,19 +242,14 @@ export async function decideMarkSheet(sheetId: string, action: 'approve' | 'retu
  * student's APPROVED subject marks, totals, percentage and grade.
  */
 export async function getStudentReport(studentId: string, yearId: string) {
-  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true, name: true, photoUrl: true } });
+  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true, name: true, photoUrl: true, class: { select: { name: true } } } });
   if (!student) return null;
 
-  // The class/section to grade against is the student's enrollment FOR THIS YEAR.
+  // Class / section shown on the report: this year's enrollment (else the student record).
   const enrollment = await prisma.enrollment.findUnique({
     where: { studentId_yearId: { studentId, yearId } },
     include: { class: { select: { name: true } }, section: { select: { name: true } } },
   });
-  if (!enrollment) {
-    return { student: { id: student.id, name: student.name, photoUrl: student.photoUrl, className: null, section: null }, assessments: [], hasGrades: false };
-  }
-  const classId = enrollment.classId;
-  const enrSectionId = enrollment.sectionId;
 
   const bands = await prisma.gradeBand.findMany({ orderBy: { minPercent: 'desc' } });
 
@@ -265,12 +260,10 @@ export async function getStudentReport(studentId: string, yearId: string) {
 
   const out: any[] = [];
   for (const a of assessments) {
-    // Approved sheets for this child's class — whole-class (sectionId null) or their section.
+    // Approved sheets that hold a mark for this child — whatever class / section they were
+    // entered under (section-wise or whole-class), so a section mismatch can't hide them.
     const sheets = await prisma.markSheet.findMany({
-      where: {
-        assessmentId: a.id, status: 'APPROVED', classId,
-        OR: [{ sectionId: null }, ...(enrSectionId ? [{ sectionId: enrSectionId }] : [])],
-      },
+      where: { assessmentId: a.id, status: 'APPROVED', marks: { some: { studentId } } },
       include: { subject: { select: { name: true, order: true, gradeOnly: true } }, marks: { where: { studentId } } },
     });
 
@@ -301,7 +294,7 @@ export async function getStudentReport(studentId: string, yearId: string) {
   }
 
   return {
-    student: { id: student.id, name: student.name, photoUrl: student.photoUrl, className: enrollment.class?.name || null, section: enrollment.section?.name || null },
+    student: { id: student.id, name: student.name, photoUrl: student.photoUrl, className: enrollment?.class?.name || student.class?.name || null, section: enrollment?.section?.name || null },
     assessments: out,
     hasGrades: bands.length > 0,
   };
@@ -457,4 +450,55 @@ export async function setClassExamSetup(assessmentId: string, classId: string, i
     ...clean.map((x) => prisma.markSheet.updateMany({ where: { assessmentId, classId, subjectId: x.subjectId }, data: { maxMarks: x.max } })),
   ]);
   return { ok: true, customised: true };
+}
+
+/**
+ * Why is (or isn't) each exam on this student's parent report card? Used by
+ * Marks → "Check parent view". Mirrors getStudentReport's rules exactly.
+ */
+export async function diagnoseParentReport(studentId: string, yearId: string) {
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, name: true, classId: true, guardianUserId: true, guardianPhone: true, status: true, class: { select: { name: true } } },
+  });
+  if (!student) return null;
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { studentId_yearId: { studentId, yearId } },
+    include: { class: { select: { name: true } }, section: { select: { name: true } } },
+  });
+  const classId = enrollment?.classId || student.classId;
+  const assessments = await prisma.assessment.findMany({ where: { yearId }, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] });
+  const out = [];
+  for (const a of assessments) {
+    const sheets = await prisma.markSheet.findMany({
+      where: { assessmentId: a.id, OR: [...(classId ? [{ classId }] : []), { marks: { some: { studentId } } }] },
+      include: { subject: { select: { name: true, order: true } }, section: { select: { name: true } }, marks: { where: { studentId }, select: { marksObtained: true, isAbsent: true } } },
+    });
+    const subjects = sheets
+      .sort((x, y) => x.subject.order - y.subject.order)
+      .map((sh) => {
+        const m = sh.marks[0];
+        const hasMark = !!m && (m.marksObtained != null || m.isAbsent);
+        return { name: sh.subject.name, section: sh.section?.name || null, status: sh.status, hasMark, visible: sh.status === 'APPROVED' && !!m };
+      });
+    const shown = subjects.filter((x) => x.visible).length;
+    let reason = '';
+    if (a.archived) reason = 'Archived — restore it in Assessments.';
+    else if (!a.publishedToParents) reason = 'Not published — turn on "Published" in Assessments.';
+    else if (!subjects.length) reason = 'No marks entered for this class yet.';
+    else if (!shown) {
+      const pending = subjects.filter((x) => x.status !== 'APPROVED');
+      const noMark = subjects.filter((x) => x.status === 'APPROVED' && !x.visible);
+      reason = pending.length
+        ? `Published, but no subject is approved yet — ${pending.length} waiting (${pending.map((x) => `${x.name}: ${x.status === 'SUBMITTED' ? 'submitted' : 'draft'}`).join(', ')}). Approve them in Marks → Approvals.`
+        : `Approved, but this student has no mark in ${noMark.map((x) => x.name).join(', ')}.`;
+    }
+    out.push({ id: a.id, name: a.name, published: a.publishedToParents, archived: a.archived, visible: a.publishedToParents && !a.archived && shown > 0, shown, subjects, reason });
+  }
+  return {
+    student: { id: student.id, name: student.name, active: student.status === 'ACTIVE', parentLinked: !!student.guardianUserId, guardianPhone: student.guardianPhone },
+    enrollment: enrollment ? { className: enrollment.class?.name || null, section: enrollment.section?.name || null } : null,
+    className: student.class?.name || null,
+    assessments: out,
+  };
 }

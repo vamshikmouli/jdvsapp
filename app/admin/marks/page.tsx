@@ -37,6 +37,8 @@ export default function MarksPage() {
   // ----- Export / import (configuration + mark sheets + marks) -----
   const canExport = perms.includes('REPORTS_EXPORT') || perms.includes('SETTINGS_MANAGE');
   const canImport = permAllows(perms, 'MARKS_SETUP') || perms.includes('MARKS_APPROVE') || perms.includes('SETTINGS_MANAGE');
+  const canCheckParent = perms.includes('MARKS_APPROVE') || perms.includes('MARKS_ASSESSMENTS');
+  const [checkOpen, setCheckOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
     setExporting(true);
@@ -87,13 +89,16 @@ export default function MarksPage() {
         eyebrow="Academics"
         title="Marks"
         meta="Enter, approve and configure Formative & Summative assessment marks."
-        actions={(canExport || canImport) ? (
+        actions={(canExport || canImport || canCheckParent) ? (
           <>
+            {canCheckParent && <Button icon="Smartphone" onClick={() => setCheckOpen(true)}>Check parent view</Button>}
             {canExport && <Button icon="Download" onClick={doExport} disabled={exporting}>{exporting ? 'Exporting…' : 'Export'}</Button>}
             {canImport && <Button icon="Upload" onClick={() => importInputRef.current?.click()} disabled={importing}>{importing ? 'Importing…' : 'Import'}</Button>}
           </>
         ) : undefined}
       />
+
+      {checkOpen && <ParentViewCheck onClose={() => setCheckOpen(false)} />}
 
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {tabs.map((t) => (
@@ -919,5 +924,87 @@ function ExamScheduleTab() {
         </div>
       )}
     </Card>
+  );
+}
+
+/* ---------------- Check parent view ---------------- */
+// Pick a student → every exam with ✓ (on the parent's report card) or ✗ and exactly why not.
+interface ParentCheck {
+  year: string;
+  student: { id: string; name: string; active: boolean; parentLinked: boolean; guardianPhone: string | null };
+  enrollment: { className: string | null; section: string | null } | null;
+  className: string | null;
+  assessments: { id: string; name: string; published: boolean; archived: boolean; visible: boolean; shown: number; reason: string;
+    subjects: { name: string; section: string | null; status: 'DRAFT' | 'SUBMITTED' | 'APPROVED'; hasMark: boolean; visible: boolean }[] }[];
+}
+function ParentViewCheck({ onClose }: { onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<{ id: string; name: string; className: string | null }[]>([]);
+  const [data, setData] = useState<ParentCheck | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (q.trim().length < 2) { setHits([]); return; }
+    const t = setTimeout(async () => {
+      const r = await fetch(`/api/students?status=ACTIVE&q=${encodeURIComponent(q.trim())}`);
+      const d = r.ok ? await r.json() : [];
+      setHits((Array.isArray(d) ? d : []).slice(0, 8).map((s: any) => ({ id: s.id, name: s.name, className: s.class?.name || null })));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+  const pick = async (id: string) => {
+    setHits([]); setLoading(true); setError(''); setData(null);
+    const r = await fetch(`/api/marks/parent-check?studentId=${id}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) setError(d.error || 'Could not check'); else { setData(d); setQ(d.student.name); }
+    setLoading(false);
+  };
+  const STATUS: Record<string, string> = { APPROVED: 'bg-success-50 text-success-700', SUBMITTED: 'bg-marigold-50 text-marigold-700', DRAFT: 'bg-slate-100 text-slate-500' };
+  return (
+    <Drawer open onClose={onClose} title="Check parent view" subtitle="What a parent sees in Marks for this year — and why an exam is missing" width={560}>
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type a student's name…" autoFocus />
+      {hits.length > 0 && (
+        <div className="mt-1 rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white shadow-sm">
+          {hits.map((h) => (
+            <button key={h.id} onClick={() => pick(h.id)} className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm">
+              <span className="font-medium text-slate-900">{h.name}</span> <span className="text-xs text-slate-500">{h.className || ''} · {h.id}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && <div className="mt-4 space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={56} />)}</div>}
+      {error && <div className="mt-4 bg-danger-50 border border-danger-100 rounded-md p-2.5 text-sm text-danger-700">{error}</div>}
+      {data && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600 space-y-0.5">
+            <div><b className="text-slate-900">{data.student.name}</b> · {data.enrollment?.className || data.className || 'No class'}{data.enrollment?.section ? ` ${data.enrollment.section}` : ''} · {data.year}</div>
+            {!data.student.parentLinked && <div className="text-danger-700 font-semibold">⚠ No parent login linked to this student — the parent can&apos;t see anything. Check the parent&apos;s phone in the student record.</div>}
+            {!data.enrollment && <div className="text-marigold-700">No class record for {data.year} — using the class on the student record.</div>}
+          </div>
+          {data.assessments.length === 0 && <div className="text-sm text-slate-500">No assessments in {data.year}.</div>}
+          {data.assessments.map((a) => (
+            <div key={a.id} className={`rounded-xl border px-3 py-2.5 ${a.visible ? 'border-success-100 bg-success-50/40' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-slate-900 text-sm">{a.visible ? '✓' : '✗'} {a.name}</div>
+                <div className="text-[11px] font-semibold">{a.visible
+                  ? <span className="text-success-700">Visible to parent · {a.shown} subject{a.shown === 1 ? '' : 's'}</span>
+                  : <span className="text-danger-700">Not visible</span>}</div>
+              </div>
+              {a.reason && <div className="mt-1 text-xs text-slate-600">{a.reason}</div>}
+              {a.subjects.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {a.subjects.map((x) => (
+                    <span key={x.name + (x.section || '')} title={x.visible ? 'Shown to the parent' : x.status !== 'APPROVED' ? 'Not approved yet' : 'No mark for this student'}
+                      className={`rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${STATUS[x.status]} ${x.visible ? '' : 'opacity-80'}`}>
+                      {x.visible ? '✓ ' : ''}{x.name}{x.section ? ` (${x.section})` : ''} · {x.status === 'APPROVED' ? (x.hasMark ? 'approved' : 'approved, no mark') : x.status.toLowerCase()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
   );
 }
