@@ -382,6 +382,63 @@ export async function listPendingSheets() {
   return result;
 }
 
+/**
+ * Approval queue grouped by class + exam (+ section): one row per class exam,
+ * with how many of its subjects are submitted / approved / still draft. `ready`
+ * means every subject is submitted (or already approved) — so "Approve all" is
+ * allowed only then.
+ */
+export async function listPendingGroups() {
+  const submitted = await prisma.markSheet.findMany({
+    where: { status: 'SUBMITTED' },
+    select: { assessmentId: true, classId: true, sectionId: true, submittedAt: true },
+    orderBy: { submittedAt: 'asc' },
+  });
+  const seen = new Set<string>();
+  const keys: { assessmentId: string; classId: string; sectionId: string | null; submittedAt: Date | null }[] = [];
+  for (const s of submitted) {
+    const k = `${s.assessmentId}|${s.classId}|${s.sectionId ?? ''}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    keys.push({ assessmentId: s.assessmentId, classId: s.classId, sectionId: s.sectionId, submittedAt: s.submittedAt });
+  }
+  const out = [];
+  for (const g of keys) {
+    const grid = await getClassGrid({ assessmentId: g.assessmentId, classId: g.classId, sectionId: g.sectionId });
+    if (!grid) continue;
+    const subs = grid.subjects;
+    const approved = subs.filter((s) => s.status === 'APPROVED').length;
+    const submittedN = subs.filter((s) => s.status === 'SUBMITTED').length;
+    const draft = subs.filter((s) => s.status === 'DRAFT').length;
+    out.push({
+      assessmentId: g.assessmentId, classId: g.classId, sectionId: g.sectionId,
+      assessment: grid.assessment.name, type: grid.assessment.type,
+      className: grid.class.name, section: grid.section?.name || null,
+      total: subs.length, approved, submitted: submittedN, draft,
+      pendingSubjects: subs.filter((s) => s.status === 'DRAFT').map((s) => s.name),
+      ready: draft === 0 && submittedN > 0, // all subjects submitted/approved AND something to approve
+      submittedAt: g.submittedAt?.toISOString() || null,
+    });
+  }
+  return out;
+}
+
+/** Approve every submitted subject of a class exam at once. Refuses if any
+ *  subject is still a draft (all subjects must be submitted first). */
+export async function approveClassExam(
+  sel: { assessmentId: string; classId: string; sectionId?: string | null },
+  userId: string | null,
+) {
+  const grid = await getClassGrid(sel);
+  if (!grid) throw new Error('Class exam not found');
+  const draft = grid.subjects.filter((s) => s.status === 'DRAFT');
+  if (draft.length) throw new Error(`All subjects must be submitted first — still waiting on ${draft.map((s) => s.name).join(', ')}.`);
+  const ids = grid.subjects.filter((s) => s.status === 'SUBMITTED' && s.sheetId).map((s) => s.sheetId!) as string[];
+  if (!ids.length) return { approved: 0 };
+  await prisma.markSheet.updateMany({ where: { id: { in: ids } }, data: { status: 'APPROVED', approvedById: userId, approvedAt: new Date() } });
+  return { approved: ids.length };
+}
+
 // ---------------------------------------------------------------------------
 // Per-exam, per-class subjects + max marks (Marks → Assessments → Class subjects)
 

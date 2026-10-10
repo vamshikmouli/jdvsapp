@@ -1048,69 +1048,138 @@ Save the result as a .csv (or Excel) file and upload it.`;
 }
 
 /* ---------------- Approvals (admin) ---------------- */
-interface PendingItem { id: string; assessment: string; type: string; className: string; section: string | null; subject: string; teacher: string; entered: number; roster: number; submittedAt: string | null }
+interface PendingGroup {
+  assessmentId: string; classId: string; sectionId: string | null;
+  assessment: string; type: string; className: string; section: string | null;
+  total: number; approved: number; submitted: number; draft: number;
+  pendingSubjects: string[]; ready: boolean; submittedAt: string | null;
+}
 
+// Approvals: one row per class EXAM. You review all its subjects together (one
+// grid, students × subjects) and approve them all at once — only once every
+// subject has been submitted.
 export function ApprovalsTab() {
-  const [items, setItems] = useState<PendingItem[] | null>(null);
-  const [review, setReview] = useState<PendingItem | null>(null);
-  const load = useCallback(async () => { const r = await fetch('/api/marks/pending'); setItems(r.ok ? (await r.json()).items : []); }, []);
+  const [groups, setGroups] = useState<PendingGroup[] | null>(null);
+  const [review, setReview] = useState<PendingGroup | null>(null);
+  const load = useCallback(async () => { const r = await fetch('/api/marks/pending?grouped=1'); setGroups(r.ok ? (await r.json()).groups : []); }, []);
   useEffect(() => { load(); }, [load]);
 
-  const decide = async (id: string, action: 'approve' | 'return') => {
-    const r = await fetch('/api/marks/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheetId: id, action }) });
-    if (!r.ok) toast.error((await r.json().catch(() => ({}))).error || 'Failed');
-    setReview(null); load();
-  };
-
-  if (items === null) return <Skeleton height={160} rounded="lg" />;
-  if (items.length === 0) return <Card><EmptyState icon="CheckCircle2" title="Nothing to approve" body="Submitted mark sheets from teachers appear here for verification." /></Card>;
+  if (groups === null) return <Skeleton height={160} rounded="lg" />;
+  if (groups.length === 0) return <Card><EmptyState icon="CheckCircle2" title="Nothing to approve" body="When teachers submit marks, each class exam appears here — review all its subjects together, then approve." /></Card>;
 
   return (
     <>
       <Card padded={false}>
         <div className="divide-y divide-slate-100">
-          {items.map((it) => (
-            <div key={it.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3">
+          {groups.map((g) => (
+            <div key={`${g.assessmentId}|${g.classId}|${g.sectionId ?? ''}`} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3">
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Chip tone={it.type === 'SUMMATIVE' ? 'info' : 'neutral'}>{it.type === 'SUMMATIVE' ? 'SA' : 'FA'}</Chip>
+                <Chip tone={g.type === 'SUMMATIVE' ? 'info' : 'neutral'}>{g.type === 'SUMMATIVE' ? 'SA' : 'FA'}</Chip>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900 truncate">{it.assessment} · {shortClass(it.className)}{it.section ? ` ${it.section}` : ''} · {it.subject}</div>
-                  <div className="text-xs text-slate-500">By {it.teacher} · {it.entered}/{it.roster} entered</div>
+                  <div className="text-sm font-medium text-slate-900 truncate">{g.assessment} · {shortClass(g.className)}{g.section ? ` ${g.section}` : ''}</div>
+                  <div className="text-xs text-slate-500">
+                    {g.submitted + g.approved}/{g.total} subjects ready{g.approved ? ` · ${g.approved} already approved` : ''}
+                    {!g.ready && g.pendingSubjects.length > 0 && <span className="text-amber-600"> · waiting on {g.pendingSubjects.join(', ')}</span>}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 pl-11 sm:pl-0">
-                <Button size="sm" onClick={() => setReview(it)}>Review</Button>
-                <Button size="sm" onClick={() => decide(it.id, 'return')}>Return</Button>
-                <Button size="sm" kind="primary" icon="Check" onClick={() => decide(it.id, 'approve')}>Approve</Button>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${g.ready ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{g.ready ? 'READY' : 'WAITING'}</span>
+                <Button size="sm" kind="primary" onClick={() => setReview(g)}>Review &amp; approve</Button>
               </div>
             </div>
           ))}
         </div>
       </Card>
-      {review && <ReviewModal item={review} onClose={() => setReview(null)} onDecide={decide} />}
+      {review && <ClassReviewModal group={review} onClose={() => setReview(null)} onDone={() => { setReview(null); load(); }} />}
     </>
   );
 }
 
-function ReviewModal({ item, onClose, onDecide }: { item: PendingItem; onClose: () => void; onDecide: (id: string, a: 'approve' | 'return') => void }) {
-  const [grid, setGrid] = useState<Grid | null>(null);
+// Full class grid (students × subjects), read-only, with one "Approve all" at
+// the bottom — enabled only when every subject is submitted.
+function ClassReviewModal({ group, onClose, onDone }: { group: PendingGroup; onClose: () => void; onDone: () => void }) {
+  const [grid, setGrid] = useState<ClassGrid | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { (async () => { const r = await fetch('/api/marks/sheet?sheetId=' + item.id); setGrid(r.ok ? await r.json() : null); setLoading(false); })(); }, [item.id]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const qs = new URLSearchParams({ assessmentId: group.assessmentId, classId: group.classId });
+    if (group.sectionId) qs.set('sectionId', group.sectionId);
+    const r = await fetch('/api/marks/grid?' + qs.toString());
+    setGrid(r.ok ? await r.json() : null); setLoading(false);
+  }, [group]);
+  useEffect(() => { load(); }, [load]);
+
+  const bands = grid?.bands || [];
+  const cell = (su: ClassGridSubject, stId: string) => {
+    const m = su.marks[stId];
+    if (!m) return '—';
+    if (m.isAbsent) return 'AB';
+    if (m.marksObtained == null) return '—';
+    return su.gradeOnly ? (gradeOfMarks(m.marksObtained, su.max, bands) || String(m.marksObtained)) : String(m.marksObtained);
+  };
+
+  const draftSubjects = grid ? grid.subjects.filter((s) => s.status === 'DRAFT').map((s) => s.name) : [];
+  const ready = !!grid && draftSubjects.length === 0 && grid.subjects.some((s) => s.status === 'SUBMITTED');
+
+  const returnSubject = async (sheetId: string | null) => {
+    if (!sheetId) return;
+    const r = await fetch('/api/marks/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheetId, action: 'return' }) });
+    if (!r.ok) { toast.error((await r.json().catch(() => ({}))).error || 'Failed'); return; }
+    toast.info('Subject returned to the teacher.');
+    load();
+  };
+
+  const approveAll = async () => {
+    setBusy(true);
+    const r = await fetch('/api/marks/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approveAll: true, assessmentId: group.assessmentId, classId: group.classId, sectionId: group.sectionId }) });
+    setBusy(false);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast.error(d.error || 'Failed'); return; }
+    toast.success(`Approved ${d.approved} subject${d.approved === 1 ? '' : 's'} — published to report cards.`);
+    onDone();
+  };
+
   return (
-    <Modal open onClose={onClose} title="Review marks" subtitle={`${item.assessment} · ${shortClass(item.className)}${item.section ? ' ' + item.section : ''} · ${item.subject}`} width={520}
-      footer={<div className="flex justify-end gap-2"><Button onClick={() => onDecide(item.id, 'return')}>Return to teacher</Button><Button kind="primary" icon="Check" onClick={() => onDecide(item.id, 'approve')}>Approve</Button></div>}>
-      {loading ? <Skeleton height={240} /> : !grid ? <EmptyState icon="AlertCircle" title="Couldn't load" body="Please try again." /> : (
-        <div className="space-y-2">
-          <div className="text-xs text-slate-500 mb-1">Max {grid.maxMarks} · entered by {grid.enteredBy || '—'}</div>
-          <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
-            {grid.students.map((s, i) => (
-              <div key={s.id} className="flex items-center gap-3 px-3 py-1.5 text-sm">
-                <span className="w-5 text-xs text-slate-400">{i + 1}</span>
-                <span className="flex-1 truncate text-slate-800">{s.name}</span>
-                <span className={`tabular-nums font-medium ${s.isAbsent ? 'text-slate-400' : 'text-slate-900'}`}>{s.isAbsent ? 'AB' : (s.marksObtained ?? '—')}</span>
-              </div>
-            ))}
-          </div>
+    <Modal open onClose={onClose} title="Review & approve" subtitle={`${group.assessment} · ${shortClass(group.className)}${group.section ? ' ' + group.section : ''}`} width={860}
+      footer={
+        <div className="flex items-center justify-between gap-3 w-full">
+          <span className="text-xs text-slate-500 min-w-0 truncate">{ready ? 'All subjects submitted — ready to approve.' : draftSubjects.length ? `Waiting on: ${draftSubjects.join(', ')}` : 'Nothing to approve yet.'}</span>
+          <Button kind="primary" icon="CheckCheck" disabled={!ready || busy} onClick={approveAll}>{busy ? 'Approving…' : 'Approve all subjects'}</Button>
+        </div>
+      }>
+      {loading ? <Skeleton height={300} /> : !grid ? <EmptyState icon="AlertCircle" title="Couldn't load" body="Please try again." /> : (
+        <div className="overflow-auto max-h-[60vh] border border-slate-200 rounded-lg">
+          <table className="border-collapse text-sm">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th className="sticky left-0 z-20 bg-slate-50 border-b border-r border-slate-200 px-3 py-2 text-left font-semibold text-slate-700 min-w-[150px]">Student</th>
+                {grid.subjects.map((su) => (
+                  <th key={su.id} className="border-b border-slate-200 bg-slate-50 px-2 py-2 text-center font-semibold text-slate-700 min-w-[74px]">
+                    <div className="truncate max-w-[92px] mx-auto" title={su.name}>{su.name}</div>
+                    <div className="mt-0.5 flex items-center justify-center gap-1">
+                      <StatusPill s={su.status} />
+                      {su.status === 'SUBMITTED' && <button onClick={() => returnSubject(su.sheetId)} title="Return this subject to the teacher" className="text-[9px] text-slate-400 hover:text-danger-600 underline">return</button>}
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-normal">{su.gradeOnly ? 'grade' : `/${su.max}`}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grid.students.map((st, i) => (
+                <tr key={st.id} className={i % 2 ? 'bg-slate-50/40' : ''}>
+                  <td className="sticky left-0 z-10 bg-inherit border-r border-slate-200 px-3 py-1.5 whitespace-nowrap text-slate-800"><span className="text-slate-400 mr-1.5 tabular-nums">{i + 1}.</span>{st.name}</td>
+                  {grid.subjects.map((su) => {
+                    const v = cell(su, st.id);
+                    return <td key={su.id} className={`px-2 py-1.5 text-center tabular-nums ${v === 'AB' ? 'text-slate-400' : v === '—' ? 'text-slate-300' : 'text-slate-900'}`}>{v}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </Modal>

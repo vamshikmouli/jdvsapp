@@ -180,6 +180,9 @@ export async function POST(req: NextRequest) {
         studyFromStandard: body.studyFromStandard || null,
         studyToStandard: body.studyToStandard || null,
         customFields: (body.customFields && typeof body.customFields === 'object') ? body.customFields : undefined,
+        verified: body.verified === true,
+        verifiedAt: body.verified === true ? new Date() : null,
+        verifiedById: body.verified === true ? ((session.user as any)?.id || null) : null,
       },
     });
 

@@ -86,6 +86,8 @@ interface Student {
   studyFromStandard?: string | null;
   studyToStandard?: string | null;
   customFields?: Record<string, string> | null;
+  verified?: boolean;
+  verifiedAt?: string | null;
 }
 
 const emptyForm = {
@@ -128,6 +130,8 @@ const emptyForm = {
   studyFromStandard: '',
   studyToStandard: '',
   customFields: {} as Record<string, string>,
+  // Mandatory verification tick — must be checked to save (re-ticked on every edit).
+  verified: false,
 };
 
 function shortClassName(name: string) {
@@ -186,6 +190,7 @@ export default function StudentsPage() {
 
   // View-details drawer
   const [viewing, setViewing] = useState<Student | null>(null);
+  const [history, setHistory] = useState<Student | null>(null); // per-student change-history drawer
   const [photoView, setPhotoView] = useState<{ url: string; name: string } | null>(null);
 
   // Parent login PIN reset
@@ -340,6 +345,7 @@ export default function StudentsPage() {
       studyFromStandard: s.studyFromStandard || '',
       studyToStandard: s.studyToStandard || '',
       customFields: (s.customFields && typeof s.customFields === 'object' ? s.customFields : {}) as Record<string, string>,
+      verified: false, // editing resets verification — must re-confirm to save
     });
     setFormError('');
     setFieldErrors({});
@@ -387,8 +393,12 @@ export default function StudentsPage() {
       (form.motherName.trim() && form.motherPhone.trim()) ||
       (form.altGuardianName.trim() && form.altGuardianPhone.trim());
     if (!hasContact) errs.contact = 'Enter at least one contact (father, mother or guardian) with both name and phone';
+    if (!form.verified) errs.verified = 'Tick to confirm the details are correct before saving';
     setFieldErrors(errs);
-    if (Object.keys(errs).length) return; // all mandatory fields are above the fold
+    if (Object.keys(errs).length) {
+      if (errs.verified && Object.keys(errs).length === 1) setFormError('Please confirm the details are verified (tick the box at the bottom).');
+      return;
+    }
 
     setSaving(true);
     setFormError('');
@@ -432,6 +442,7 @@ export default function StudentsPage() {
         studyFromStandard: form.studyFromStandard.trim() || null,
         studyToStandard: form.studyToStandard.trim() || null,
         customFields: form.customFields,
+        verified: form.verified === true,
       };
 
       const res = await fetch(
@@ -625,7 +636,12 @@ export default function StudentsPage() {
                           <Avatar name={student.name} size="sm" src={student.photoUrl} />
                         </button>
                         <button type="button" onClick={() => setViewing(student)} className="text-left">
-                          <div className="font-medium text-slate-900 group-hover:text-purple-700">{student.name}</div>
+                          <div className="font-medium text-slate-900 group-hover:text-purple-700 flex items-center gap-1.5">
+                            {student.name}
+                            <span title={student.verified ? 'Verified' : 'Unverified — details need review'}>
+                              <Icon name={student.verified ? 'BadgeCheck' : 'AlertTriangle'} size={14} className={student.verified ? 'text-success-600' : 'text-amber-500'} />
+                            </span>
+                          </div>
                           <div className="text-xs text-slate-500">
                             {student.roll ? `Roll ${student.roll} · ` : ''}
                             {student.gender === 'F' ? 'Girl' : 'Boy'}
@@ -670,6 +686,13 @@ export default function StudentsPage() {
                             title="Edit"
                           >
                             <Icon name="Pencil" size={16} />
+                          </button>
+                          <button
+                            onClick={() => setHistory(student)}
+                            className="text-slate-400 hover:text-purple-600 p-1.5 rounded-md hover:bg-slate-100"
+                            title="Change history"
+                          >
+                            <Icon name="History" size={16} />
                           </button>
                           {student.status === 'ACTIVE' ? (
                             <button
@@ -721,7 +744,10 @@ export default function StudentsPage() {
                   <Avatar name={student.name} size="sm" src={student.photoUrl} />
                 </button>
                 <button type="button" onClick={() => setViewing(student)} className="flex-1 min-w-0 text-left">
-                  <div className="font-medium text-slate-900 truncate">{student.name}</div>
+                  <div className="font-medium text-slate-900 truncate flex items-center gap-1.5">
+                    <span className="truncate">{student.name}</span>
+                    <Icon name={student.verified ? 'BadgeCheck' : 'AlertTriangle'} size={13} className={`flex-shrink-0 ${student.verified ? 'text-success-600' : 'text-amber-500'}`} />
+                  </div>
                   <div className="text-xs text-slate-500 truncate">
                     {student.class?.name || 'Unassigned'}
                     {student.roll ? ` · Roll ${student.roll}` : ''} · {student.guardianName}
@@ -765,11 +791,19 @@ export default function StudentsPage() {
         subtitle={editing ? `Student ID ${editing.id}` : 'Create a new student record'}
         width={640}
         footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button kind="primary" onClick={saveStudent} disabled={saving}>
-              {saving ? 'Saving…' : editing ? 'Save changes' : 'Add student'}
-            </Button>
+          <div className="flex flex-col gap-2 w-full">
+            {/* Mandatory verification — details are confirmed correct before saving. */}
+            <label className={`flex items-start gap-2 text-sm rounded-md px-3 py-2 cursor-pointer border ${form.verified ? 'bg-success-50 border-success-200 text-success-800' : fieldErrors.verified ? 'bg-danger-50 border-danger-200 text-danger-700' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+              <input type="checkbox" className="mt-0.5 accent-success-600" checked={form.verified}
+                onChange={(e) => { const checked = e.target.checked; setForm((f) => ({ ...f, verified: checked })); if (checked) setFieldErrors((fe) => { const r = { ...fe }; delete r.verified; return r; }); }} />
+              <span>I confirm these details are correct and <strong>verified</strong>. <span className="text-xs opacity-80">(required to save)</span></span>
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setFormOpen(false)}>Cancel</Button>
+              <Button kind="primary" onClick={saveStudent} disabled={saving || !form.verified}>
+                {saving ? 'Saving…' : editing ? 'Save changes' : 'Add student'}
+              </Button>
+            </div>
           </div>
         }
       >
@@ -999,6 +1033,9 @@ export default function StudentsPage() {
         )}
       </Drawer>
 
+      {/* Per-student change history */}
+      <HistoryDrawer student={history} onClose={() => setHistory(null)} />
+
       {/* View details */}
       <Drawer
         open={!!viewing}
@@ -1007,13 +1044,16 @@ export default function StudentsPage() {
         subtitle={`Student ID ${viewing?.id ?? ''}`}
         width={460}
         footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setViewing(null)}>Close</Button>
-            {canUpdate && viewing && (
-              <Button kind="primary" icon="Pencil" onClick={() => { const v = viewing; setViewing(null); openEdit(v); }}>
-                Edit
-              </Button>
-            )}
+          <div className="flex justify-between gap-2">
+            {viewing && <Button icon="History" onClick={() => setHistory(viewing)}>History</Button>}
+            <div className="flex gap-2">
+              <Button onClick={() => setViewing(null)}>Close</Button>
+              {canUpdate && viewing && (
+                <Button kind="primary" icon="Pencil" onClick={() => { const v = viewing; setViewing(null); openEdit(v); }}>
+                  Edit
+                </Button>
+              )}
+            </div>
           </div>
         }
       >
@@ -1027,9 +1067,14 @@ export default function StudentsPage() {
               )}
               <div>
                 <div className="font-semibold text-slate-900">{viewing.name}</div>
-                <Chip tone={viewing.status === 'ACTIVE' ? 'success' : 'neutral'}>
-                  {viewing.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                </Chip>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Chip tone={viewing.status === 'ACTIVE' ? 'success' : 'neutral'}>
+                    {viewing.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                  </Chip>
+                  <Chip tone={viewing.verified ? 'success' : 'warn'}>
+                    {viewing.verified ? '✓ Verified' : '⚠ Unverified'}
+                  </Chip>
+                </div>
               </div>
             </div>
             <DetailRow label="Student ID" value={viewing.id} />
@@ -1544,5 +1589,59 @@ function PhotoCropModal({ file, onCancel, onCropped }: { file: File; onCancel: (
         {sizeErr && <p className="text-xs text-danger-700 text-center">{sizeErr}</p>}
       </div>
     </Modal>
+  );
+}
+
+const HISTORY_ACTION_LABEL: Record<string, string> = {
+  STUDENT_CREATED: 'Created', STUDENT_UPDATED: 'Edited', STUDENT_ARCHIVED: 'Archived', STUDENT_RESTORED: 'Restored',
+};
+
+interface HistoryItem { id: string; action: string; summary: string; user: string; changed: string[] | null; verified: boolean | null; at: string }
+
+// Per-student change history — who edited which fields, and when, from the activity log.
+function HistoryDrawer({ student, onClose }: { student: Student | null; onClose: () => void }) {
+  const [items, setItems] = useState<HistoryItem[] | null>(null);
+  useEffect(() => {
+    if (!student) { setItems(null); return; }
+    let alive = true;
+    setItems(null);
+    fetch(`/api/students/${student.id}/activity`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => { if (alive) setItems(d.items || []); })
+      .catch(() => { if (alive) setItems([]); });
+    return () => { alive = false; };
+  }, [student]);
+
+  return (
+    <Drawer open={!!student} onClose={onClose} title="Change history" subtitle={student ? `${student.name} · ${student.id}` : ''} width={440}
+      footer={<div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>}>
+      {items === null ? (
+        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} height={48} />)}</div>
+      ) : items.length === 0 ? (
+        <EmptyState icon="History" title="No history yet" body="Edits to this student will appear here." />
+      ) : (
+        <ol className="relative border-l border-slate-200 ml-2 space-y-4 py-1">
+          {items.map((it) => {
+            const label = HISTORY_ACTION_LABEL[it.action] || 'Updated';
+            const dt = new Date(it.at);
+            return (
+              <li key={it.id} className="ml-4">
+                <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-purple-400 mt-1.5" />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-slate-800">{label}</span>
+                  {it.verified && <Chip tone="success">verified</Chip>}
+                </div>
+                {it.changed?.length ? (
+                  <div className="text-xs text-slate-600 mt-0.5">Changed: {it.changed.join(', ')}</div>
+                ) : label === 'Updated' ? (
+                  <div className="text-xs text-slate-600 mt-0.5">{it.summary}</div>
+                ) : null}
+                <div className="text-[11px] text-slate-400 mt-0.5">{it.user} · {dt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Drawer>
   );
 }

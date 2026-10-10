@@ -54,6 +54,8 @@ export async function PATCH(
       ['motherTongue', 'previousSchool', 'village', 'taluk', 'district', 'tcNo', 'studyFromYear', 'studyToYear', 'studyFromStandard', 'studyToStandard'].forEach((k) => txt(k));
       ['dob', 'joinedDate', 'tcDate', 'schoolLeavingDate'].forEach(day);
       num('annualIncome'); num('noOfDependents');
+      // Details changed outside the main verify flow → needs re-verification.
+      data.verified = false; data.verifiedAt = null; data.verifiedById = null;
       const updated = await prisma.student.update({ where: { id: params.id }, data, include: { class: { select: { id: true, name: true } } } });
       void logActivity(session, { category: 'STUDENTS', action: 'STUDENT_UPDATED', entityType: 'Student', entityId: updated.id, summary: `Updated certificate details of ${updated.name} (${updated.id})`, req });
       return NextResponse.json(updated);
@@ -70,8 +72,11 @@ export async function PATCH(
     const primary = pickPrimaryContact(body);
     // Roll isn't editable: it stays as is, and a class change gets the next free roll
     // in the new class.
-    const before = await prisma.student.findUnique({ where: { id: params.id }, select: { classId: true, roll: true } });
+    const before = await prisma.student.findUnique({ where: { id: params.id } });
     const newClassId = body.classId || null;
+    const uid = (session.user as any)?.id || null;
+    // The edit form carries a mandatory "Verified" tick; honour it, and stamp who/when.
+    const verified = body.verified === true;
     const roll = newClassId && newClassId !== before?.classId ? await nextRollForClass(newClassId, params.id) : before?.roll ?? null;
     const updated = await prisma.student.update({
       where: { id: params.id },
@@ -115,6 +120,9 @@ export async function PATCH(
         studyFromStandard: body.studyFromStandard || null,
         studyToStandard: body.studyToStandard || null,
         customFields: (body.customFields && typeof body.customFields === 'object') ? body.customFields : undefined,
+        verified,
+        verifiedAt: verified ? new Date() : null,
+        verifiedById: verified ? uid : null,
       },
       include: { class: { select: { id: true, name: true } } },
     });
@@ -125,7 +133,28 @@ export async function PATCH(
       await upsertEnrollment(updated.id, year.id, updated.classId, updated.sectionId, updated.roll);
     }
 
-    void logActivity(session, { category: 'STUDENTS', action: 'STUDENT_UPDATED', entityType: 'Student', entityId: updated.id, summary: `Edited student ${updated.name} (${updated.id})`, req });
+    // Which fields actually changed (for the student's history line).
+    const FIELD_LABELS: Record<string, string> = {
+      name: 'name', admissionNo: 'admission no', classId: 'class', gender: 'gender', dob: 'date of birth',
+      religion: 'religion', category: 'category', caste: 'caste', address: 'address',
+      fatherName: 'father name', fatherPhone: 'father phone', motherName: 'mother name', motherPhone: 'mother phone',
+      altGuardianName: 'guardian name', altGuardianPhone: 'guardian phone', smsFor: 'contact for',
+      photoUrl: 'photo', village: 'village', taluk: 'taluk', district: 'district', placeOfBirth: 'place of birth',
+      motherTongue: 'mother tongue', aadharNumber: 'Aadhaar', previousSchool: 'previous school',
+      annualIncome: 'annual income', noOfDependents: 'dependents', joinedDate: 'admission date', status: 'status',
+      tcNo: 'TC no', tcDate: 'TC date', schoolLeavingDate: 'leaving date',
+      studyFromYear: 'study from (year)', studyToYear: 'study to (year)', studyFromStandard: 'study from (class)', studyToStandard: 'study to (class)',
+    };
+    const norm = (v: unknown) => (v == null || v === '' ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+    const changed = before
+      ? Object.keys(FIELD_LABELS).filter((k) => norm((before as any)[k]) !== norm((updated as any)[k])).map((k) => FIELD_LABELS[k])
+      : [];
+    const changedTxt = changed.length ? ` — changed: ${changed.join(', ')}` : '';
+    void logActivity(session, {
+      category: 'STUDENTS', action: 'STUDENT_UPDATED', entityType: 'Student', entityId: updated.id,
+      summary: `Edited student ${updated.name} (${updated.id})${changedTxt}${verified ? ' · verified' : ''}`,
+      meta: { changed, verified }, req,
+    });
     return NextResponse.json(updated);
   } catch (error) {
     console.error('Error updating student:', error);

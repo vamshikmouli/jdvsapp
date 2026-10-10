@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
-import { can, getClassScope } from '@/lib/rbac/roles';
+import { can, canAny, getClassScope } from '@/lib/rbac/roles';
 import { getClassGrid, saveMarkSheet } from '@/lib/services/marks';
 
 async function classAllowed(session: any, classId: string) {
@@ -13,7 +13,7 @@ async function classAllowed(session: any, classId: string) {
 // GET /api/marks/grid?assessmentId=&classId=&sectionId= — all subjects × all students.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !can(session, 'MARKS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session || !canAny(session, ['MARKS_VIEW', 'MARKS_APPROVE'])) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const sp = new URL(req.url).searchParams;
   const assessmentId = sp.get('assessmentId') || '';
   const classId = sp.get('classId') || '';

@@ -244,6 +244,7 @@ model ActivityLog {
   @@index([createdAt])
   @@index([userId])
   @@index([category])
+  @@index([entityType, entityId]) // per-record history (e.g. one student's edits)
 }
 
 model PasswordReset {
@@ -459,6 +460,11 @@ model Student {
   payments       Payment[]
   marks          Mark[]
   enrollments    Enrollment[]
+  // Profile verification — an admin confirms the details are correct. Any later
+  // edit resets this to false so it always means "these exact details were checked".
+  verified      Boolean   @default(false)
+  verifiedAt    DateTime?
+  verifiedById  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
