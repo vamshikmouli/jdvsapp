@@ -11,7 +11,8 @@ const GRAPH = 'https://graph.facebook.com/v21.0';
 // Streams a WhatsApp inbound media file (an image a parent sent) to the office
 // inbox. Meta media URLs require the access token and expire quickly, so we fetch
 // them server-side on demand rather than storing the file or exposing the token.
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session || !can(session, 'NOTICES_MANAGE')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

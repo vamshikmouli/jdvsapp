@@ -9,10 +9,8 @@ import { logActivity } from '@/lib/activity';
 import { getActiveYear } from '@/lib/services/fees';
 import { upsertEnrollment, nextRollForClass } from '@/lib/services/enrollment';
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -30,10 +28,8 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -165,10 +161,8 @@ export async function PATCH(
 // "Delete" is a soft archive: mark INACTIVE so the record is hidden everywhere
 // (rosters, fees, marks, counts all filter status: ACTIVE) but never lost.
 // Body { restore: true } reactivates instead.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'STUDENTS_DELETE')) {

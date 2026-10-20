@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { getReceipt } from '@/lib/services/fees';
 
-export async function GET(_req: NextRequest, { params }: { params: { paymentId: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ paymentId: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_VIEW')) {

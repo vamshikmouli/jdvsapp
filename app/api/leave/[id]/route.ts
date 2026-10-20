@@ -6,7 +6,8 @@ import { applyLeave, revertLeave } from '@/lib/staffAttendance/leave';
 import { getBalances, getLeaveYearStartMonth, leaveYearOf } from '@/lib/staffAttendance/leaveBalance';
 
 // PATCH /api/leave/[id]  { action: 'approve' | 'reject' | 'cancel', note? }
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await requireSession();
     const userId = (session.user as any)?.id as string | undefined;

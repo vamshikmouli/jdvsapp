@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 // Edit a single register row. Body may include:
 //   otherDeductions?, bonus?, note?  -> recomputes netSalary
 //   paid?: boolean                   -> mark this row paid/unpaid
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('PAYROLL_UPDATE');
     const item = await prisma.payrollItem.findUnique({ where: { id: params.id } });

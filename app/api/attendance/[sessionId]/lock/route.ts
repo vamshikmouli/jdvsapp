@@ -9,10 +9,8 @@ import { sendAbsenceAlerts } from '@/lib/services/absenceAlerts';
 // - Closing (locked=true): part of submitting attendance — needs ATTENDANCE_MARK
 //   and the session's class must be in the user's scope.
 // - Reopening (locked=false): an oversight action — needs ATTENDANCE_LOCK.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { sessionId: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ sessionId: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session) {

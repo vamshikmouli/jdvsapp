@@ -11,7 +11,8 @@ import crypto from 'crypto';
 // Admin resets a user's login: sets a random temporary PIN, clears the "PIN set"
 // flag (so they're forced to choose their own PIN on next login), unlocks the
 // account, and signs out their other devices. Returns the temp PIN to hand over.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('USERS_MANAGE');
     const user = await prisma.user.findUnique({ where: { id: params.id }, select: { id: true, name: true } });

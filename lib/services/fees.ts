@@ -51,7 +51,7 @@ export async function getActiveYear() {
   try {
     // Lazy import keeps this usable from non-request contexts (scripts) too.
     const { cookies } = await import('next/headers');
-    selectedId = cookies().get('yearId')?.value;
+    selectedId = (await cookies()).get('yearId')?.value;
   } catch { /* not in a request scope — ignore */ }
 
   if (selectedId) {

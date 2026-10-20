@@ -6,7 +6,8 @@ import { parseWorkDays, parseWorkPattern, parseWeekSchedule, synthesizeDays } fr
 
 // GET /api/staff-attendance/[staffId]?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Per-staff attendance history (day roll-ups) + raw punches in the range.
-export async function GET(req: NextRequest, { params }: { params: { staffId: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ staffId: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('STAFF_ATTENDANCE_VIEW');
     const { staffId } = params;

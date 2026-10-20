@@ -7,7 +7,8 @@ import { logActivity } from '@/lib/activity';
 import { feeMoney } from '@/lib/fees';
 
 // POST /api/fees/payments/[id]/void — cancel a payment (FEES_VOID, admins).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_VOID')) {

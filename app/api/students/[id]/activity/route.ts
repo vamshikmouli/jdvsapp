@@ -7,7 +7,8 @@ import { prisma } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 // GET /api/students/[id]/activity — this student's change history (newest first).
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session || !can(session, 'STUDENTS_VIEW')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const rows = await prisma.activityLog.findMany({

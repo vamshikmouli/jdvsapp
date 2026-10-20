@@ -5,10 +5,8 @@ import { recordPunch, recomputeStreakForward } from '@/lib/staffAttendance/servi
 
 // POST /api/staff-attendance/regularization/[id]/approve
 // Admin approves and applies a regularization request
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await requirePermission('STAFF_ATTENDANCE_MANAGE');
     const adminId = (session.user as any)?.id as string | undefined;

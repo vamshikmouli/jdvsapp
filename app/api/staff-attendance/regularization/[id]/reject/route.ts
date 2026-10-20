@@ -4,10 +4,8 @@ import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 
 // POST /api/staff-attendance/regularization/[id]/reject
 // Admin rejects a regularization request
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await requirePermission('STAFF_ATTENDANCE_MANAGE');
     const adminId = (session.user as any)?.id as string | undefined;

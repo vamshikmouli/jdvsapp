@@ -45,15 +45,14 @@ const nextConfig = {
   // Native/runtime packages Next must NOT try to webpack-bundle:
   //  - pdf-parse pulls in pdfjs worker/sample files (used by /api/marks/upload)
   //  - @napi-rs/canvas ships a .node binary (used by the weekly attendance image)
-  experimental: {
-    serverComponentsExternalPackages: ['pdf-parse', 'exceljs', '@napi-rs/canvas'],
-  },
+  // Renamed in Next 15 from experimental.serverComponentsExternalPackages.
+  serverExternalPackages: ['pdf-parse', 'exceljs', '@napi-rs/canvas'],
   images: {
+    // The app uses plain <img> (no next/image), so the only host the optimizer should
+    // ever fetch is our Supabase Storage. A '**' wildcard here lets /_next/image proxy
+    // ANY https host (DoS/SSRF surface) — scope it to Supabase. (CVE: Next Image DoS.)
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
+      { protocol: 'https', hostname: '**.supabase.co' },
     ],
   },
   async headers() {

@@ -5,7 +5,8 @@ import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 export const dynamic = 'force-dynamic';
 
 // GET /api/payroll/[id] — run header + all items (register rows).
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('PAYROLL_VIEW');
     const run = await prisma.payrollRun.findUnique({
@@ -22,7 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // POST /api/payroll/[id] — run-level actions.
 //   { action: 'approve' | 'reopen' | 'payAll' | 'delete' }
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await requirePermission('PAYROLL_UPDATE');
     const adminId = (session.user as any)?.id as string | undefined;

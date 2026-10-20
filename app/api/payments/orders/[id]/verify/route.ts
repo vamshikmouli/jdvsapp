@@ -6,7 +6,8 @@ import { getOrder, resolveOrder } from '@/lib/payments';
 
 // POST /api/payments/orders/[id]/verify — admin exception path: the webhook never
 // arrived but the admin confirmed the credit in the Business app, so post it now.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_COLLECT')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

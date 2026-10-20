@@ -8,7 +8,8 @@ import { notifyParentFailed } from '@/lib/payments/notify';
 
 // POST /api/payments/orders/[id]/reject — admin marks an unmatched/failed order FAILED
 // and the parent is told to retry.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_COLLECT')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

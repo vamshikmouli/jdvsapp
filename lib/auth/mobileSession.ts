@@ -18,7 +18,7 @@ const SECRET = process.env.NEXTAUTH_SECRET || 'dev-secret-change-me';
  */
 export async function getRequestUserId(): Promise<string | null> {
   // 1) Mobile Bearer token
-  const authz = headers().get('authorization') || '';
+  const authz = (await headers()).get('authorization') || '';
   if (authz.startsWith('Bearer ')) {
     const raw = authz.slice(7).trim();
     try {

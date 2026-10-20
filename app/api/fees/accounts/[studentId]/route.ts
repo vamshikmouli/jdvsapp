@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { getActiveYear, getStudentAccount } from '@/lib/services/fees';
 
-export async function GET(req: NextRequest, { params }: { params: { studentId: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ studentId: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_VIEW')) {

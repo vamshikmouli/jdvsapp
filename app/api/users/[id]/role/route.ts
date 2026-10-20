@@ -8,7 +8,8 @@ import { logActivity } from '@/lib/activity';
 // PATCH /api/users/[id]/role — assign a role to a user.
 // Always revokes that user's sessions so the new role's permissions apply
 // on their next login (forced re-login — auth plan §2.4).
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('USERS_MANAGE');
     const body = await req.json();

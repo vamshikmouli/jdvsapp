@@ -22,7 +22,8 @@ async function forceReLoginForRole(roleId: string, detail: string): Promise<numb
 }
 
 // PATCH /api/roles/[id] — edit name/description/permissions/surface/active
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('ROLES_MANAGE');
     const role = await prisma.role.findUnique({
@@ -99,7 +100,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE /api/roles/[id] — only if not system and no users assigned
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await requirePermission('ROLES_MANAGE');
     const role = await prisma.role.findUnique({

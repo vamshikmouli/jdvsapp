@@ -4,10 +4,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'CLASSES_UPDATE')) {
@@ -44,10 +42,8 @@ export async function PATCH(
 
 // "Delete" is a soft archive: hide the class everywhere (pickers, lists) without
 // losing it or its students/history. Body { restore: true } reactivates.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'CLASSES_DELETE')) {

@@ -18,7 +18,8 @@ const release = (studentId: string | null) => {
 
 // Approve / reject a pending concession, or cancel an approved one
 // (admins with FEES_CONCESSION_APPROVE).
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_CONCESSION_APPROVE')) {
@@ -46,7 +47,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // Cancel a pending concession request (FEES_COLLECT or an approver).
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !(can(session, 'FEES_COLLECT') || can(session, 'FEES_CONCESSION_APPROVE'))) {

@@ -7,7 +7,8 @@ import { getActiveYear, upsertHeadCharge, deleteHeadCharge } from '@/lib/service
 
 // POST /api/fees/accounts/[studentId]/charge — add/adjust one demand charge
 // (Van fee, Old fee, …) on a student. Body: { feeTypeId, amount, label? }
-export async function POST(req: NextRequest, { params }: { params: { studentId: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ studentId: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_COLLECT')) {
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest, { params }: { params: { studentId: 
 }
 
 // DELETE /api/fees/accounts/[studentId]/charge?chargeId=... — remove a mistaken demand line.
-export async function DELETE(req: NextRequest, { params }: { params: { studentId: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ studentId: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'FEES_COLLECT')) {

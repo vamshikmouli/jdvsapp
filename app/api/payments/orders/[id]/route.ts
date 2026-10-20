@@ -7,7 +7,8 @@ import { getOrder, syncStatus } from '@/lib/payments';
 
 // GET /api/payments/orders/[id] — status. The parent UI (web or native) polls this; it
 // re-checks the provider's status API (source of truth) and fulfills if paid.
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const userId = await getRequestUserId();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

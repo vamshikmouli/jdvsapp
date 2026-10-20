@@ -7,10 +7,8 @@ import { hashPassword } from '@/lib/auth/password';
 import { normalizePhone, syntheticEmail } from '@/lib/auth/provision';
 import { logActivity } from '@/lib/activity';
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'STAFF_UPDATE')) {
@@ -121,10 +119,8 @@ export async function PATCH(
 
 // "Delete" is a soft archive: mark archived + disable the login so the person
 // can't sign in, without losing the record. Body { restore: true } reactivates.
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession(authOptions);
     if (!session || !can(session, 'STAFF_DELETE')) {
