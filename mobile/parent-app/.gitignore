@@ -1,0 +1,20 @@
+# deps / build
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+
+# native dirs (managed workflow / CNG regenerates these)
+/ios
+/android
+
+# env
+.env
+.env*.local
+
+# secrets — NEVER commit
+google-services.json
+fcm-service-account.json
+*.jks
+*.keystore

@@ -1,0 +1,17 @@
+# EAS uses this instead of .gitignore when uploading the build.
+# NOTE: google-services.json is intentionally NOT ignored — the build needs it.
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+/ios
+/android
+.env
+.env*.local
+
+# The FCM service-account key is used server-side (uploaded via eas credentials),
+# never needed in the build artifact.
+fcm-service-account.json
+*.jks
+*.keystore
