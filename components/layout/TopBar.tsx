@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { NotificationBell } from '@/components/layout/NotificationBell';
+import { AddReminderButton } from '@/components/layout/AddReminderButton';
 import { GlobalSearch } from '@/components/layout/GlobalSearch';
 import { NetSpeed } from '@/components/layout/NetSpeed';
 
@@ -127,6 +128,8 @@ export function TopBar({ title, subtitle, onMenu, collapsed = false, onToggleCol
         <GlobalSearch />
 
         <NetSpeed />
+
+        <AddReminderButton />
 
         <NotificationBell />
 

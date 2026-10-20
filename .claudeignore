@@ -1,0 +1,7 @@
+node_modules/
+mobile/
+prod-backups/
+graphify-out/
+.next/
+.claude/
+dev-verify.log

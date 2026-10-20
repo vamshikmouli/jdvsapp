@@ -16,6 +16,7 @@ const TITLES: Record<string, string> = {
   fees: 'Fees',
   marks: 'Marks',
   communications: 'Communications',
+  reminders: 'Reminders',
   promotions: 'Promotions',
   whatsapp: 'WA Templates',
   schedulers: 'Schedulers',

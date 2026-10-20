@@ -40,7 +40,7 @@ interface DeviceSession {
   isCurrent: boolean;
 }
 
-type Tab = 'school' | 'attendance' | 'sectionlock' | 'backup' | 'account';
+type Tab = 'school' | 'attendance' | 'sectionlock' | 'backup' | 'deploy' | 'account';
 
 // Small toggle switch
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -80,6 +80,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'attendance', label: 'Attendance', icon: 'Calendar' },
   { id: 'sectionlock', label: 'Section lock', icon: 'Lock' },
   { id: 'backup', label: 'Backup & restore', icon: 'Database' },
+  { id: 'deploy', label: 'Deploy', icon: 'Rocket' },
   { id: 'account', label: 'My account', icon: 'UserCircle' },
 ];
 
@@ -200,7 +201,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        {TABS.filter((t) => ((t.id !== 'backup' && t.id !== 'sectionlock') || canManage)).map((t) => (
+        {TABS.filter((t) => ((t.id !== 'backup' && t.id !== 'sectionlock' && t.id !== 'deploy') || canManage)).map((t) => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setError(''); }}
@@ -443,6 +444,8 @@ export default function SettingsPage() {
 
       {tab === 'backup' && canManage && <BackupTab />}
 
+      {tab === 'deploy' && canManage && <DeployTab />}
+
       {tab === 'sectionlock' && canManage && <SectionLockTab />}
 
       {tab === 'account' && <AccountTab session={session} />}
@@ -592,6 +595,130 @@ function BackupTab() {
             </div>
           </div>
         )}
+      </Card>
+    </div>
+  );
+}
+
+// ---------- Deploy status tab ----------
+interface DeployStatus {
+  info: { shortSha: string; sha: string; subject: string; branch: string; committedAt: string | null; builtAt: string | null } | null;
+  status: 'building' | 'success' | 'failed' | 'idle';
+  logAt: string | null;
+  tail: string[];
+  env: string;
+  serverNow: string;
+  uptimeSec: number;
+}
+
+function fmtDateTime(iso: string | null) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  } catch { return iso; }
+}
+
+function fmtUptime(sec: number) {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+const DEPLOY_META: Record<DeployStatus['status'], { tone: 'success' | 'danger' | 'warn' | 'neutral'; label: string; icon: string }> = {
+  success: { tone: 'success', label: 'Live', icon: 'CheckCircle2' },
+  building: { tone: 'warn', label: 'Deploying…', icon: 'Loader' },
+  failed: { tone: 'danger', label: 'Last deploy failed', icon: 'XCircle' },
+  idle: { tone: 'neutral', label: 'Idle', icon: 'Circle' },
+};
+
+function DeployTab() {
+  const [data, setData] = useState<DeployStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/deploy/status');
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      setData(await res.json());
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Poll while a build is in progress so the page tracks it live.
+  useEffect(() => {
+    if (data?.status !== 'building') return;
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [data?.status, load]);
+
+  const meta = data ? DEPLOY_META[data.status] : DEPLOY_META.idle;
+
+  return (
+    <div className="mt-6 max-w-3xl space-y-6">
+      <Card
+        title="Deployment"
+        action={<button onClick={load} className="text-sm text-purple-600 hover:text-purple-700 inline-flex items-center gap-1"><Icon name="RefreshCw" size={14} /> Refresh</button>}
+      >
+        {loading && !data ? (
+          <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={38} />)}</div>
+        ) : error ? (
+          <div className="px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{error}</div>
+        ) : data ? (
+          <>
+            <div className="flex items-center gap-3 mb-5">
+              <Chip tone={meta.tone}>
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon name={meta.icon as any} size={14} className={data.status === 'building' ? 'animate-spin' : ''} />
+                  {meta.label}
+                </span>
+              </Chip>
+              <Chip tone="neutral">{data.env}</Chip>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-xs text-slate-500">Running version</div>
+                <div className="text-slate-900 font-medium mt-0.5 font-mono">{data.info?.shortSha || 'unknown'}{data.info?.branch ? <span className="text-slate-400 font-sans"> · {data.info.branch}</span> : null}</div>
+                {data.info?.subject && <div className="text-xs text-slate-500 mt-0.5 truncate" title={data.info.subject}>{data.info.subject}</div>}
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">Deployed at</div>
+                <div className="text-slate-900 font-medium mt-0.5">{fmtDateTime(data.info?.builtAt || null)}</div>
+                {data.info?.builtAt && <div className="text-xs text-slate-500 mt-0.5">{relativeTime(data.info.builtAt)}</div>}
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">Last deploy activity</div>
+                <div className="text-slate-900 font-medium mt-0.5">{data.logAt ? fmtDateTime(data.logAt) : '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">App uptime</div>
+                <div className="text-slate-900 font-medium mt-0.5">{fmtUptime(data.uptimeSec)}</div>
+              </div>
+            </div>
+
+            {data.tail.length > 0 && (
+              <div className="mt-5">
+                <div className="text-xs text-slate-500 mb-1.5">Deploy log (last lines)</div>
+                <pre className="text-[11px] leading-relaxed bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto max-h-56 whitespace-pre-wrap">{data.tail.join('\n')}</pre>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-400 mt-4">
+              Version and deploy time come from the build. Live status reads the server&apos;s deploy log; it shows
+              “Deploying…” while a build is running and the result when it finishes.
+            </p>
+          </>
+        ) : null}
       </Card>
     </div>
   );

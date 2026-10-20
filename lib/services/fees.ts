@@ -645,12 +645,19 @@ export async function getFeeConfig(yearId: string) {
     prisma.uniformItem.findMany({ where: { yearId }, orderBy: { order: 'asc' } }),
   ]);
   const uniformMatrix = await getUniformMatrix(yearId); // tolerant of pre-migration
-  const feeReceiptWhatsapp = (await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { feeReceiptWhatsapp: true } }))?.feeReceiptWhatsapp || 'ASK';
+  const settingsRow = await prisma.settings.findUnique({
+    where: { id: 'singleton' },
+    select: { feeReceiptWhatsapp: true, onlinePayEnabled: true, paymentProvider: true, upiDisplayName: true },
+  });
+  const feeReceiptWhatsapp = settingsRow?.feeReceiptWhatsapp || 'ASK';
   return {
     feeTypes,
     classes,
     uniformMatrix,
     feeReceiptWhatsapp,
+    onlinePayEnabled: Boolean(settingsRow?.onlinePayEnabled),
+    paymentProvider: settingsRow?.paymentProvider || null,
+    upiDisplayName: settingsRow?.upiDisplayName || null,
     classFees: classFees.map((cf) => ({
       id: cf.id,
       classId: cf.classId,

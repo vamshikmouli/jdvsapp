@@ -47,6 +47,7 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'classes', label: 'Classes', icon: 'BookOpen', perm: 'CLASSES_VIEW' },
       { id: 'staff', label: 'Staff', icon: 'UserCog', perm: 'STAFF_VIEW' },
       { id: 'fees', label: 'Fees', icon: 'CreditCard', perm: 'FEES_VIEW' },
+      { id: 'online-payments', label: 'Online payments', icon: 'Smartphone', perm: 'FEES_COLLECT' },
       { id: 'stocks', label: 'Stocks', icon: 'Boxes', perm: ['STOCK_VIEW', 'SETTINGS_MANAGE'] },
       { id: 'payroll', label: 'Payroll', icon: 'Wallet', perm: 'PAYROLL_VIEW' },
     ],
@@ -54,6 +55,7 @@ export const STAFF_NAV: NavGroup[] = [
   {
     label: 'Administration',
     items: [
+      { id: 'reminders', label: 'Reminders', icon: 'BellRing' }, // all staff — personal follow-ups
       { id: 'communications', label: 'Communications', icon: 'Megaphone', perm: 'NOTICES_MANAGE' },
       { id: 'whatsapp-chat', label: 'WhatsApp', icon: 'MessagesSquare', perm: 'NOTICES_MANAGE' },
       { id: 'whatsapp', label: 'WA Templates', icon: 'FileText', perm: 'SETTINGS_MANAGE' },

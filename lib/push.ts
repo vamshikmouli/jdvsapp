@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { prisma } from '@/lib/db';
+import { sendExpoPush } from '@/lib/expoPush';
 
 // Configure VAPID once per process.
 let configured = false;
@@ -30,41 +31,47 @@ export interface PushPayload {
  * is best-effort and must not break the request that triggered it.
  */
 export async function sendPushToUsers(userIds: string[], payload: PushPayload): Promise<{ sent: number; failed: number }> {
-  if (!ensureConfigured()) return { sent: 0, failed: 0 };
   const ids = Array.from(new Set(userIds.filter(Boolean)));
   if (ids.length === 0) return { sent: 0, failed: 0 };
 
-  const subs = await prisma.pushSubscription.findMany({ where: { userId: { in: ids } } });
-  if (subs.length === 0) return { sent: 0, failed: 0 };
+  // Native push (Expo) — independent of VAPID, so it runs even when Web Push
+  // isn't configured. Best-effort; never throws.
+  const expo = await sendExpoPush(ids, payload).catch(() => ({ sent: 0, failed: 0 }));
 
-  const data = JSON.stringify({
-    title: payload.title,
-    body: payload.body,
-    url: payload.url || '/parent',
-    tag: payload.tag,
-  });
-
-  let sent = 0, failed = 0;
-  const dead: string[] = [];
-  await Promise.all(
-    subs.map(async (s) => {
-      try {
-        await webpush.sendNotification(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          data
-        );
-        sent++;
-      } catch (err: any) {
-        failed++;
-        const code = err?.statusCode;
-        if (code === 404 || code === 410) dead.push(s.id); // gone — prune
+  // Web Push (PWA) — needs VAPID keys.
+  let webSent = 0, webFailed = 0;
+  if (ensureConfigured()) {
+    const subs = await prisma.pushSubscription.findMany({ where: { userId: { in: ids } } });
+    if (subs.length) {
+      const data = JSON.stringify({
+        title: payload.title,
+        body: payload.body,
+        url: payload.url || '/parent',
+        tag: payload.tag,
+      });
+      const dead: string[] = [];
+      await Promise.all(
+        subs.map(async (s) => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+              data
+            );
+            webSent++;
+          } catch (err: any) {
+            webFailed++;
+            const code = err?.statusCode;
+            if (code === 404 || code === 410) dead.push(s.id); // gone — prune
+          }
+        })
+      );
+      if (dead.length) {
+        await prisma.pushSubscription.deleteMany({ where: { id: { in: dead } } }).catch(() => {});
       }
-    })
-  );
-  if (dead.length) {
-    await prisma.pushSubscription.deleteMany({ where: { id: { in: dead } } }).catch(() => {});
+    }
   }
-  return { sent, failed };
+
+  return { sent: expo.sent + webSent, failed: expo.failed + webFailed };
 }
 
 /** Resolve the guardian (parent) user ids for a set of student ids. */

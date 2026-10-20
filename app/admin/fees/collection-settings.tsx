@@ -20,10 +20,20 @@ export function CollectionSettingsPanel({ canEdit = true }: { canEdit?: boolean 
   const [waReceipt, setWaReceipt] = useState<'OFF' | 'ASK' | 'AUTO'>('ASK');
   const [waSaving, setWaSaving] = useState(false);
   const [waSaved, setWaSaved] = useState(false);
+  const [onlinePayEnabled, setOnlinePayEnabled] = useState(false);
+  const [paymentProvider, setPaymentProvider] = useState<'PHONEPE' | 'PAYTM'>('PHONEPE');
+  const [upiDisplayName, setUpiDisplayName] = useState('');
+  const [onlineSaving, setOnlineSaving] = useState(false);
+  const [onlineSaved, setOnlineSaved] = useState(false);
 
   useEffect(() => {
     fetch('/api/fees/config').then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d?.feeReceiptWhatsapp) setWaReceipt(d.feeReceiptWhatsapp);
+      if (d) {
+        setOnlinePayEnabled(!!d.onlinePayEnabled);
+        if (d.paymentProvider === 'PHONEPE' || d.paymentProvider === 'PAYTM') setPaymentProvider(d.paymentProvider);
+        setUpiDisplayName(d.upiDisplayName || '');
+      }
     }).catch(() => {});
     fetch('/api/settings/collection').then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) {
@@ -72,6 +82,19 @@ export function CollectionSettingsPanel({ canEdit = true }: { canEdit?: boolean 
     finally { setWaSaving(false); }
   };
 
+  const saveOnlinePay = async () => {
+    setOnlineSaving(true); setOnlineSaved(false); setMsg(null);
+    try {
+      const r = await fetch('/api/fees/config', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'settings', onlinePayEnabled, paymentProvider, upiDisplayName: upiDisplayName || null }),
+      });
+      if (!r.ok) throw new Error();
+      setOnlineSaved(true); setTimeout(() => setOnlineSaved(false), 2000);
+    } catch { setMsg({ tone: 'err', text: 'Could not save the online-payment setting.' }); }
+    finally { setOnlineSaving(false); }
+  };
+
   if (loading) return <div className="mt-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={44} />)}</div>;
 
   return (
@@ -94,6 +117,28 @@ export function CollectionSettingsPanel({ canEdit = true }: { canEdit?: boolean 
           ))}
         </div>
         <p className="text-[11px] text-slate-400 mt-2">Note: a student can still be opted out individually in their profile, and receipts only go to the numbers set there.</p>
+      </Card>
+
+      {/* Online payment (parent self-pay via UPI) */}
+      <Card title={<div className="flex items-center justify-between w-full"><span className="inline-flex items-center gap-2"><Icon name="Smartphone" size={16} className="text-purple-600" /> Online payment (parent self-pay)</span>{onlineSaving ? <span className="text-xs text-slate-400">Saving…</span> : onlineSaved ? <span className="text-xs text-success-600">Saved ✓</span> : null}</div>}>
+        <p className="text-sm text-slate-500 mb-3">Let parents pay fees from the app via UPI. They approve in their own GPay/PhonePe; the payment confirms automatically and the balance updates. Needs a Business merchant account — the secret API keys are set on the server (env), not here.</p>
+        <label className={`flex items-start gap-2.5 ${canEdit ? 'cursor-pointer' : 'opacity-60'}`}>
+          <input type="checkbox" disabled={!canEdit} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500" checked={onlinePayEnabled} onChange={(e) => setOnlinePayEnabled(e.target.checked)} />
+          <span className="text-sm"><span className="font-medium text-slate-800">Enable online payment</span><span className="block text-xs text-slate-500">Shows a “Pay online” button to parents. Turn off to accept counter payments only.</span></span>
+        </label>
+        <div className="mt-3 space-y-2">
+          <div className="text-xs font-medium text-slate-600">Provider</div>
+          {([['PHONEPE', 'PhonePe for Business'], ['PAYTM', 'Paytm for Business']] as const).map(([val, label]) => (
+            <label key={val} className={`flex items-center gap-2.5 ${canEdit ? 'cursor-pointer' : 'opacity-60'}`}>
+              <input type="radio" name="payprovider" disabled={!canEdit} className="h-4 w-4 border-slate-300 text-purple-600 focus:ring-purple-500" checked={paymentProvider === val} onChange={() => setPaymentProvider(val)} />
+              <span className="text-sm text-slate-800">{label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-3">
+          <Field label="Display name shown to parents"><Input value={upiDisplayName} disabled={!canEdit} placeholder="e.g. Jnana Deepika Vidhya Samsthe" onChange={(e) => setUpiDisplayName(e.target.value)} className="w-full max-w-sm" /></Field>
+        </div>
+        {canEdit && <div className="mt-3"><Button kind="primary" icon="Check" onClick={saveOnlinePay} disabled={onlineSaving}>{onlineSaving ? 'Saving…' : 'Save online payment'}</Button></div>}
       </Card>
 
       {/* Payment date default */}

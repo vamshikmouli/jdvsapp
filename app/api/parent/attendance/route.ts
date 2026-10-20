@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
+import { getRequestUserId } from '@/lib/auth/mobileSession';
 import { parseSessions } from '@/lib/attendance/sessions';
 
 function dateKey(d: Date) {
@@ -12,8 +11,7 @@ function dateKey(d: Date) {
 // Returns the day-by-day status for one of the guardian's children, for a month.
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const userId = await getRequestUserId();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(req.url);

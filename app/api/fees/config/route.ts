@@ -55,9 +55,17 @@ export async function PATCH(req: NextRequest) {
         const v = String(body.feeReceiptWhatsapp).toUpperCase();
         data.feeReceiptWhatsapp = ['OFF', 'ASK', 'AUTO'].includes(v) ? v : 'ASK';
       }
+      // Online payment (parent self-pay via UPI). Secret provider keys live in env;
+      // only these non-secret switches are stored.
+      if (body.onlinePayEnabled != null) data.onlinePayEnabled = !!body.onlinePayEnabled;
+      if (body.paymentProvider != null) {
+        const p = String(body.paymentProvider).toUpperCase();
+        data.paymentProvider = ['PHONEPE', 'PAYTM'].includes(p) ? p : null;
+      }
+      if (body.upiDisplayName != null) data.upiDisplayName = String(body.upiDisplayName).trim().slice(0, 80) || null;
       if (Object.keys(data).length) {
         await prisma.settings.upsert({ where: { id: 'singleton' }, update: data, create: { id: 'singleton', ...data } });
-        void logActivity(session, { category: 'CONFIG', action: 'FEE_SETTINGS_CHANGED', summary: `Set WhatsApp fee receipts to ${data.feeReceiptWhatsapp}`, meta: data, req });
+        void logActivity(session, { category: 'CONFIG', action: 'FEE_SETTINGS_CHANGED', summary: `Updated fee settings (${Object.keys(data).join(', ')})`, meta: data, req });
       }
       return NextResponse.json({ ok: true });
     }

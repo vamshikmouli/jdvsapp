@@ -39,6 +39,9 @@ yarn-error.log*
 # Prisma
 prisma/.dev.db
 
+# Build-time deploy metadata (regenerated each build)
+/deploy-info.json
+
 # Uploaded user content (student photos) — not source
 /public/uploads/
 

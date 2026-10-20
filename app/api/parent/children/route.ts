@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
+import { getRequestUserId } from '@/lib/auth/mobileSession';
 import { parseSessions } from '@/lib/attendance/sessions';
 
 function dateKey(d: Date) {
@@ -16,8 +15,7 @@ function addDaysUTC(d: Date, n: number) {
 // GET /api/parent/children — the logged-in guardian's children + attendance summary
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const userId = await getRequestUserId();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const children = await prisma.student.findMany({

@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
+import { getRequestUserId } from '@/lib/auth/mobileSession';
 
 // GET /api/parent/circulars — school circulars/notices for parents.
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const userId = await getRequestUserId();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     // What this guardian's children belong to → what circulars they should see.

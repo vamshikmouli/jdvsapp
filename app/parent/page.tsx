@@ -9,6 +9,7 @@ import { useBranding } from '@/components/useBranding';
 import { StreakCard } from '@/components/StreakCard';
 import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 import { ZoomPhoto } from '@/components/ui/data';
+import PayFees, { type OutstandingItem } from '@/components/parent/PayFees';
 
 interface Child {
   id: string;
@@ -201,7 +202,7 @@ function MiniDonut({ pct, marked }: { pct: number; marked: number }) {
 }
 
 // ---------- One child card: avatar + donut + fee + Attendance / Fees ----------
-function ChildCard({ child, fee }: { child: Child; fee: FeeData | null }) {
+function ChildCard({ child, fee, onPaid }: { child: Child; fee: FeeData | null; onPaid?: () => void }) {
   const [view, setView] = useState<'attendance' | 'fees'>('attendance');
   const t = STATUS_META[child.todayStatus] || STATUS_META.none;
   const last14 = child.days?.slice(-14) || [];
@@ -275,7 +276,7 @@ function ChildCard({ child, fee }: { child: Child; fee: FeeData | null }) {
         </div>
       </div>
 
-      {view === 'attendance' ? <ChildCalendar studentId={child.id} /> : <ChildFees data={fee} loading={false} />}
+      {view === 'attendance' ? <ChildCalendar studentId={child.id} /> : <ChildFees data={fee} loading={false} child={child} onPaid={onPaid} />}
     </div>
   );
 }
@@ -286,9 +287,11 @@ interface FeeData {
   summary: { totalCharged: number; totalPaid: number; totalBalance: number; concession: number; heads: { key: string; name: string; balance: number }[] };
   payments: { id: string; receiptNo: string; total: number; paidAt: string }[];
   concessions: { feeTypeName: string; amount: number; status: string }[];
+  onlinePayEnabled?: boolean;
+  outstanding?: OutstandingItem[];
 }
 
-function ChildFees({ data, loading }: { data: FeeData | null; loading: boolean }) {
+function ChildFees({ data, loading, child, onPaid }: { data: FeeData | null; loading: boolean; child?: Child; onPaid?: () => void }) {
   if (loading) return <div className="px-4 py-4 border-t border-slate-100"><div className="h-24 bg-slate-100 rounded-lg animate-pulse" /></div>;
   if (!data) return <div className="px-4 py-6 border-t border-slate-100 text-sm text-slate-400 text-center">No fees on record.</div>;
 
@@ -340,7 +343,17 @@ function ChildFees({ data, loading }: { data: FeeData | null; loading: boolean }
         </div>
       )}
 
-      <div className="mt-3 text-[11px] text-slate-400 text-center">{s.totalBalance > 0 ? 'Please pay the balance at the school office.' : 'All fees cleared. Thank you!'}</div>
+      {data.onlinePayEnabled && child && s.totalBalance > 0 ? (
+        <PayFees
+          studentId={child.id}
+          studentName={child.name}
+          balance={s.totalBalance}
+          outstanding={data.outstanding || []}
+          onPaid={onPaid}
+        />
+      ) : (
+        <div className="mt-3 text-[11px] text-slate-400 text-center">{s.totalBalance > 0 ? 'Please pay the balance at the school office.' : 'All fees cleared. Thank you!'}</div>
+      )}
     </div>
   );
 }
@@ -372,14 +385,14 @@ function HomeScreen() {
   const [fee, setFee] = useState<FeeData | null>(null);
 
   // Fee for the currently-selected child.
-  useEffect(() => {
+  const loadFee = useCallback(() => {
     if (!selectedId) return;
-    setFee(null);
     fetch(`/api/parent/fees?studentId=${selectedId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then(setFee)
       .catch(() => {});
   }, [selectedId]);
+  useEffect(() => { setFee(null); loadFee(); }, [selectedId, loadFee]);
 
   if (!ctx || ctx.loading) return <>{[0].map((i) => (
     <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 animate-pulse">
@@ -400,7 +413,7 @@ function HomeScreen() {
     <>
       <PushOptIn />
       <StreakCard studentId={child.id} />
-      <ChildCard child={child} fee={fee} />
+      <ChildCard child={child} fee={fee} onPaid={loadFee} />
     </>
   );
 }

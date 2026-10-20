@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
+import { getRequestUserId } from '@/lib/auth/mobileSession';
 import { getActiveYear } from '@/lib/services/fees';
 import { getStudentReport } from '@/lib/services/marks';
 
 // GET /api/parent/marks?studentId= — report card for one of the guardian's children.
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const userId = await getRequestUserId();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const studentId = new URL(req.url).searchParams.get('studentId') || '';

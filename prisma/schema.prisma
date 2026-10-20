@@ -146,6 +146,7 @@ model User {
   loginAudits  LoginAudit[]
   resetTokens  PasswordReset[]
   pushSubscriptions PushSubscription[]
+  expoPushTokens    ExpoPushToken[]
   notifications     Notification[]
   marksEntered  MarkSheet[] @relation("MarksEnteredBy")
   marksApproved MarkSheet[] @relation("MarksApprovedBy")
@@ -170,6 +171,22 @@ model PushSubscription {
   @@index([userId])
 }
 
+// Native push (Expo) tokens — one row per installed native app that a user has
+// allowed notifications on. Delivered via Expo's push service (see lib/expoPush.ts).
+// Separate from PushSubscription (which is browser Web Push for the PWA).
+model ExpoPushToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique // ExponentPushToken[...]
+  platform   String?  // ios | android
+  deviceName String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 // In-app notifications shown in the admin top-bar bell. One row per recipient
 // (an event fans out to every admin who should see it). Also delivered to the
 // device as Web Push when the user has enabled it. Read state is per-row.
@@ -185,6 +202,38 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, createdAt])
+}
+
+enum ReminderStatus {
+  OPEN
+  DONE
+  DISMISSED
+}
+
+// General follow-up reminders — a note + a due date, optionally linked to any
+// record (student, payment, staff…) with a deep link back to it. Used everywhere
+// (e.g. "parent will pay on the 20th → remind me to call back"). Reminds staff to
+// act; it never auto-messages the linked person.
+model Reminder {
+  id            String         @id @default(cuid())
+  title         String
+  note          String?
+  dueAt         DateTime
+  status        ReminderStatus @default(OPEN)
+  createdById   String?        // who set it
+  assignedToId  String?        // who should act (defaults to the creator)
+  entityType    String?        // "Student" | "Payment" | "Staff" | …
+  entityId      String?
+  entityLabel   String?        // e.g. "ASHA (JDVS123)" for display
+  url           String?        // where the reminder links to
+  lastNotifiedOn String?       // 'YYYY-MM-DD' — so the daily digest fires once/day
+  completedAt   DateTime?
+  completedById String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([assignedToId, status, dueAt])
+  @@index([entityType, entityId])
 }
 
 // Active sessions per user/device — for multi-device listing + revocation.
@@ -458,6 +507,7 @@ model Student {
   attendance    AttendanceRecord[]
   feeAssignments StudentFeeAssignment[]
   payments       Payment[]
+  paymentOrders  PaymentOrder[]
   marks          Mark[]
   enrollments    Enrollment[]
   // Profile verification — an admin confirms the details are correct. Any later
@@ -824,6 +874,12 @@ model Settings {
   // Uniform stock — global approval gate. When true, generating a fee receipt with a
   // uniform line deducts from UniformStock. OFF until the admin approves it.
   uniformStockDeductionEnabled Boolean @default(false)
+  // Online fee payment (parent self-pay via UPI through a Business merchant account).
+  // Secrets (merchant id / salt key / key index) live in env vars, never here — these
+  // are only the non-secret switches shown in Settings.
+  onlinePayEnabled Boolean @default(false)
+  paymentProvider  String?            // "PHONEPE" | "PAYTM" — which adapter to use
+  upiDisplayName   String?            // payee/brand name shown to parents (defaults to schoolName)
   updatedAt       DateTime @updatedAt
 }
 
@@ -843,6 +899,7 @@ enum PayMethod {
   CARD
   BANK
   CHEQUE
+  ONLINE // parent self-paid online (PaymentOrder → provider webhook → recordPayment)
 }
 
 // Switchable academic year — everything fee-related is scoped to one.
@@ -1063,6 +1120,7 @@ model Payment {
   voidReason    String?
   voidedById    String?
   allocations   PaymentAllocation[]
+  paymentOrder  PaymentOrder?       // set when this payment came from an online PaymentOrder
 }
 
 model PaymentAllocation {
@@ -1072,6 +1130,57 @@ model PaymentAllocation {
   feeChargeId String
   feeCharge   FeeCharge @relation(fields: [feeChargeId], references: [id], onDelete: Cascade)
   amount      Int
+}
+
+// ========== Online payments (reusable UPI collect integration) ==========
+// An intent to pay, created when a user taps "Pay" in any consuming app. The payer
+// approves in their own UPI app; the Business merchant provider fires a signed webhook
+// (re-checked against its status API) and the order is fulfilled automatically — for
+// this ERP that means recordPayment() posts a real Payment with method ONLINE and the
+// fee balance drops. This layer is app-agnostic on purpose (appId / purpose / meta) so
+// the same core can be lifted into a shared service other apps integrate with; the
+// fee-specific columns (student/year) stay nullable.
+enum PaymentOrderStatus {
+  CREATED  // order row made
+  PENDING  // initiated at the provider, awaiting the payer to approve
+  PAID     // confirmed + fulfilled
+  FAILED   // provider failure / cancelled / admin-rejected
+  EXPIRED  // abandoned / timed out
+}
+
+model PaymentOrder {
+  id             String             @id @default(cuid())
+  // --- app-agnostic core ---
+  appId          String             @default("jdvs-erp")
+  purpose        String             @default("FEES") // routing key for the fulfillment handler
+  amount         Int                                  // whole rupees
+  status         PaymentOrderStatus @default(CREATED)
+  provider       String             @default("PHONEPE")
+  ref            String             @unique            // our merchant transaction reference
+  // --- provider linkage ---
+  providerTxnId  String?                               // provider's own transaction id
+  providerStatus String?                               // raw provider status string (audit)
+  utr            String?                               // bank/UPI reference, when the provider returns it
+  // --- fulfillment ---
+  verifiedById   String?                               // admin who resolved it manually (exception path)
+  verifiedAt     DateTime?
+  failReason     String?
+  paymentId      String?            @unique             // the Payment created on PAID (fee app)
+  payment        Payment?           @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  // allocations:[{chargeId,amount}] + any domain extras the fulfiller needs
+  meta           Json?
+  // --- fee-domain convenience links (nullable so the core stays generic) ---
+  studentId      String?
+  student        Student?           @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  yearId         String?
+  createdById    String?                               // the user (guardian) who created it
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  expiresAt      DateTime?
+
+  @@index([status])
+  @@index([studentId])
+  @@index([appId, purpose, status])
 }
 
 // Fee concession (discount) on a head, with a request → admin-approval workflow.

@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { parseVoice, getSpeechRecognition } from '@/lib/marksVoice';
 import { detectBrowser, voiceProblem } from '@/lib/browserCheck';
 import { gradeOfMarks, marksForGrade, normGrade, type GradeBandLite } from '@/lib/grades';
-import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal } from '@/components/Primitives';
+import { Button, Card, Input, Select, Field, Chip, EmptyState, Skeleton, Modal, Drawer } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import * as XLSX from 'xlsx';
 
@@ -1143,7 +1143,7 @@ function ClassReviewModal({ group, onClose, onDone }: { group: PendingGroup; onC
   };
 
   return (
-    <Modal open onClose={onClose} title="Review & approve" subtitle={`${group.assessment} · ${shortClass(group.className)}${group.section ? ' ' + group.section : ''}`} width={860}
+    <Drawer open onClose={onClose} title="Review & approve" subtitle={`${group.assessment} · ${shortClass(group.className)}${group.section ? ' ' + group.section : ''}`} width={820}
       footer={
         <div className="flex items-center justify-between gap-3 w-full">
           <span className="text-xs text-slate-500 min-w-0 truncate">{ready ? 'All subjects submitted — ready to approve.' : draftSubjects.length ? `Waiting on: ${draftSubjects.join(', ')}` : 'Nothing to approve yet.'}</span>
@@ -1151,11 +1151,11 @@ function ClassReviewModal({ group, onClose, onDone }: { group: PendingGroup; onC
         </div>
       }>
       {loading ? <Skeleton height={300} /> : !grid ? <EmptyState icon="AlertCircle" title="Couldn't load" body="Please try again." /> : (
-        <div className="overflow-auto max-h-[60vh] border border-slate-200 rounded-lg">
-          <table className="border-collapse text-sm">
-            <thead className="sticky top-0 z-10">
+        <div className="overflow-auto max-h-[calc(100vh-180px)] border border-slate-200 rounded-lg">
+          <table className="border-collapse text-sm w-max">
+            <thead className="sticky top-0 z-20">
               <tr>
-                <th className="sticky left-0 z-20 bg-slate-50 border-b border-r border-slate-200 px-3 py-2 text-left font-semibold text-slate-700 min-w-[150px]">Student</th>
+                <th className="sticky left-0 z-30 bg-slate-50 border-b border-r border-slate-200 px-3 py-2 text-left font-semibold text-slate-700 min-w-[170px] shadow-[2px_0_5px_-3px_rgba(15,23,42,0.25)]">Student</th>
                 {grid.subjects.map((su) => (
                   <th key={su.id} className="border-b border-slate-200 bg-slate-50 px-2 py-2 text-center font-semibold text-slate-700 min-w-[74px]">
                     <div className="truncate max-w-[92px] mx-auto" title={su.name}>{su.name}</div>
@@ -1170,8 +1170,8 @@ function ClassReviewModal({ group, onClose, onDone }: { group: PendingGroup; onC
             </thead>
             <tbody>
               {grid.students.map((st, i) => (
-                <tr key={st.id} className={i % 2 ? 'bg-slate-50/40' : ''}>
-                  <td className="sticky left-0 z-10 bg-inherit border-r border-slate-200 px-3 py-1.5 whitespace-nowrap text-slate-800"><span className="text-slate-400 mr-1.5 tabular-nums">{i + 1}.</span>{st.name}</td>
+                <tr key={st.id} className={i % 2 ? 'bg-slate-50' : 'bg-white'}>
+                  <td className="sticky left-0 z-10 bg-inherit border-r border-slate-200 px-3 py-1.5 whitespace-nowrap text-slate-800 shadow-[2px_0_5px_-3px_rgba(15,23,42,0.18)]"><span className="text-slate-400 mr-1.5 tabular-nums">{i + 1}.</span>{st.name}</td>
                   {grid.subjects.map((su) => {
                     const v = cell(su, st.id);
                     return <td key={su.id} className={`px-2 py-1.5 text-center tabular-nums ${v === 'AB' ? 'text-slate-400' : v === '—' ? 'text-slate-300' : 'text-slate-900'}`}>{v}</td>;
@@ -1182,6 +1182,6 @@ function ClassReviewModal({ group, onClose, onDone }: { group: PendingGroup; onC
           </table>
         </div>
       )}
-    </Modal>
+    </Drawer>
   );
 }

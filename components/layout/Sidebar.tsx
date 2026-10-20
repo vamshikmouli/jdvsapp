@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
@@ -32,6 +33,21 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
   const { data: session } = useSession();
   const brand = useBranding();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  // Collapsed-rail flyout — which group's menu is popped out beside the icon rail,
+  // and where (viewport top of the hovered group). Portalled to <body> because the
+  // sidebar scroll container clips anything spilling out to the right.
+  const [flyout, setFlyout] = React.useState<{ index: number; top: number } | null>(null);
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => { if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; } };
+  const openFlyout = (index: number, el: HTMLElement) => { cancelClose(); setFlyout({ index, top: el.getBoundingClientRect().top }); };
+  const scheduleClose = () => { cancelClose(); closeTimer.current = setTimeout(() => setFlyout(null), 140); };
+  React.useEffect(() => { setFlyout(null); }, [pathname]);
+  React.useEffect(() => {
+    if (!flyout) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFlyout(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flyout]);
 
   // Section lock — some menus need a password to open (configured in Settings).
   const [lock, setLock] = React.useState<{ lockedMenus: string[]; hasPassword: boolean }>({ lockedMenus: [], hasPassword: false });
@@ -101,6 +117,45 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
     signOut({ callbackUrl: '/' });
   };
 
+  // One renderer for every nav link, used by the expanded sidebar, the mobile
+  // drawer, and the collapsed-rail flyout. `variant`:
+  //  - 'rail'  → icon-only on desktop (labels hidden at lg), full on mobile.
+  //  - 'full'  → icon + label, left-aligned (expanded sidebar / drawer / flyout).
+  const renderItem = (item: (typeof groups)[number]['items'][number], variant: 'rail' | 'full') => {
+    const rail = variant === 'rail';
+    const active = isActive(item.id);
+    const locked = isLocked(item.id) && !active;
+    const cls = `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${rail ? 'lg:justify-center lg:px-2' : ''} ${active ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-slate-700 hover:bg-slate-100'}`;
+    const inner = (
+      <>
+        <Icon name={item.icon as any} size={18} className="flex-shrink-0" />
+        <span className={`flex-1 text-left ${rail ? 'lg:hidden' : ''}`}>{item.label}</span>
+        {isLocked(item.id) && <Icon name="Lock" size={13} className={`text-slate-400 flex-shrink-0 ${rail ? 'lg:hidden' : ''}`} />}
+      </>
+    );
+    const onNav = () => { onClose?.(); setFlyout(null); };
+    // Locked (and not already inside it): a plain button that opens the password
+    // prompt — never navigates, so nothing leaks before unlock.
+    return locked ? (
+      <button key={item.id} type="button" title={`${item.label} — password required`}
+        onClick={() => { setGate(item.id); setGatePw(''); setGateErr(''); setFlyout(null); }} className={cls}>
+        {inner}
+      </button>
+    ) : item.newTab ? (
+      // Full-screen tools open in a new browser tab so they get the whole window.
+      <a key={item.id} href={hrefFor(item.id)} target="_blank" rel="noopener" onClick={onNav} title={`${item.label} (opens in a new tab)`} className={cls}>
+        {inner}
+      </a>
+    ) : (
+      <Link key={item.id} href={hrefFor(item.id)} onClick={onNav} title={item.label} className={cls}>
+        {inner}
+      </Link>
+    );
+  };
+  const renderItems = (items: (typeof groups)[number]['items'], variant: 'rail' | 'full') => (
+    <div className="space-y-1">{items.map((it) => renderItem(it, variant))}</div>
+  );
+
   return (
     <>
       {/* Backdrop (mobile only, when drawer open) */}
@@ -135,82 +190,76 @@ export function Sidebar({ open = false, onClose, collapsed = false }: SidebarPro
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
         {groups.map((group, index) => {
-          const itemsList = (
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const active = isActive(item.id);
-                const locked = isLocked(item.id) && !active;
-                const cls = `w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${collapsed ? 'lg:justify-center lg:px-2' : ''} ${active ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-slate-700 hover:bg-slate-100'}`;
-                const inner = (
-                  <>
-                    <Icon name={item.icon as any} size={18} className="flex-shrink-0" />
-                    <span className={`flex-1 text-left ${collapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
-                    {isLocked(item.id) && <Icon name="Lock" size={13} className={`text-slate-400 flex-shrink-0 ${collapsed ? 'lg:hidden' : ''}`} />}
-                  </>
-                );
-                // Locked (and not already inside it): a plain button that opens the
-                // password prompt — never navigates, so nothing leaks before unlock.
-                return locked ? (
-                  <button key={item.id} type="button" title={`${item.label} — password required`}
-                    onClick={() => { setGate(item.id); setGatePw(''); setGateErr(''); }} className={cls}>
-                    {inner}
-                  </button>
-                ) : item.newTab ? (
-                  // Full-screen tools open in a new browser tab so they get the whole window.
-                  <a key={item.id} href={hrefFor(item.id)} target="_blank" rel="noopener" onClick={onClose} title={`${item.label} (opens in a new tab)`} className={cls}>
-                    {inner}
-                  </a>
-                ) : (
-                  <Link key={item.id} href={hrefFor(item.id)} onClick={onClose} title={item.label} className={cls}>
-                    {inner}
-                  </Link>
-                );
-              })}
-            </div>
-          );
-
-          if (!group.label) {
-            return <div key={index} className="mb-4">{itemsList}</div>;
-          }
-
-          // Collapsed (desktop icon rail): drop headers, just show icons with a divider.
+          // Collapsed desktop icon rail: icons only, with a hover/focus flyout (below)
+          // that reveals this group's menu beside the rail WITHOUT widening it. On mobile
+          // (<lg) the drawer isn't collapsed — labels show inline and the flyout stays hidden.
           if (collapsed) {
             return (
-              <div key={index} className="mb-2">
-                {index > 0 && <div className="my-2 mx-2 border-t border-slate-100" />}
-                {itemsList}
+              <div
+                key={index}
+                className="mb-2"
+                onMouseEnter={(e) => openFlyout(index, e.currentTarget)}
+                onMouseLeave={scheduleClose}
+                onFocusCapture={(e) => openFlyout(index, e.currentTarget)}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) scheduleClose(); }}
+              >
+                {index > 0 && <div className="my-2 mx-2 border-t border-slate-100 hidden lg:block" />}
+                {renderItems(group.items, 'rail')}
               </div>
             );
           }
 
-          const open = isGroupOpen(group.label);
+          if (!group.label) {
+            return <div key={index} className="mb-4">{renderItems(group.items, 'full')}</div>;
+          }
+
+          const grpOpen = isGroupOpen(group.label);
           return (
             <div key={index} className="mb-4">
               <button
                 onClick={() => toggleGroup(group.label!)}
                 className="w-full flex items-center justify-between px-4 py-2 text-xs uppercase font-semibold text-slate-400 tracking-wide hover:text-slate-600 transition-colors"
-                aria-expanded={open}
+                aria-expanded={grpOpen}
               >
                 <span>{group.label}</span>
                 <Icon
                   name="ChevronDown"
                   size={14}
                   className="flex-shrink-0 transition-transform duration-200"
-                  style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                  style={{ transform: grpOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                 />
               </button>
               <div
                 className="grid"
-                style={{ gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 200ms ease-in-out' }}
+                style={{ gridTemplateRows: grpOpen ? '1fr' : '0fr', transition: 'grid-template-rows 200ms ease-in-out' }}
               >
                 <div className="overflow-hidden">
-                  <div className="pt-1">{itemsList}</div>
+                  <div className="pt-1">{renderItems(group.items, 'full')}</div>
                 </div>
               </div>
             </div>
           );
         })}
       </nav>
+
+      {/* Collapsed-rail flyout — portalled beside the rail. Desktop (lg) only; on touch/
+          mobile it never opens (no hover) and is display-hidden as a safeguard. */}
+      {flyout && typeof document !== 'undefined' && groups[flyout.index] && createPortal(
+        <div
+          className="hidden lg:block fixed z-50 pl-2"
+          style={{ left: 64, top: Math.max(8, flyout.top) }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
+          <div className="min-w-[204px] max-h-[82vh] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg py-2">
+            {groups[flyout.index].label && (
+              <div className="px-4 pb-1.5 text-xs uppercase font-semibold text-slate-400 tracking-wide">{groups[flyout.index].label}</div>
+            )}
+            <div className="px-1.5">{renderItems(groups[flyout.index].items, 'full')}</div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* User menu */}
       <div className="border-t border-slate-100 p-3 relative">
