@@ -30,7 +30,7 @@ const config: ExpoConfig = {
     ...(process.env.GOOGLE_SERVICES_JSON ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#7c3aed',
+      backgroundColor: '#ffffff',
     },
   },
   plugins: [
@@ -47,7 +47,7 @@ const config: ExpoConfig = {
       {
         image: './assets/splash.png',
         resizeMode: 'contain',
-        backgroundColor: '#7c3aed',
+        backgroundColor: '#ffffff',
       },
     ],
     [
