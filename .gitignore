@@ -51,7 +51,7 @@ biometric-bridge/node_modules/
 biometric-bridge/captures/
 
 # Separate Expo parent-app (its own project) — ignored here, worked on later
-/mobile/
+# /mobile/ now tracked (source only; mobile/parent-app/.gitignore excludes node_modules + secrets)
 
 # Generated artifacts / local-only data — never source, never commit
 /prod-backups/

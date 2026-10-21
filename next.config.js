@@ -49,11 +49,11 @@ const nextConfig = {
     serverComponentsExternalPackages: ['pdf-parse', 'exceljs', '@napi-rs/canvas'],
   },
   images: {
+    // The app uses plain <img> (no next/image), so the only host the optimizer should
+    // ever fetch is our Supabase Storage. A '**' wildcard here lets /_next/image proxy
+    // ANY https host (DoS/SSRF surface) — scope it to Supabase. (CVE: Next Image DoS.)
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
+      { protocol: 'https', hostname: '**.supabase.co' },
     ],
   },
   async headers() {

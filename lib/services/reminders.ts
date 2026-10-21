@@ -14,6 +14,7 @@ export interface ReminderDTO {
   entityType: string | null;
   entityId: string | null;
   entityLabel: string | null;
+  students: { id: string; name: string; className?: string | null }[] | null;
   url: string | null;
   completedAt: string | null;
 }
@@ -33,15 +34,30 @@ function toDTO(r: any, names: Map<string, string>): ReminderDTO {
     id: r.id, title: r.title, note: r.note, dueAt: r.dueAt.toISOString(), status: r.status,
     assignedToId: r.assignedToId, assignedToName: r.assignedToId ? names.get(r.assignedToId) || null : null,
     createdById: r.createdById, createdByName: r.createdById ? names.get(r.createdById) || null : null,
-    entityType: r.entityType, entityId: r.entityId, entityLabel: r.entityLabel, url: r.url,
+    entityType: r.entityType, entityId: r.entityId, entityLabel: r.entityLabel,
+    students: Array.isArray(r.students) ? r.students : null,
+    url: r.url,
     completedAt: r.completedAt ? r.completedAt.toISOString() : null,
   };
 }
 
-/** List reminders. scope 'mine' = assigned to or created by me; 'all' = everyone (admins). */
-export async function listReminders(userId: string, opts: { scope?: 'mine' | 'all'; status?: string } = {}): Promise<ReminderDTO[]> {
+/**
+ * List reminders.
+ *  - 'mine'     = my own tasks (assigned to me, or created by me with no assignee)
+ *  - 'assigned' = work I delegated to others (created by me, assigned to someone else)
+ *  - 'all'      = everyone's (admins only)
+ */
+export async function listReminders(userId: string, opts: { scope?: 'mine' | 'assigned' | 'all'; status?: string } = {}): Promise<ReminderDTO[]> {
   const where: any = {};
-  if (opts.scope !== 'all') where.OR = [{ assignedToId: userId }, { AND: [{ assignedToId: null }, { createdById: userId }] }];
+  if (opts.scope === 'all') {
+    // no user filter
+  } else if (opts.scope === 'assigned') {
+    where.createdById = userId;
+    where.assignedToId = { not: userId };
+    where.NOT = { assignedToId: null };
+  } else {
+    where.OR = [{ assignedToId: userId }, { AND: [{ assignedToId: null }, { createdById: userId }] }];
+  }
   if (opts.status === 'open') where.status = 'OPEN';
   else if (opts.status === 'done') where.status = { in: ['DONE', 'DISMISSED'] };
   const rows = await prisma.reminder.findMany({ where, orderBy: [{ status: 'asc' }, { dueAt: 'asc' }], take: 500 });
