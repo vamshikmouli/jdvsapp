@@ -21,7 +21,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 }
 
 interface Options {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
   auth?: boolean; // attach Bearer token (default true)
 }
