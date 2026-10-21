@@ -47,6 +47,18 @@ async function uploadToSupabase(filename: string, bytes: Buffer, contentType: st
   return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${objectPath}`;
 }
 
+// Detect a raster image by its MAGIC BYTES (real file signature), not the
+// client-declared Content-Type. Returns null for anything else — SVG, HTML,
+// scripts, or a spoofed type — so those are rejected outright. This closes a
+// stored-XSS vector: an SVG served from the public bucket would run its <script>.
+function sniffImage(b: Buffer): { ext: string; mime: string } | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { ext: 'jpg', mime: 'image/jpeg' };
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return { ext: 'png', mime: 'image/png' };
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return { ext: 'gif', mime: 'image/gif' };
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return { ext: 'webp', mime: 'image/webp' };
+  return null;
+}
+
 async function uploadToDisk(filename: string, bytes: Buffer, folder: string) {
   const dir = path.join(process.cwd(), 'public', 'uploads', folder);
   await mkdir(dir, { recursive: true });
@@ -68,19 +80,23 @@ export async function POST(req: NextRequest) {
 
     const file = form.get('file');
     if (!(file instanceof File)) return NextResponse.json({ error: 'No file' }, { status: 400 });
-    if (!file.type.startsWith('image/')) return NextResponse.json({ error: 'Only image files are allowed' }, { status: 400 });
     if (file.size > 5 * 1024 * 1024) return NextResponse.json({ error: 'Image must be under 5 MB' }, { status: 400 });
     // Student photos: 50 KB – 1000 KB (the app's cropper saves within this range).
     if (folder === 'students' && (file.size < 50 * 1024 || file.size > 1000 * 1024)) {
       return NextResponse.json({ error: `Photo must be between 50 KB and 1000 KB (this one is ${Math.round(file.size / 1024)} KB).` }, { status: 400 });
     }
 
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-    const filename = `${randomUUID()}.${ext}`;
     const bytes = Buffer.from(await file.arrayBuffer());
 
+    // Validate the ACTUAL content, not the client-declared type. Rejects SVG/HTML/
+    // spoofed files (stored-XSS vector); ext + content-type come from the real bytes.
+    const sniffed = sniffImage(bytes);
+    if (!sniffed) return NextResponse.json({ error: 'Only JPEG, PNG, WebP or GIF images are allowed' }, { status: 400 });
+
+    const filename = `${randomUUID()}.${sniffed.ext}`;
+
     const url = useSupabase
-      ? await uploadToSupabase(filename, bytes, file.type, folder)
+      ? await uploadToSupabase(filename, bytes, sniffed.mime, folder)
       : await uploadToDisk(filename, bytes, folder);
 
     return NextResponse.json({ url });

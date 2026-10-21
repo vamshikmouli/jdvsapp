@@ -223,8 +223,9 @@ model Reminder {
   createdById   String?        // who set it
   assignedToId  String?        // who should act (defaults to the creator)
   entityType    String?        // "Student" | "Payment" | "Staff" | …
-  entityId      String?
-  entityLabel   String?        // e.g. "ASHA (JDVS123)" for display
+  entityId      String?        // the primary linked entity (first student, for the index/link)
+  entityLabel   String?        // e.g. "ASHA (JDVS123)" or "ASHA +2 more" for display
+  students      Json?          // full list of linked students: [{ id, name, className? }]
   url           String?        // where the reminder links to
   lastNotifiedOn String?       // 'YYYY-MM-DD' — so the daily digest fires once/day
   completedAt   DateTime?

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { canAny } from '@/lib/rbac/roles';
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,22 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if ('note' in b) data.note = b.note ? String(b.note).trim().slice(0, 2000) : null;
     if (b.dueAt) { const d = new Date(b.dueAt); if (!isNaN(d.getTime())) { data.dueAt = d; data.lastNotifiedOn = null; } }
     if ('assignedToId' in b) data.assignedToId = b.assignedToId ? String(b.assignedToId) : me;
+    if ('students' in b) {
+      const students = (Array.isArray(b.students) ? b.students : [])
+        .filter((s: any) => s && s.id)
+        .slice(0, 50)
+        .map((s: any) => ({ id: String(s.id), name: String(s.name || s.id), className: s.className ? String(s.className) : null }));
+      if (students.length) {
+        data.entityType = 'Student';
+        data.entityId = students[0].id;
+        data.entityLabel = students.length === 1 ? `${students[0].name} (${students[0].id})` : `${students[0].name} +${students.length - 1} more`;
+        data.students = students;
+        data.url = '/admin/students';
+      } else {
+        data.entityType = null; data.entityId = null; data.entityLabel = null; data.url = null;
+        data.students = Prisma.DbNull;
+      }
+    }
   }
   await prisma.reminder.update({ where: { id: params.id }, data });
   return NextResponse.json({ ok: true });
