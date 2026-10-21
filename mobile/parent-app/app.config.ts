@@ -34,6 +34,7 @@ const config: ExpoConfig = {
     },
   },
   plugins: [
+    './plugins/withArm64Only', // smaller sideload APK: arm64-v8a only
     'expo-router',
     'expo-secure-store',
     'expo-local-authentication',
