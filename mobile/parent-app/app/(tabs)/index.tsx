@@ -5,10 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Settings, Flame, Wallet, Award } from 'lucide-react-native';
 import { api } from '@/api/client';
 import { useAuth } from '@/auth/AuthProvider';
-import { NightHeader, LevelAvatar, XPBar, ProgressRing, Medal } from '@/components/Kit';
-import { Txt, Label, Card, SectionHeader, StatTile, IconChip, Pill, BellButton, Loading, StateBlock } from '@/components/ui';
+import { NightHeader, ProgressRing, Medal } from '@/components/Kit';
+import { Txt, Label, Card, SectionHeader, StatTile, IconChip, Pill, BellButton, StarRating, Loading, StateBlock } from '@/components/ui';
 import { useTour, TourSpot } from '@/onboarding/tour';
-import { deriveLevel, deriveBadges, deriveCoins, GameChild, Badge } from '@/lib/game';
+import { deriveStars, deriveSimpleBadges, GameChild, Badge } from '@/lib/game';
 import { greeting, money, initials, CELL_COLOR } from '@/lib/format';
 import { C, G, S, R, E, T, type } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,10 +47,9 @@ export default function HomeScreen() {
   const kids = data?.children ?? [];
   const selected = kids.find((k) => k.id === selectedId) || kids[0];
 
-  const badges: Badge[] = selected ? deriveBadges(selected) : [];
+  const badges: Badge[] = selected ? deriveSimpleBadges(selected) : [];
   const earned = badges.filter((b) => b.earned);
-  const level = selected ? deriveLevel(selected) : null;
-  const coins = selected ? deriveCoins(selected, earned.length) : 0;
+  const stars = selected ? deriveStars(selected) : { stars: 0, label: '' };
   const featured: Badge | undefined = earned[0] ?? badges[0];
   const week = selected?.days.slice(-7) ?? [];
   const hasWeekData = week.some((d) => d.status !== 'none');
@@ -83,12 +82,6 @@ export default function HomeScreen() {
               <Text style={[type('h1', '#fff'), { marginTop: 2 }]}>Namaste, {first}</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm }}>
-              <TourSpot id="coins">
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: S.md, borderRadius: R.pill, backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)' }}>
-                  <View style={{ width: 15, height: 15, borderRadius: 8, backgroundColor: C.goldGlow }} />
-                  <Text style={type('bodyStrong', '#fff')}>{coins}</Text>
-                </View>
-              </TourSpot>
               <TourSpot id="bell"><BellButton /></TourSpot>
               <Pressable onPress={onMenu} hitSlop={8} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)' }}>
                 <Settings color="#fff" size={18} />
@@ -131,28 +124,22 @@ export default function HomeScreen() {
         ) : (
           <View style={{ paddingHorizontal: S.gutter }}>
             {/* Level card — overlaps the hero */}
-            <TourSpot id="level" style={{ marginTop: -S.xxl }}>
+            <TourSpot id="starcard" style={{ marginTop: -S.xxl }}>
             <Card onPress={() => router.push('/how-rewards-work')} style={{ flexDirection: 'row', alignItems: 'center', gap: S.lg }} elevation="lg">
-              <LevelAvatar initials={initials(selected.name)} pct={(level?.progress ?? 0) * 100} size={64} />
+              <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: C.violetSoft, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={type('h2', C.violetDeep)}>{initials(selected.name)}</Text>
+              </View>
               <View style={{ flex: 1 }}>
-                <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingVertical: 3, paddingHorizontal: S.sm, borderRadius: R.pill, backgroundColor: C.violetSoft }}>
-                  <Text style={type('micro', C.violetDeep)}>⭐ LEVEL {level?.level}</Text>
-                </View>
-                <Text style={[type('h2', C.ink), { marginTop: 5 }]} numberOfLines={1}>{selected.name}</Text>
-                <Text style={type('caption', C.inkMut)}>{level?.title} · {selected.className}</Text>
-                <View style={{ marginTop: S.sm }}>
-                  <XPBar progress={level?.progress ?? 0} />
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }}>
-                    <Text style={type('micro', C.inkMut)}>{level?.xpInto} / {level?.xpForLevel} XP</Text>
-                    <Text style={type('micro', C.inkMut)}>{level?.xpToNext} to Lv.{(level?.level ?? 0) + 1}</Text>
-                  </View>
-                </View>
+                <Text style={type('h3', C.ink)} numberOfLines={1}>{selected.name}</Text>
+                <Text style={[type('caption', C.inkMut), { marginBottom: 6 }]}>{selected.className}</Text>
+                <StarRating value={stars.stars} size={20} />
+                <Text style={[type('caption', C.inkSoft), { marginTop: 5 }]}>{stars.label}</Text>
               </View>
             </Card>
             </TourSpot>
 
             {/* Stat grid */}
-            <TourSpot id="stats" style={{ marginTop: S.lg }}>
+            <TourSpot id="tiles" style={{ marginTop: S.lg }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: S.md }}>
               <StatTile
                 label="Attendance"
@@ -166,11 +153,11 @@ export default function HomeScreen() {
                 sub={`${selected.present} of ${selected.marked} days`}
               />
               <StatTile
-                label="Streak"
+                label="Days in a row"
                 accent={C.goldDeep}
                 icon={<IconChip bg={C.goldSoft}><Flame color={C.gold} size={22} /></IconChip>}
                 value={`${selected.streak?.current ?? 0}`}
-                sub={(selected.streak?.current ?? 0) > 0 ? 'days in a row' : 'start today'}
+                sub={(selected.streak?.current ?? 0) > 0 ? 'keep it going!' : 'come today'}
               />
               <StatTile
                 label="Fee balance"
@@ -181,7 +168,7 @@ export default function HomeScreen() {
                 sub={selected.fee && selected.fee.totalBalance > 0 ? 'Tap to pay →' : 'All cleared'}
               />
               <StatTile
-                label="Badges"
+                label="Rewards"
                 accent={C.violetDeep}
                 icon={<IconChip bg={C.violetSoft}><Award color={C.violet} size={22} /></IconChip>}
                 onPress={() => router.push('/rewards')}
@@ -222,7 +209,7 @@ export default function HomeScreen() {
 
             {/* Recent wins */}
             <View style={{ marginTop: S.xxl }}>
-              <SectionHeader title="Recent wins" actionLabel="All badges" onAction={() => router.push('/rewards')} />
+              <SectionHeader title="Rewards earned" actionLabel="See all" onAction={() => router.push('/rewards')} />
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -S.gutter }} contentContainerStyle={{ paddingHorizontal: S.gutter, gap: S.xs }}>
               {badges.slice(0, 6).map((b) => <Medal key={b.key} badge={b} />)}

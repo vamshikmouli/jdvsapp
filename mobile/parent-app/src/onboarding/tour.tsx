@@ -11,21 +11,17 @@ const SEEN_KEY = 'onboarding.v1.seen';
 // ─── Content ────────────────────────────────────────────────────────────
 interface Slide { emoji: string; title: string; body: string }
 const SLIDES: Slide[] = [
-  { emoji: '👋', title: 'Welcome!', body: "Your child's school life — attendance, marks, fees and rewards — all in one friendly place." },
-  { emoji: '⭐', title: 'Levels & Coins', body: 'Every present day, streak and badge earns XP and Coins. Watch your child level up over the year.' },
-  { emoji: '🔥', title: 'Streaks', body: 'Attending regularly builds a streak. Weekends and holidays are protected, so streaks keep going.' },
-  { emoji: '🏅', title: 'Badges', body: 'Unlock badges for great attendance, top marks and on-time fees — all on the Rewards tab.' },
-  { emoji: '🧭', title: 'Four tabs', body: 'Home, Report (marks), Rewards and Fees — switch anytime from the bar at the bottom.' },
-  { emoji: '🔔', title: 'Stay updated', body: 'Tap the bell at the top-right for school news, events and notices whenever you like.' },
+  { emoji: '👋', title: 'Welcome!', body: 'This app shows how your child is doing at school.' },
+  { emoji: '👀', title: 'Let me show you', body: "I'll point to each thing on the screen. Just tap Next." },
 ];
 
 export interface CoachStep { id: string; title: string; body: string; pad?: number }
+// Simple, plain-English steps that highlight each real thing on the Home screen.
 const COACH_STEPS: CoachStep[] = [
-  { id: 'coins', title: 'Coins', body: "Your child's coins — earned from attendance, streaks and badges. They grow over time!" },
-  { id: 'bell', title: 'Updates', body: 'School news, events and notices live here. Tap the bell anytime.' },
-  { id: 'level', title: 'Level & XP', body: 'Progress as your child attends and achieves. Reach the next level to rank up.' },
-  { id: 'stats', title: "Today's snapshot", body: 'Attendance, streak, fee balance and badges — the quick view for the selected child.' },
-  { id: 'tabbar', title: 'Navigate', body: 'Switch between Home, Report, Rewards and Fees from here.' },
+  { id: 'starcard', title: '⭐ Stars', body: 'These stars show how often your child comes to school. More stars is better.' },
+  { id: 'tiles', title: 'Quick look', body: 'Here you see attendance, days in a row, and fees. Tap the pink box to pay fees.' },
+  { id: 'bell', title: '🔔 School news', body: 'Tap the bell to read messages and news from the school.' },
+  { id: 'tabbar', title: 'Menu', body: 'Use these buttons: Home, Report card, Rewards, and Fees.' },
 ];
 
 // ─── Context ────────────────────────────────────────────────────────────

@@ -1,103 +1,57 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ScreenHero, Card, Label } from '@/components/ui';
+import { ScreenHero, Card, Label, StarRating } from '@/components/ui';
 import { C, S, R, type } from '@/theme';
 
-// Mirrors the rules in src/lib/game.ts. Keep in sync if the formula changes.
-const XP_ROWS = [
-  { emoji: '✅', label: 'Each present day', value: '+15 XP' },
-  { emoji: '🔥', label: 'Each streak day', value: '+10 XP' },
-  { emoji: '💫', label: 'All fees cleared', value: '+100 XP' },
-  { emoji: '🎯', label: '90%+ attendance', value: '+60 XP' },
+const STAR_ROWS = [
+  { n: 5, text: 'Comes every day' },
+  { n: 4, text: 'Very regular' },
+  { n: 3, text: 'Coming well' },
+  { n: 2, text: 'Coming sometimes' },
+  { n: 1, text: 'Needs to come more' },
 ];
-const COIN_ROWS = [
-  { emoji: '✅', label: 'Each present day', value: '+10' },
-  { emoji: '🏅', label: 'Each badge earned', value: '+20' },
-  { emoji: '🔥', label: 'Each streak day', value: '+5' },
-];
-const LEVELS = ['New Star', 'Bright Spark', 'Curious Mind', 'Rising Scholar', 'Star Scholar', 'Champion Scholar'];
 const BADGES: { emoji: string; name: string; how: string }[] = [
-  { emoji: '🐦', name: 'Early Bird', how: 'No absences this month.' },
-  { emoji: '🎯', name: 'Perfect Week', how: 'Present 5 school days in a row.' },
-  { emoji: '🔥', name: 'On a Roll', how: 'Keep a 7-day attendance streak.' },
-  { emoji: '🏅', name: 'Top Marks', how: 'Score an A grade in any exam.' },
-  { emoji: '💫', name: 'Star Payer', how: 'Clear all fees on time.' },
-  { emoji: '🌟', name: 'Perfect Month', how: '100% attendance for the month.' },
-  { emoji: '🦸', name: '30-Day Hero', how: 'Reach a 30-day attendance streak.' },
-  { emoji: '💯', name: 'Century Club', how: 'Score 100% in any exam.' },
-  { emoji: '🎓', name: 'All-Rounder', how: 'Get an A in every subject.' },
+  { emoji: '🎯', name: 'Good Attendance', how: 'Your child comes to school 90% of the days this month.' },
+  { emoji: '🔥', name: 'Came Every Day', how: 'Your child comes 5 days in a row.' },
+  { emoji: '🏅', name: 'Top Marks', how: 'Your child scores grade A in an exam.' },
+  { emoji: '💰', name: 'Fees Paid', how: 'All school fees are paid.' },
 ];
-
-function MetricRow({ emoji, label, value, accent = C.violet, last }: { emoji: string; label: string; value: string; accent?: string; last?: boolean }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth, borderBottomColor: C.line }}>
-      <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: C.appbg }}>
-        <Text style={{ fontSize: 18 }}>{emoji}</Text>
-      </View>
-      <Text style={[type('body', C.inkSoft), { flex: 1 }]}>{label}</Text>
-      <Text style={type('h3', accent)}>{value}</Text>
-    </View>
-  );
-}
 
 export default function HowRewardsWork() {
   const router = useRouter();
   return (
     <View style={{ flex: 1, backgroundColor: C.appbg }}>
-      <ScreenHero title="How rewards work" subtitle="Levels, XP, coins & badges ✨" onBack={() => router.back()} />
+      <ScreenHero title="How it works" subtitle="Stars & rewards, made simple" onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: S.gutter, paddingBottom: S.huge, gap: S.lg }} showsVerticalScrollIndicator={false}>
-        {/* Intro */}
         <Card elevation="sm">
           <Text style={type('body', C.inkSoft)}>
-            Rewards turn everyday good habits — showing up, keeping streaks, doing well and paying on time — into points your child can see and celebrate. Nothing here affects fees or marks; it's just encouragement. 🌟
+            This app shows how your child is doing at school, and gives them <Text style={type('bodyStrong', C.ink)}>stars and rewards</Text> for coming regularly, doing well, and paying fees on time. It's only to encourage your child — it does not change marks or fees. 🌟
           </Text>
         </Card>
 
-        {/* XP & Levels */}
+        {/* Stars */}
         <Card elevation="sm">
-          <Text style={type('h3', C.ink)}>⭐ XP & Levels</Text>
-          <Text style={[type('body', C.inkMut), { marginTop: 4, marginBottom: S.sm }]}>
-            XP (experience points) measure progress this term. Your child earns XP from:
+          <Text style={type('h3', C.ink)}>⭐ Stars</Text>
+          <Text style={[type('body', C.inkMut), { marginTop: 4, marginBottom: S.md }]}>
+            Stars show how regularly your child comes to school this month. The more they come, the more stars.
           </Text>
-          {XP_ROWS.map((r, i) => <MetricRow key={r.label} {...r} last={i === XP_ROWS.length - 1} />)}
-          <View style={{ marginTop: S.md, borderRadius: R.md, padding: S.md, backgroundColor: C.violetSoft }}>
-            <Text style={type('bodyStrong', C.violetDeep)}>Every 250 XP = the next level.</Text>
-            <Text style={[type('caption', C.violetDeep), { marginTop: 2, opacity: 0.85 }]}>The bar on the Home & Rewards screens shows how far to the next level.</Text>
-          </View>
+          {STAR_ROWS.map((r, i) => (
+            <View key={r.n} style={{ flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.sm, borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: C.line }}>
+              <StarRating value={r.n} size={16} />
+              <Text style={[type('body', C.inkSoft), { flex: 1 }]}>{r.text}</Text>
+            </View>
+          ))}
         </Card>
 
-        {/* Level ladder */}
-        <Card elevation="sm">
-          <Text style={type('h3', C.ink)}>🏆 Level ladder</Text>
-          <Text style={[type('body', C.inkMut), { marginTop: 4, marginBottom: S.sm }]}>Everyone starts at Level 1 and ranks up as XP grows:</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: S.sm }}>
-            {LEVELS.map((t, i) => (
-              <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: R.pill, paddingVertical: 6, paddingHorizontal: S.md, backgroundColor: C.appbg, borderWidth: 1, borderColor: C.line }}>
-                <Text style={type('micro', C.violet)}>Lv.{i + 1}</Text>
-                <Text style={type('bodyStrong', C.ink)}>{t}</Text>
-              </View>
-            ))}
-          </View>
-        </Card>
-
-        {/* Coins */}
-        <Card elevation="sm">
-          <Text style={type('h3', C.ink)}>🪙 Coins</Text>
-          <Text style={[type('body', C.inkMut), { marginTop: 4, marginBottom: S.sm }]}>
-            Coins are a fun running total shown in the top bar. They add up from:
-          </Text>
-          {COIN_ROWS.map((r, i) => <MetricRow key={r.label} {...r} accent={C.goldDeep} last={i === COIN_ROWS.length - 1} />)}
-        </Card>
-
-        {/* Badges */}
+        {/* Rewards */}
         <View>
-          <Label style={{ marginBottom: S.sm, marginLeft: 2 }}>Badges & how to earn them</Label>
+          <Label style={{ marginBottom: S.sm, marginLeft: 2 }}>Rewards & how to earn them</Label>
           <Card elevation="sm" padding={S.xs}>
             {BADGES.map((b, i) => (
               <View key={b.name} style={{ flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, paddingHorizontal: S.md, borderBottomWidth: i === BADGES.length - 1 ? 0 : StyleSheet.hairlineWidth, borderBottomColor: C.line }}>
-                <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.violetSoft }}>
-                  <Text style={{ fontSize: 22 }}>{b.emoji}</Text>
+                <View style={{ width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.violetSoft }}>
+                  <Text style={{ fontSize: 24 }}>{b.emoji}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={type('bodyStrong', C.ink)}>{b.name}</Text>
@@ -109,7 +63,7 @@ export default function HowRewardsWork() {
         </View>
 
         <Text style={[type('caption', C.inkMut), { textAlign: 'center' }]}>
-          Marks-based badges (Top Marks, Century Club, All-Rounder) light up once the school publishes results.
+          Top Marks shows up after the school publishes exam results.
         </Text>
       </ScrollView>
     </View>

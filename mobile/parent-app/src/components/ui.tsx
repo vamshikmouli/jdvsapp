@@ -102,6 +102,17 @@ export function SectionHeader({
   );
 }
 
+// ── Star rating (simple, for the rural-friendly rewards model) ──────────
+export function StarRating({ value, size = 22 }: { value: number; size?: number }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 3 }}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Text key={i} style={{ fontSize: size, opacity: i <= value ? 1 : 0.22 }}>⭐</Text>
+      ))}
+    </View>
+  );
+}
+
 // ── Icon chip (soft-tinted square that holds an icon) ───────────────────
 export function IconChip({
   bg, children, size = 40, radius = 12,

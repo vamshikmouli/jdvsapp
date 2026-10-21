@@ -52,6 +52,57 @@ export function deriveCoins(c: GameChild, earnedBadges: number): number {
   return c.present * 10 + earnedBadges * 20 + (c.streak?.current ?? 0) * 5;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// SIMPLE model (for rural / low-literacy parents): a 0–5 STAR rating based on
+// how regularly the child attends, plus a few clear, concrete badges. No XP,
+// no coins, no level numbers — just stars and plain words.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Stars {
+  stars: number;   // 0..5
+  label: string;   // plain-language meaning
+}
+
+/** Star rating from this month's attendance %. More stars = comes more often. */
+export function deriveStars(c: GameChild): Stars {
+  if (!c.marked) return { stars: 0, label: 'No attendance yet' };
+  const pct = c.pct;
+  let stars: number;
+  if (pct >= 95) stars = 5;
+  else if (pct >= 85) stars = 4;
+  else if (pct >= 70) stars = 3;
+  else if (pct >= 50) stars = 2;
+  else stars = 1;
+  const labels = [
+    'No attendance yet',
+    'Please send them more often',
+    'Coming sometimes',
+    'Coming well',
+    'Very regular — well done!',
+    'Comes every day! ⭐',
+  ];
+  return { stars, label: labels[stars] };
+}
+
+/**
+ * The few clear badges a parent can understand at a glance. `report` is optional
+ * (marks-based badge lights up once results are published).
+ */
+export function deriveSimpleBadges(c: GameChild, report?: MarksLike | null): Badge[] {
+  const streak = c.streak?.current ?? 0;
+  const feeClear = c.fee ? c.fee.totalBalance <= 0 : false;
+  const topGrade = report?.assessments?.some((a) => a.grade === 'A' || a.grade === 'A+') ?? false;
+  const goodAttendance = c.marked > 0 && c.pct >= 90;
+
+  const list: Badge[] = [
+    { key: 'attendance', name: 'Good Attendance', emoji: '🎯', tone: 'grass', earned: goodAttendance, progress: goodAttendance ? 'Came 90%+ this month' : 'Come regularly to earn' },
+    { key: 'regular', name: 'Came Every Day', emoji: '🔥', tone: 'gold', earned: streak >= 5, progress: streak >= 5 ? `${streak} days in a row` : 'Come 5 days in a row' },
+    { key: 'topmarks', name: 'Top Marks', emoji: '🏅', tone: 'violet', earned: topGrade, progress: topGrade ? 'Scored grade A' : 'Score an A in exams' },
+    { key: 'fees', name: 'Fees Paid', emoji: '💰', tone: 'sky', earned: feeClear, progress: feeClear ? 'All fees cleared' : 'Pay fees to earn' },
+  ];
+  return list.sort((a, b) => Number(b.earned) - Number(a.earned));
+}
+
 export type BadgeTone = 'gold' | 'violet' | 'grass' | 'sky';
 export interface Badge {
   key: string;
