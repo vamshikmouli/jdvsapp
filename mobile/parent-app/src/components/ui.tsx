@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Bell } from 'lucide-react-native';
 import { C, G, S, R, E, T, type } from '@/theme';
 import { NightHeader } from './Kit';
-import { initials } from '@/lib/format';
+import { initials, givenName } from '@/lib/format';
 
 /**
  * Shared UI primitives for the parent app — the "bold & modern" design system.
@@ -185,19 +185,24 @@ export function Pill({
 
 // ── Text field ──────────────────────────────────────────────────────────
 export function Field({
-  label, style, inputStyle, ...props
-}: { label?: string; inputStyle?: TextStyle } & TextInputProps & { style?: ViewStyle }) {
+  label, style, inputStyle, rightSlot, ...props
+}: { label?: string; inputStyle?: TextStyle; rightSlot?: React.ReactNode } & TextInputProps & { style?: ViewStyle }) {
   return (
     <View style={style}>
       {label ? <Label style={{ marginBottom: 7 }}>{label}</Label> : null}
-      <TextInput
-        placeholderTextColor={C.inkMut}
-        style={[{
-          height: 52, paddingHorizontal: S.lg, borderRadius: R.md, backgroundColor: C.appbg,
-          borderWidth: 1, borderColor: C.line, ...type('bodyL', C.ink),
-        }, inputStyle]}
-        {...props}
-      />
+      <View>
+        <TextInput
+          placeholderTextColor={C.inkMut}
+          style={[{
+            height: 54, paddingHorizontal: S.lg, paddingRight: rightSlot ? 52 : S.lg, borderRadius: R.md, backgroundColor: C.appbg,
+            borderWidth: 1, borderColor: C.line, ...type('bodyL', C.ink),
+          }, inputStyle]}
+          {...props}
+        />
+        {rightSlot ? (
+          <View style={{ position: 'absolute', right: 6, top: 0, bottom: 0, justifyContent: 'center' }}>{rightSlot}</View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -349,7 +354,7 @@ export function ChildSwitcher({
               <Text style={type('micro', '#fff')}>{initials(k.name)}</Text>
             </View>
             <View>
-              <Text style={type('bodyStrong', on ? C.ink : '#fff')}>{k.name.split(' ')[0]}</Text>
+              <Text style={type('bodyStrong', on ? C.ink : '#fff')}>{givenName(k.name)}</Text>
               {k.className ? <Text style={type('micro', on ? C.violet : 'rgba(255,255,255,0.65)')}>{k.className}</Text> : null}
             </View>
           </Pill>

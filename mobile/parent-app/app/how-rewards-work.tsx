@@ -5,15 +5,18 @@ import { ScreenHero, Card, Label, StarRating } from '@/components/ui';
 import { C, S, R, type } from '@/theme';
 
 const STAR_ROWS = [
-  { n: 5, text: 'Comes every day' },
-  { n: 4, text: 'Very regular' },
-  { n: 3, text: 'Coming well' },
-  { n: 2, text: 'Coming sometimes' },
-  { n: 1, text: 'Needs to come more' },
+  { n: 5, text: 'Comes every day', pct: '95% and above' },
+  { n: 4, text: 'Very regular', pct: '85% to 94%' },
+  { n: 3, text: 'Coming well', pct: '70% to 84%' },
+  { n: 2, text: 'Coming sometimes', pct: '50% to 69%' },
+  { n: 1, text: 'Needs to come more', pct: 'below 50%' },
 ];
 const BADGES: { emoji: string; name: string; how: string }[] = [
-  { emoji: '🎯', name: 'Good Attendance', how: 'Your child comes to school 90% of the days this month.' },
-  { emoji: '🔥', name: 'Came Every Day', how: 'Your child comes 5 days in a row.' },
+  { emoji: '🐦', name: 'Early Bird', how: 'No absent days this month.' },
+  { emoji: '🎯', name: 'Perfect Week', how: 'Your child comes 5 school days in a row.' },
+  { emoji: '🔥', name: 'On a Roll', how: 'Your child comes 7 days in a row.' },
+  { emoji: '🌟', name: 'Perfect Month', how: '100% attendance this month.' },
+  { emoji: '🦸', name: 'Streak Rewards', how: 'A new reward every 15 days with no leave — 30, 45, 60, 75… The longer the streak, the bigger the reward: Hero → Superstar → Champion → Legend 👑.' },
   { emoji: '🏅', name: 'Top Marks', how: 'Your child scores grade A in an exam.' },
   { emoji: '💰', name: 'Fees Paid', how: 'All school fees are paid.' },
 ];
@@ -39,7 +42,10 @@ export default function HowRewardsWork() {
           {STAR_ROWS.map((r, i) => (
             <View key={r.n} style={{ flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.sm, borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: C.line }}>
               <StarRating value={r.n} size={16} />
-              <Text style={[type('body', C.inkSoft), { flex: 1 }]}>{r.text}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={type('body', C.inkSoft)}>{r.text}</Text>
+                <Text style={[type('micro', C.inkMut), { marginTop: 1 }]}>{r.pct} attendance</Text>
+              </View>
             </View>
           ))}
         </Card>

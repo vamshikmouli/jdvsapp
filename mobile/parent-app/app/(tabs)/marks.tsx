@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { useQuery } from '@tanstack/react-query';
 import { Share2 } from 'lucide-react-native';
 import { api } from '@/api/client';
+import { resolveMediaUrl } from '@/config';
 import { ProgressRing } from '@/components/Kit';
 import { ScreenHero, ChildSwitcher, BellButton, Card, Txt, Label, Loading, StateBlock } from '@/components/ui';
+import { givenName, initials } from '@/lib/format';
 import { C, G, S, R, E, T, type } from '@/theme';
 import { ShareableResult, ShareAssessment, ShareStudent } from '@/components/ShareableResult';
 
@@ -46,11 +49,22 @@ export default function MarksScreen() {
     let cancelled = false;
     (async () => {
       try {
-        await new Promise((r) => setTimeout(r, 90));
-        const uri = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile' });
+        // Let the off-screen card (incl. the remote photo) render before capture.
+        await new Promise((r) => setTimeout(r, 350));
+        let uri: string | null = null;
+        let captureFailed = false;
+        try {
+          uri = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile' });
+        } catch {
+          // Image capture needs react-native-view-shot's native module, which is
+          // NOT present in Expo Go — it works in the installed app.
+          captureFailed = true;
+        }
         if (cancelled) return;
-        if (await Sharing.isAvailableAsync()) {
+        if (uri && (await Sharing.isAvailableAsync())) {
           await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: `${pending.report.student.name} — ${pending.a.name}` });
+        } else if (captureFailed) {
+          Alert.alert('Preview only', 'Sharing the report image works in the installed app. (Expo Go can’t capture the card.)');
         }
       } catch {
         /* dismissed / failed — ignore */
@@ -111,7 +125,7 @@ function ChildReport({ childId, onShare, busyId }: { childId: string; onShare: (
       ) : isError || !report ? (
         <StateBlock emoji="📡" title="Couldn't load" body="Pull down to retry." />
       ) : assessments.length === 0 ? (
-        <StateBlock emoji="🗂️" title="No results published yet" body={`You'll see ${report.student.name.split(' ')[0]}'s report card here once the school publishes it.`} />
+        <StateBlock emoji="🗂️" title="No results published yet" body={`You'll see ${givenName(report.student.name)}'s report card here once the school publishes it.`} />
       ) : (
         <>
           {/* Exam selector — pick one to view its detail */}
@@ -144,17 +158,26 @@ function ChildReport({ childId, onShare, busyId }: { childId: string; onShare: (
 function ResultBlock({ report, a, onShare, busy }: { report: Report; a: ReportAssessment; onShare: (r: Report, a: ReportAssessment) => void; busy: boolean }) {
   const isSA = a.type === 'SUMMATIVE';
   const colors = isSA ? (['#6d5bf5', '#7c3aed'] as const) : (['#f59e0b', '#d97706'] as const);
+  const st = report.student;
+  const photo = resolveMediaUrl(st.photoUrl);
+  const cls = (st.className || '').replace(/\s?STD$/i, '');
+  const classLine = [cls, st.section].filter(Boolean).join(' · ');
 
   return (
     <View style={{ backgroundColor: C.white, borderRadius: R.xl, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, ...E.md }}>
       <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: S.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm, flex: 1 }}>
-            <View style={{ borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: 'rgba(255,255,255,0.25)' }}>
-              <Text style={type('micro', '#fff')}>{isSA ? 'SA' : 'FA'}</Text>
-            </View>
-            <Text style={[type('h3', '#fff'), { flexShrink: 1 }]} numberOfLines={1}>{a.name}</Text>
-            {a.term ? <Text style={type('caption', 'rgba(255,255,255,0.75)')} numberOfLines={1}>{a.term}</Text> : null}
+        {/* Student identity + share */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.md }}>
+          <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', ...E.sm }}>
+            {photo ? (
+              <Image source={{ uri: photo }} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={150} />
+            ) : (
+              <Text style={type('h3', isSA ? '#6d28d9' : '#b45309')}>{initials(st.name)}</Text>
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={type('h3', '#fff')} numberOfLines={1}>{st.name}</Text>
+            {classLine ? <Text style={type('caption', 'rgba(255,255,255,0.82)')} numberOfLines={1}>{classLine}</Text> : null}
           </View>
           <Pressable onPress={() => onShare(report, a)} disabled={busy} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: R.pill, paddingHorizontal: S.md, paddingVertical: 7, backgroundColor: 'rgba(255,255,255,0.2)' }}>
             {busy ? <ActivityIndicator size="small" color="#fff" /> : <Share2 size={13} color="#fff" />}
@@ -162,7 +185,16 @@ function ResultBlock({ report, a, onShare, busy }: { report: Report; a: ReportAs
           </Pressable>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.lg }}>
+        {/* Exam name */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm, marginTop: S.lg }}>
+          <View style={{ borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: 'rgba(255,255,255,0.25)' }}>
+            <Text style={type('micro', '#fff')}>{isSA ? 'SA' : 'FA'}</Text>
+          </View>
+          <Text style={[type('bodyStrong', '#fff'), { flexShrink: 1 }]} numberOfLines={1}>{a.name}</Text>
+          {a.term ? <Text style={type('caption', 'rgba(255,255,255,0.75)')} numberOfLines={1}>{a.term}</Text> : null}
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.lg, marginTop: S.md }}>
           <ProgressRing size={78} stroke={8} pct={a.percent ?? 0} colors={['#ffe9a8', '#ffffff']} track="rgba(255,255,255,0.22)">
             <Text style={type('h3', '#fff')}>{a.percent != null ? `${a.percent}%` : '—'}</Text>
           </ProgressRing>

@@ -90,17 +90,60 @@ export function deriveStars(c: GameChild): Stars {
  */
 export function deriveSimpleBadges(c: GameChild, report?: MarksLike | null): Badge[] {
   const streak = c.streak?.current ?? 0;
+  const longest = c.streak?.longest ?? 0;
   const feeClear = c.fee ? c.fee.totalBalance <= 0 : false;
   const topGrade = report?.assessments?.some((a) => a.grade === 'A' || a.grade === 'A+') ?? false;
-  const goodAttendance = c.marked > 0 && c.pct >= 90;
 
   const list: Badge[] = [
-    { key: 'attendance', name: 'Good Attendance', emoji: '🎯', tone: 'grass', earned: goodAttendance, progress: goodAttendance ? 'Came 90%+ this month' : 'Come regularly to earn' },
-    { key: 'regular', name: 'Came Every Day', emoji: '🔥', tone: 'gold', earned: streak >= 5, progress: streak >= 5 ? `${streak} days in a row` : 'Come 5 days in a row' },
-    { key: 'topmarks', name: 'Top Marks', emoji: '🏅', tone: 'violet', earned: topGrade, progress: topGrade ? 'Scored grade A' : 'Score an A in exams' },
-    { key: 'fees', name: 'Fees Paid', emoji: '💰', tone: 'sky', earned: feeClear, progress: feeClear ? 'All fees cleared' : 'Pay fees to earn' },
+    // Attendance badges — kept the same as the previous richer set.
+    { key: 'earlybird', name: 'Early Bird', emoji: '🐦', tone: 'gold', earned: c.marked > 0 && c.absent === 0, progress: 'On time this month' },
+    { key: 'perfectweek', name: 'Perfect Week', emoji: '🎯', tone: 'violet', earned: lastSchoolDaysPresent(c.days, 5), progress: '5 present in a row' },
+    { key: 'onaroll', name: 'On a Roll', emoji: '🔥', tone: 'gold', earned: streak >= 7, progress: streak >= 7 ? 'Streak ≥ 7' : `${streak}/7 days` },
+    { key: 'perfectmonth', name: 'Perfect Month', emoji: '🌟', tone: 'violet', earned: c.pct >= 100 && c.marked > 0, progress: c.marked ? `${c.pct}% this month` : '100% attendance' },
   ];
+
+  // Streak milestones every 15 days (30, 45, 60, 75, …). We show every milestone
+  // the child has reached, plus the next one as the live goal — so there's always
+  // something to aim for, and long no-leave streaks get more and more appreciation.
+  for (const m of streakMilestones(longest)) list.push(m);
+
+  // Marks + fees — simple and clear.
+  list.push(
+    { key: 'topmarks', name: 'Top Marks', emoji: '🏅', tone: 'grass', earned: topGrade, progress: topGrade ? 'Scored grade A' : 'Score an A in exams' },
+    { key: 'fees', name: 'Fees Paid', emoji: '💰', tone: 'sky', earned: feeClear, progress: feeClear ? 'All fees cleared' : 'Pay fees to earn' },
+  );
   return list.sort((a, b) => Number(b.earned) - Number(a.earned));
+}
+
+const STREAK_STEP = 15;    // a new milestone every 15 days
+const STREAK_FIRST = 30;   // first milestone
+const STREAK_MAX = 210;    // ~a full school year of no leave
+
+/** Title + look for a streak milestone — bigger streaks feel bigger. */
+function streakTier(days: number): { emoji: string; title: string; tone: BadgeTone } {
+  if (days >= 150) return { emoji: '👑', title: 'Legend', tone: 'violet' };
+  if (days >= 90) return { emoji: '🏆', title: 'Champion', tone: 'gold' };
+  if (days >= 60) return { emoji: '🌟', title: 'Superstar', tone: 'violet' };
+  return { emoji: '🦸', title: 'Hero', tone: 'gold' };
+}
+
+/** Every reached 30/45/60/… milestone, plus the next locked one as the goal. */
+function streakMilestones(longest: number): Badge[] {
+  const out: Badge[] = [];
+  for (let d = STREAK_FIRST; d <= STREAK_MAX; d += STREAK_STEP) {
+    const earned = longest >= d;
+    const t = streakTier(d);
+    out.push({
+      key: `streak${d}`,
+      name: `${d}-Day ${t.title}`,
+      emoji: t.emoji,
+      tone: t.tone,
+      earned,
+      progress: earned ? `${d} days, no leave!` : `${Math.min(longest, d)} / ${d} days`,
+    });
+    if (!earned) break; // stop after the first unreached milestone (the next goal)
+  }
+  return out;
 }
 
 export type BadgeTone = 'gold' | 'violet' | 'grass' | 'sky';

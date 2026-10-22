@@ -19,8 +19,30 @@ export const STATUS_META: Record<string, { label: string; bg: string; text: stri
   none: { label: 'Not marked', bg: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-300' },
 };
 
+// Many South Indian names lead with initials ("R N Santhosh", "R Ramesh") where
+// the actual given name is a later word. A word counts as an initial if it's a
+// single letter, optionally with a dot ("R", "N.", "S").
+function isInitialWord(w: string): boolean {
+  return w.replace(/\./g, '').length <= 1;
+}
+
+/**
+ * The name a person actually goes by — skips leading/standalone initials.
+ * "R N Santhosh" → "Santhosh", "R Ramesh" → "Ramesh", "Aarav Sharma" → "Aarav".
+ * Falls back to the first word if the whole name is initials.
+ */
+export function givenName(name: string | null | undefined): string {
+  if (!name) return '';
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const real = words.find((w) => !isInitialWord(w));
+  return (real ?? words[0] ?? '').replace(/\.$/, '');
+}
+
 export function initials(name: string): string {
-  return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  const real = words.filter((w) => !isInitialWord(w));
+  const src = real.length ? real : words; // ignore leading initials when we can
+  return src.map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 }
 
 // Solid fill colours for calendar day cells / strips (hex, for inline styles).

@@ -13,7 +13,7 @@ interface FeeData {
   year: string;
   summary: {
     totalCharged: number; totalPaid: number; totalBalance: number; concession: number;
-    heads: { key: string; name: string; balance: number }[];
+    heads: { key: string; name: string; charged: number; paid: number; balance: number }[];
   };
   onlinePayEnabled: boolean;
   outstanding: OutstandingItem[];
@@ -29,11 +29,38 @@ function MiniFig({ label, value, color }: { label: string; value: string; color:
   );
 }
 
-const HEAD_ICON: Record<string, string> = { tuition: '🎓', transport: '🚌', bus: '🚌', books: '📚', book: '📚', uniform: '👕', admission: '🏫', exam: '📝', activity: '🎨' };
+const HEAD_ICON: Record<string, string> = { tuition: '🎓', transport: '🚌', bus: '🚌', books: '📚', book: '📚', uniform: '👕', admission: '🏫', exam: '📝', activity: '🎨', other: '📦' };
 function iconFor(name: string) {
   const k = name.toLowerCase();
   for (const key in HEAD_ICON) if (k.includes(key)) return HEAD_ICON[key];
   return '💠';
+}
+
+// A private (unaided) school shouldn't be seen itemising / selling uniforms, so
+// the parent app never spells out uniform items — uniform, tie, belt, socks (and
+// the like) are folded into a single short "Others" line. The parent still sees
+// the amount they owe; just not an itemised uniform bill. (Matched on whole words
+// so a fee like "Activities" is never caught by "tie".)
+const UNIFORM_WORDS = new Set([
+  'uniform', 'uniforms', 'tie', 'ties', 'belt', 'belts', 'sock', 'socks',
+  'shoe', 'shoes', 'sweater', 'sweaters', 'blazer', 'blazers', 'pinafore', 'pinafores',
+]);
+function isUniformName(name: string): boolean {
+  return name.toLowerCase().split(/[^a-z]+/).some((w) => UNIFORM_WORDS.has(w));
+}
+
+type Head = { key: string; name: string; charged: number; paid: number; balance: number };
+/** Fold all uniform-type heads into one "Others" line, kept at the end. */
+function groupHeads(heads: Head[]): Head[] {
+  const kept: Head[] = [];
+  const others = { key: '__others__', name: 'Others', charged: 0, paid: 0, balance: 0 };
+  let hasOthers = false;
+  for (const h of heads) {
+    if (isUniformName(h.name)) { others.charged += h.charged; others.paid += h.paid; others.balance += h.balance; hasOthers = true; }
+    else kept.push(h);
+  }
+  if (hasOthers) kept.push(others);
+  return kept;
 }
 
 /** The full Fees scroll body for one child — used by the Fees tab and the
@@ -96,19 +123,27 @@ export function FeesView({ studentId, name, bottomInset = S.huge }: { studentId:
 
           <Card style={{ marginTop: S.lg }}>
             <Text style={[type('h3', C.ink), { marginBottom: S.xs }]}>Fee breakdown</Text>
-            {s.heads.map((h, i) => (
+            {groupHeads(s.heads).map((h, i) => (
               <View key={h.key} style={{ flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: C.line }}>
                 <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: C.violetSoft }}>
                   <Text style={{ fontSize: 17 }}>{iconFor(h.name)}</Text>
                 </View>
-                <Text style={[type('bodyStrong', C.ink), { flex: 1 }]}>{h.name}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={type('bodyStrong', C.ink)}>{h.name}</Text>
+                  {h.balance > 0 && h.paid > 0 ? (
+                    <Text style={[type('caption', C.inkMut), { marginTop: 1 }]}>Paid {money(h.paid)} of {money(h.charged)}</Text>
+                  ) : null}
+                </View>
                 {h.balance > 0 ? (
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={type('h3', C.ink)}>{money(h.balance)}</Text>
                     <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, marginTop: 2, backgroundColor: C.coralSoft }}><Text style={type('micro', '#e0435f')}>DUE</Text></View>
                   </View>
                 ) : (
-                  <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, backgroundColor: C.grassSoft }}><Text style={type('micro', '#0e9b6c')}>PAID</Text></View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={type('bodyStrong', C.grass)}>{money(h.paid)}</Text>
+                    <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, marginTop: 2, backgroundColor: C.grassSoft }}><Text style={type('micro', '#0e9b6c')}>PAID</Text></View>
+                  </View>
                 )}
               </View>
             ))}
@@ -133,7 +168,7 @@ export function FeesView({ studentId, name, bottomInset = S.huge }: { studentId:
                 studentId={String(studentId)}
                 studentName={String(name ?? '')}
                 balance={s.totalBalance}
-                outstanding={data.outstanding ?? []}
+                outstanding={(data.outstanding ?? []).map((o) => isUniformName(o.label) ? { ...o, label: 'Others' } : o)}
                 onPaid={refreshFees}
               />
             ) : (

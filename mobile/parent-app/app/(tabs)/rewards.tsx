@@ -8,6 +8,7 @@ import { api } from '@/api/client';
 import { NightHeader } from '@/components/Kit';
 import { ChildSwitcher, BellButton, HeaderIconButton, Card, Txt, Label, StarRating, Loading, StateBlock } from '@/components/ui';
 import { deriveStars, deriveSimpleBadges, TONE_GRAD, GameChild, Badge, MarksLike } from '@/lib/game';
+import { givenName } from '@/lib/format';
 import { C, G, S, R, E, type } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -64,7 +65,7 @@ export default function RewardsScreen() {
 
           {/* Big, simple stars */}
           <View style={{ alignItems: 'center', paddingTop: kids.length >= 2 ? S.lg : S.xs }}>
-            <Text style={type('bodyL', 'rgba(255,255,255,0.8)')}>{selected.name.split(' ')[0]}'s stars</Text>
+            <Text style={type('bodyL', 'rgba(255,255,255,0.8)')}>{givenName(selected.name)}'s stars</Text>
             <View style={{ marginTop: S.md, marginBottom: S.sm }}>
               <StarRating value={stars.stars} size={40} />
             </View>

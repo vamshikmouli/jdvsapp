@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { resolveMediaUrl } from '@/config';
+import { initials } from '@/lib/format';
 
 // A fixed-width card that renders ONE assessment result for capture as a PNG
 // (react-native-view-shot) and sharing to WhatsApp etc. Mirrors the web
@@ -30,6 +32,7 @@ export interface ShareStudent {
   name: string;
   className: string | null;
   section: string | null;
+  photoUrl?: string | null;
 }
 
 const W = 380;
@@ -56,6 +59,7 @@ export function ShareableResult({
   const gradeText = isSA ? '#4338ca' : '#92400e';
   const cls = (student.className || '').replace(/\s?STD$/i, '');
   const pct = a.percent == null ? null : Math.max(0, Math.min(100, a.percent));
+  const photo = resolveMediaUrl(student.photoUrl);
 
   return (
     <View style={{ width: W, backgroundColor: '#ffffff' }}>
@@ -73,15 +77,24 @@ export function ShareableResult({
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1, paddingRight: 10 }}>
-            <Text style={{ color: '#ffffff', fontSize: 24, fontWeight: '800' }} numberOfLines={1}>{student.name}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+          <View style={{ flex: 1, paddingRight: 10, flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.95)', marginRight: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)' }}>
+              {photo ? (
+                <Image source={{ uri: photo }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              ) : (
+                <Text style={{ color: gradeText, fontSize: 18, fontWeight: '800' }}>{initials(student.name)}</Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+            <Text style={{ color: '#ffffff', fontSize: 22, fontWeight: '800' }} numberOfLines={1}>{student.name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
               <View style={{ backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 }}>
                 <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>{isSA ? 'SA' : 'FA'}</Text>
               </View>
               <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600', marginLeft: 8, flexShrink: 1 }} numberOfLines={1}>
                 {a.name}{a.term ? '  ·  ' + a.term : ''}
               </Text>
+            </View>
             </View>
           </View>
           {pct != null && (
