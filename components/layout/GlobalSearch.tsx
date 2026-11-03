@@ -83,10 +83,7 @@ export function GlobalSearch() {
       {loading && <div className="px-3 py-6 text-center text-sm text-slate-400">Searching…</div>}
       {!loading && q.trim().length >= 1 && rows.length === 0 && <div className="px-3 py-6 text-center text-sm text-slate-400">No students match “{q.trim()}”.</div>}
       {!loading && rows.map((s) => {
-        // Show the mother's name & phone (fall back to father/guardian when absent).
-        const parentName = s.motherName || s.fatherName || s.guardianName;
-        const parentLabel = s.motherName ? 'Mother' : s.fatherName ? 'Father' : 'Guardian';
-        const phone = s.motherPhone || s.guardianPhone || s.fatherPhone;
+        const noParents = !s.fatherName && !s.motherName;
         return (
           <div key={s.id} className="flex items-start gap-3 px-3 py-2.5 border-b border-slate-100 last:border-0 hover:bg-slate-50">
             <Avatar name={s.name} size="sm" src={s.photoUrl} />
@@ -94,9 +91,10 @@ export function GlobalSearch() {
               <div className="font-medium text-slate-900 truncate">{s.name}</div>
               <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                 <span className="font-medium text-slate-600">{shortClass(s.className)} · {s.gender === 'F' ? 'Girl' : 'Boy'}</span>
-                {parentName && <span>{parentLabel}: {parentName}</span>}
+                {s.fatherName && <span>Father: {s.fatherName}{s.fatherPhone && <> · <a href={`tel:${s.fatherPhone}`} className="text-purple-700">{s.fatherPhone}</a></>}</span>}
+                {s.motherName && <span>Mother: {s.motherName}{s.motherPhone && <> · <a href={`tel:${s.motherPhone}`} className="text-purple-700">{s.motherPhone}</a></>}</span>}
+                {noParents && s.guardianName && <span>Guardian: {s.guardianName}{s.guardianPhone && <> · <a href={`tel:${s.guardianPhone}`} className="text-purple-700">{s.guardianPhone}</a></>}</span>}
                 {s.village && <span className="inline-flex items-center gap-1"><Icon name="MapPin" size={10} className="text-slate-400" /> {s.village}</span>}
-                {phone && <a href={`tel:${phone}`} className="inline-flex items-center gap-1 text-purple-700"><Icon name="Phone" size={10} /> {phone}</a>}
               </div>
             </div>
             <button onClick={() => { setTimeline({ id: s.id, name: s.name }); setFocused(false); setMobileOpen(false); }}
