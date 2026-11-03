@@ -78,15 +78,20 @@ async function handler(req: NextRequest) {
   const deliveries: WaDeliveryInput[] = [];
   const batchId = `staffreport-${monthLabel.replace(/\s+/g, '')}-${Date.now()}`;
 
+  // Every staff member's days for the month in one query (was one per staff member).
+  const allDays = staff.length ? await prisma.staffAttendanceDay.findMany({
+    where: { staffId: { in: staff.map((s) => s.id) }, date: { gte: from, lte: to } },
+    orderBy: { date: 'asc' },
+  }) : [];
+  const daysByStaff = new Map<string, typeof allDays>();
+  for (const d of allDays) (daysByStaff.get(d.staffId) || daysByStaff.set(d.staffId, []).get(d.staffId)!).push(d);
+
   for (const s of staff) {
     const wa = toWaNumber(toOverride || s.phone);
     if (!wa) { results.skipped++; results.details.push({ name: s.name, status: 'skipped', reason: 'no valid phone' }); continue; }
 
     try {
-      const stored = await prisma.staffAttendanceDay.findMany({
-        where: { staffId: s.id, date: { gte: from, lte: to } },
-        orderBy: { date: 'asc' },
-      });
+      const stored = daysByStaff.get(s.id) || [];
       const existing = new Set(stored.map((d) => d.date.toISOString().slice(0, 10)));
       const synthetic = synthesizeDays({
         fromKey, toKey: todayKey, todayKey, existing, holidays: holidaySet,

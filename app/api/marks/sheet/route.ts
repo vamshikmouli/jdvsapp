@@ -68,7 +68,8 @@ export async function PUT(req: NextRequest) {
       studentId: String(m.studentId),
       marksObtained: m.marksObtained === null || m.marksObtained === '' ? null : Math.round(Number(m.marksObtained)),
       isAbsent: !!m.isAbsent,
-      remark: m.remark || null,
+      // Not sent → keep the existing remark; sent empty → clear it.
+      remark: m.remark === undefined ? undefined : (m.remark || null),
     })) : [];
     const userId = (session.user as any)?.id || null;
     // An approver correcting approved marks keeps them approved (and visible to parents).

@@ -29,14 +29,15 @@ export async function applyLeave(staffId: string, from: Date, to: Date, halfDay:
   const keys = dateKeysBetween(from, to);
   const status: StaffDayStatus = halfDay ? 'HALF_DAY' : 'LEAVE';
   const hs = halfDay ? (halfSession ?? null) : null;
-  for (const dk of keys) {
+  // All the leave's days in one transaction (was one round trip per day).
+  await prisma.$transaction(keys.map((dk) => {
     const date = new Date(`${dk}T00:00:00Z`);
-    await prisma.staffAttendanceDay.upsert({
+    return prisma.staffAttendanceDay.upsert({
       where: { staffId_date: { staffId, date } },
       update: { status, late: false, lateMinutes: 0, leaveType: type, halfSession: hs },
       create: { staffId, date, status, leaveType: type, halfSession: hs },
     });
-  }
+  }));
   // Leave breaks the present-streak — recompute from the first affected day forward.
   if (keys.length) await recomputeStreakForward(staffId, keys[0]);
 }

@@ -71,6 +71,9 @@ export async function POST(req: NextRequest) {
     // student — same summary math, so per-student balances are unchanged.
     const accounts = await getReminderAccounts(year.id, studentIds);
 
+    // Work out each student's reminder first, then create all their circulars in one
+    // insert (was one per student) before sending. Same skips, same personalised text.
+    const todo: { sid: string; acc: NonNullable<ReturnType<typeof accounts.get>>; dueHeads: any[]; balance: number; parentName: string; body: string }[] = [];
     for (const sid of studentIds) {
       const acc = accounts.get(sid);
       if (!acc) { skippedMissing++; continue; }
@@ -89,14 +92,21 @@ export async function POST(req: NextRequest) {
         balance,
         heads: dueHeads.map((h) => ({ name: h.name, balance: h.balance })),
       });
+      todo.push({ sid, acc, dueHeads, balance, parentName, body });
+    }
+    const circulars = todo.length ? await prisma.circular.createManyAndReturn({
+      data: todo.map((t) => ({
+        title, body: t.body, kind: 'FEE_REMINDER' as const, audience: 'STUDENT' as const,
+        classIds: [], studentIds: [t.sid], category: 'Fees', pinned: false, createdById,
+      })),
+      select: { id: true, studentIds: true },
+    }) : [];
+    // One circular per reminder (a student listed twice still gets two, as before).
+    const circBySid = new Map<string, { id: string }[]>();
+    for (const c of circulars) (circBySid.get(c.studentIds[0]) || circBySid.set(c.studentIds[0], []).get(c.studentIds[0])!).push(c);
 
-      const circ = await prisma.circular.create({
-        data: {
-          title, body, kind: 'FEE_REMINDER', audience: 'STUDENT',
-          classIds: [], studentIds: [sid], category: 'Fees', pinned: false, createdById,
-        },
-        select: { id: true },
-      });
+    for (const { sid, acc, dueHeads, balance, parentName, body } of todo) {
+      const circ = circBySid.get(sid)!.shift()!;
       created++;
 
       // Push to this student's parent with their own balance.

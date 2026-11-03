@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { canAny, getClassScope } from '@/lib/rbac/roles';
 import { getActiveYear } from '@/lib/services/fees';
 import { parseSessions } from '@/lib/attendance/sessions';
+import { writeRegisterDays } from '@/lib/services/attendanceRegister';
 import type { AttendanceStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -147,29 +148,8 @@ export async function PUT(req: NextRequest) {
       (byDay.get(day) || byDay.set(day, []).get(day)!).push({ studentId, status });
     }
 
-    let written = 0;
-    for (const [day, recs] of byDay) {
-      if (!recs.length) continue;
-      const date = new Date(Date.UTC(yy, mm - 1, day));
-      // The register IS the submission: create the day's session already finalized
-      // (locked), or finalize an existing one — so the daily marking page shows it
-      // as submitted and never asks to submit again. The register itself owns the
-      // lock, so it always overwrites (no lock-skip) to stay re-editable.
-      let sess = await prisma.attendanceSession.findUnique({ where: { classId_date_slot: { classId, date, slot } } });
-      if (!sess) sess = await prisma.attendanceSession.create({ data: { classId, date, slot, takenById: uid, locked: true } });
-      const sessionId = sess.id;
-      await prisma.$transaction(
-        recs.map((r) =>
-          prisma.attendanceRecord.upsert({
-            where: { sessionId_studentId: { sessionId, studentId: r.studentId } },
-            update: { status: r.status },
-            create: { sessionId, studentId: r.studentId, status: r.status },
-          }),
-        ),
-      );
-      if (!sess.locked) await prisma.attendanceSession.update({ where: { id: sessionId }, data: { locked: true } });
-      written += recs.length;
-    }
+    // The register IS the submission: each day's session is created / kept locked.
+    const written = await writeRegisterDays(classId, yy, mm, slot, uid, byDay);
 
     return NextResponse.json({ ok: true, written, days: byDay.size });
   } catch (err) {

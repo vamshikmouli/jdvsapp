@@ -22,12 +22,15 @@ async function updateDeliveryStatus(wamid: string | undefined, waStatus: string,
   const next = String(waStatus || '').toUpperCase(); // sent | delivered | read | failed
   if (!(next in STATUS_RANK)) return;
   const rows = await prisma.messageDelivery.findMany({ where: { wamid }, select: { id: true, status: true } });
-  for (const row of rows) {
+  // Don't overwrite a stronger/terminal state with a weaker one (e.g. READ→DELIVERED);
+  // every other row gets the same update — sent as one query.
+  const ids = rows.filter((row) => {
     const cur = STATUS_RANK[String(row.status || '').toUpperCase()] || 0;
-    // Don't overwrite a stronger/terminal state with a weaker one (e.g. READ→DELIVERED).
-    if ((STATUS_RANK[next] || 0) < cur && cur >= STATUS_RANK.DELIVERED) continue;
-    await prisma.messageDelivery.update({
-      where: { id: row.id },
+    return !((STATUS_RANK[next] || 0) < cur && cur >= STATUS_RANK.DELIVERED);
+  }).map((row) => row.id);
+  if (ids.length) {
+    await prisma.messageDelivery.updateMany({
+      where: { id: { in: ids } },
       data: { status: next, error: next === 'FAILED' ? (error || 'Undeliverable (number may not be on WhatsApp)') : null },
     });
   }
