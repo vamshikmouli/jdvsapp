@@ -59,17 +59,17 @@ async function duplicate(fromId: string, rawNames: unknown) {
   if (taken.length) return NextResponse.json({ error: `Already exists: ${taken.map((t) => t.name).join(', ')}` }, { status: 400 });
   const max = await prisma.assessment.aggregate({ where: { yearId: src.yearId }, _max: { order: true } });
   let order = max._max.order ?? 0;
+  // All copies, then all their subject maxes and class subjects — three inserts in one
+  // transaction (was three per copy). Orders follow the given names.
   const created = await prisma.$transaction(async (tx) => {
-    const out = [];
-    for (const name of names) {
-      const a = await tx.assessment.create({
-        data: { yearId: src.yearId, name, type: src.type, term: src.term, defaultMax: src.defaultMax, order: ++order, publishedToParents: false },
-      });
-      if (src.subjectMaxes.length) await tx.assessmentSubject.createMany({ data: src.subjectMaxes.map((x) => ({ assessmentId: a.id, subjectId: x.subjectId, maxMarks: x.maxMarks })) });
-      if (src.classSubjects.length) await tx.assessmentClassSubject.createMany({ data: src.classSubjects.map((x) => ({ assessmentId: a.id, classId: x.classId, subjectId: x.subjectId, maxMarks: x.maxMarks, order: x.order })) });
-      out.push({ id: a.id, name: a.name });
-    }
-    return out;
+    const rows = await tx.assessment.createManyAndReturn({
+      data: names.map((name) => ({ yearId: src.yearId, name, type: src.type, term: src.term, defaultMax: src.defaultMax, order: ++order, publishedToParents: false })),
+      select: { id: true, name: true, order: true },
+    });
+    rows.sort((x, y) => x.order - y.order);
+    if (src.subjectMaxes.length) await tx.assessmentSubject.createMany({ data: rows.flatMap((a) => src.subjectMaxes.map((x) => ({ assessmentId: a.id, subjectId: x.subjectId, maxMarks: x.maxMarks }))) });
+    if (src.classSubjects.length) await tx.assessmentClassSubject.createMany({ data: rows.flatMap((a) => src.classSubjects.map((x) => ({ assessmentId: a.id, classId: x.classId, subjectId: x.subjectId, maxMarks: x.maxMarks, order: x.order }))) });
+    return rows.map((a) => ({ id: a.id, name: a.name }));
   });
   return NextResponse.json({ created }, { status: 201 });
 }

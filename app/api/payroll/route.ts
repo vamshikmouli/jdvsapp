@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requirePermission, authErrorResponse } from '@/lib/rbac/roles';
 import { logActivity } from '@/lib/activity';
@@ -110,6 +111,8 @@ export async function POST(req: NextRequest) {
       const created = await tx.payrollRun.create({
         data: { periodMonth, status: 'DRAFT', creditOn, note: label },
       });
+      // One row per staff member, inserted together (was one insert per staff member).
+      const items: Prisma.PayrollItemCreateManyInput[] = [];
       for (const s of staff) {
         // Drivers / off-campus staff aren't tracked → no attendance, no LOP, full pay.
         const counts = s.attendanceTracked ? countDays(byStaff.get(s.id) || []) : countDays([]);
@@ -123,8 +126,7 @@ export async function POST(req: NextRequest) {
           bonus: s.monthlyBonus || 0,
           overBalanceLeaveDays: overBalance,
         });
-        await tx.payrollItem.create({
-          data: {
+        items.push({
             runId: created.id, staffId: s.id,
             staffName: s.name, designation: s.designation, accountNo: s.bankAccountNo, ifsc: s.bankIfsc,
             attendanceTracked: s.attendanceTracked,
@@ -139,9 +141,9 @@ export async function POST(req: NextRequest) {
             esiApplicable: s.esiApplicable, esiAmount: money.esiAmount,
             otherDeductions: money.otherDeductions, bonus: money.bonus, netSalary: money.netSalary,
             status: 'DRAFT',
-          },
         });
       }
+      if (items.length) await tx.payrollItem.createMany({ data: items });
       return created;
     });
 

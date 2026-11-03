@@ -169,10 +169,8 @@ export async function POST(req: NextRequest) {
 
       const existing = new Set((await prisma.uniformItem.findMany({ where: { yearId: year.id }, select: { name: true } })).map((u) => u.name));
       let order = await prisma.uniformItem.count({ where: { yearId: year.id } });
-      for (const it of UNIFORM_ITEMS) {
-        if (existing.has(it.name)) continue;
-        await prisma.uniformItem.create({ data: { yearId: year.id, name: it.name, price: 0, order: order++ } });
-      }
+      const toAdd = UNIFORM_ITEMS.filter((it) => !existing.has(it.name)).map((it) => ({ yearId: year.id, name: it.name, price: 0, order: order++ }));
+      if (toAdd.length) await prisma.uniformItem.createMany({ data: toAdd }); // one insert (was one per item)
       return NextResponse.json({ ok: true });
     }
 
@@ -181,13 +179,10 @@ export async function POST(req: NextRequest) {
     if (body.action === 'seedVanDefaults') {
       const year = await getActiveYear();
       const existing = new Set((await prisma.vanFee.findMany({ where: { yearId: year.id }, select: { village: true } })).map((v) => v.village));
-      let added = 0;
-      for (const v of VILLAGE_VAN_FEES) {
-        const village = v.village.trim();
-        if (existing.has(village)) continue;
-        await prisma.vanFee.create({ data: { yearId: year.id, village, annualFee: v.fee, monthlyFee: Math.round(v.fee / 12) } });
-        added++;
-      }
+      const toAdd = VILLAGE_VAN_FEES.map((v) => ({ village: v.village.trim(), fee: v.fee })).filter((v) => !existing.has(v.village))
+        .map((v) => ({ yearId: year.id, village: v.village, annualFee: v.fee, monthlyFee: Math.round(v.fee / 12) }));
+      if (toAdd.length) await prisma.vanFee.createMany({ data: toAdd }); // one insert (was one per village)
+      const added = toAdd.length;
       return NextResponse.json({ ok: true, added });
     }
 
@@ -196,13 +191,9 @@ export async function POST(req: NextRequest) {
       const year = await getActiveYear();
       const existing = new Set((await prisma.uniformItem.findMany({ where: { yearId: year.id }, select: { name: true } })).map((u) => u.name));
       let order = await prisma.uniformItem.count({ where: { yearId: year.id } });
-      let added = 0;
-      for (const it of UNIFORM_ITEMS) {
-        const name = it.name.trim();
-        if (existing.has(name)) continue;
-        await prisma.uniformItem.create({ data: { yearId: year.id, name, price: 0, order: order++ } });
-        added++;
-      }
+      const toAdd = UNIFORM_ITEMS.map((it) => it.name.trim()).filter((name) => !existing.has(name)).map((name) => ({ yearId: year.id, name, price: 0, order: order++ }));
+      if (toAdd.length) await prisma.uniformItem.createMany({ data: toAdd }); // one insert (was one per item)
+      const added = toAdd.length;
       return NextResponse.json({ ok: true, added });
     }
 
