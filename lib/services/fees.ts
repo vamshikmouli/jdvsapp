@@ -964,17 +964,23 @@ export async function setClassFeeInstallments(
       where: { yearId, student: { enrollments: { some: { yearId, classId, status: 'ACTIVE' } } } },
       include: { charges: { where: { feeTypeId }, include: { allocations: { select: { amount: true } } } } },
     });
+    const toResplit: typeof assignments = [];
     for (const a of assignments) {
       if (a.charges.length === 0) continue;
       const paid = a.charges.reduce((t, c) => t + c.allocations.reduce((x, al) => x + al.amount, 0), 0);
       if (paid > 0) { skippedPaid++; continue; }               // don't disturb paid records
       const already = a.charges.length === plan.length && a.charges.every((c) => c.installmentNo != null);
       if (already) continue;                                    // looks already split
-      await prisma.$transaction([
-        prisma.feeCharge.deleteMany({ where: { id: { in: a.charges.map((c) => c.id) } } }),
-        prisma.feeCharge.createMany({ data: plan.map((i) => ({ assignmentId: a.id, feeTypeId, label: `${ft.name} — Installment ${i.n}`, amount: i.amount, dueDate: i.dueDate, installmentNo: i.n })) }),
-      ]);
+      toResplit.push(a);
       resplit++;
+    }
+    // Replace every affected student's charges in one delete + one insert (was two
+    // queries per student), in a single transaction.
+    if (toResplit.length) {
+      await prisma.$transaction([
+        prisma.feeCharge.deleteMany({ where: { id: { in: toResplit.flatMap((a) => a.charges.map((c) => c.id)) } } }),
+        prisma.feeCharge.createMany({ data: toResplit.flatMap((a) => plan.map((i) => ({ assignmentId: a.id, feeTypeId, label: `${ft.name} — Installment ${i.n}`, amount: i.amount, dueDate: i.dueDate, installmentNo: i.n }))) }),
+      ]);
     }
   }
   return { installments: plan.length, resplit, skippedPaid };
@@ -1067,11 +1073,12 @@ export async function setAssignment(studentId: string, yearId: string, input: As
     const uniformRows = await prisma.uniformItem.findMany({ where: { yearId }, select: { id: true, name: true } });
     const idByName = new Map(uniformRows.map((r) => [r.name, r.id]));
     await prisma.uniformSelection.deleteMany({ where: { assignmentId: assignment.id } });
-    for (const u of picks) {
+    const selections = picks.flatMap((u) => {
       const name = UNIFORM_ITEMS.find((x) => x.key === u.key)?.name;
       const uid = name ? idByName.get(name) : undefined;
-      if (uid) await prisma.uniformSelection.create({ data: { assignmentId: assignment.id, uniformItemId: uid, qty: u.qty } });
-    }
+      return uid ? [{ assignmentId: assignment.id, uniformItemId: uid, qty: u.qty }] : [];
+    });
+    if (selections.length) await prisma.uniformSelection.createMany({ data: selections }); // one insert (was one per item)
   }
 
   await reconcile('idcard', ids.idcard, input.idCard ? { amount: ID_CARD_FEE, label: 'ID Card' } : null);
