@@ -19,17 +19,19 @@ export type Intent =
   | 'student_fees'
   | 'absent_today'
   | 'attendance_today'
+  | 'attendance_rate'
   | 'student_attendance'
   | 'unknown';
 
 const FEE_INTENTS = new Set<Intent>(['fees_collected', 'fees_pending', 'fees_defaulters', 'student_fees']);
-const ATT_INTENTS = new Set<Intent>(['absent_today', 'attendance_today', 'student_attendance']);
+const ATT_INTENTS = new Set<Intent>(['absent_today', 'attendance_today', 'attendance_rate', 'student_attendance']);
 
 interface Parsed {
   intent: Intent;
   className?: string | null;
   studentName?: string | null;
   period?: 'today' | 'this_month' | 'this_year' | null;
+  month?: string | null; // YYYY-MM for a named month (e.g. October)
 }
 
 export interface AskResult {
@@ -62,6 +64,7 @@ Intents:
 - "student_fees": one named student's fee balance/paid. Requires studentName.
 - "absent_today": which students are absent or on leave today. Optionally className.
 - "attendance_today": today's attendance summary (present/absent counts). Optionally className.
+- "attendance_rate": the average / overall student attendance percentage over a month or period (e.g. "average attendance of October", "attendance % this month", "5th class attendance rate"). Optionally className. For a named month set "month" to YYYY-MM (the most recent past occurrence relative to today); otherwise set "period".
 - "student_attendance": one named student's attendance this month. Requires studentName.
 - "unknown": the question is not about fees or attendance, or is unclear.
 
@@ -79,12 +82,13 @@ Match className to the closest known class name (e.g. "5th", "UKG"). If none, us
   if (!match) return { intent: 'unknown' };
   try {
     const o = JSON.parse(match[0]);
-    const intent = (['fees_collected', 'fees_pending', 'fees_defaulters', 'student_fees', 'absent_today', 'attendance_today', 'student_attendance'].includes(o.intent) ? o.intent : 'unknown') as Intent;
+    const intent = (['fees_collected', 'fees_pending', 'fees_defaulters', 'student_fees', 'absent_today', 'attendance_today', 'attendance_rate', 'student_attendance'].includes(o.intent) ? o.intent : 'unknown') as Intent;
     return {
       intent,
       className: typeof o.className === 'string' ? o.className : null,
       studentName: typeof o.studentName === 'string' ? o.studentName : null,
       period: ['today', 'this_month', 'this_year'].includes(o.period) ? o.period : null,
+      month: typeof o.month === 'string' && /^\d{4}-\d{2}$/.test(o.month) ? o.month : null,
     };
   } catch {
     return { intent: 'unknown' };
@@ -207,6 +211,51 @@ export async function runQuery(p: Parsed, perms: { canFees: boolean; canAttendan
     const absent = all.filter((s) => s.status === 'ABSENT' || s.status === 'LEAVE');
     const rows = absent.slice(0, 40).map((s) => ({ label: `${s.name}${s.className ? ` · ${shortClass(s.className)}` : ''}`, value: s.status === 'LEAVE' ? 'Leave' : 'Absent' }));
     return { intent, answer: `${absent.length} student(s)${where} are absent or on leave today${absent.length > 40 ? ' (showing first 40)' : ''}.`, rows };
+  }
+
+  if (intent === 'attendance_rate') {
+    const cls = await findClassId(p.className);
+    let fromKey: string, toKey: string, label: string;
+    if (p.month) {
+      const [yy, mm] = p.month.split('-').map(Number);
+      const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+      fromKey = `${p.month}-01`; toKey = `${p.month}-${String(last).padStart(2, '0')}`;
+      label = new Date(Date.UTC(yy, mm - 1, 1)).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    } else {
+      const r = periodRange(p.period); fromKey = r.from || today; toKey = r.to || today; label = r.label;
+    }
+    const from = new Date(`${fromKey}T00:00:00Z`); const to = new Date(`${toKey}T23:59:59Z`);
+    const recs = await prisma.attendanceRecord.findMany({
+      where: { session: { date: { gte: from, lte: to }, ...(cls ? { classId: cls.id } : {}) } },
+      select: { status: true, studentId: true, session: { select: { date: true, class: { select: { name: true } } } } },
+    });
+    if (recs.length === 0) return { intent, answer: `No attendance records found for ${label}${cls ? ` in ${shortClass(cls.name)}` : ''}.` };
+    // Collapse to one status per student per day (worst of the day's slots).
+    const rank: Record<string, number> = { ABSENT: 4, LEAVE: 3, LATE: 2, PRESENT: 1, EXCUSED: 1 };
+    const perDay = new Map<string, { status: string; cls: string | null }>();
+    for (const r of recs) {
+      const dk = r.session.date.toISOString().slice(0, 10);
+      const k = `${r.studentId}|${dk}`;
+      const cur = perDay.get(k);
+      if (!cur || (rank[r.status] ?? 0) > (rank[cur.status] ?? 0)) perDay.set(k, { status: r.status, cls: r.session.class?.name ?? null });
+    }
+    const WORKING = new Set(['PRESENT', 'ABSENT', 'LATE', 'LEAVE']);
+    let present = 0, total = 0;
+    const perClass = new Map<string, { present: number; total: number }>();
+    for (const v of perDay.values()) {
+      if (!WORKING.has(v.status)) continue;
+      const isP = v.status === 'PRESENT' || v.status === 'LATE';
+      total++; if (isP) present++;
+      const cn = v.cls || '—';
+      const pc = perClass.get(cn) || { present: 0, total: 0 };
+      pc.total++; if (isP) pc.present++; perClass.set(cn, pc);
+    }
+    const rate = total ? Math.round((present / total) * 1000) / 10 : 0;
+    const where = cls ? ` for ${shortClass(cls.name)}` : '';
+    const rows = cls ? undefined : [...perClass.entries()]
+      .map(([name, v]) => ({ label: shortClass(name), value: `${v.total ? Math.round((v.present / v.total) * 1000) / 10 : 0}%` }))
+      .sort((a, b) => parseFloat(b.value) - parseFloat(a.value)).slice(0, 15);
+    return { intent, answer: `Average student attendance${where} — ${label}: ${rate}% (present ${present} of ${total} student-days marked).`, rows };
   }
 
   if (intent === 'student_attendance') {

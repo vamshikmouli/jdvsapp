@@ -10,6 +10,7 @@ const EXAMPLES = [
   'How much fee collected today?',
   'Pending fees for 5th',
   'Who is absent today?',
+  'Average attendance of October',
   'Collected this month',
   'Who hasn’t paid in 3rd?',
   'Attendance today',
