@@ -251,6 +251,8 @@ model UserSession {
   createdAt    DateTime @default(now())
   lastSeenAt   DateTime @default(now())
   revokedAt    DateTime?
+
+  @@index([userId])
 }
 
 enum LoginAuditType {
@@ -520,6 +522,8 @@ model Student {
   verifiedById  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([classId, sectionId])
 }
 
 // Per-year enrollment: which class/section a student is in for a given academic
@@ -582,6 +586,8 @@ model AttendanceRecord {
   updatedAt  DateTime @updatedAt
 
   @@unique([sessionId, studentId])
+
+  @@index([studentId]) // parent app attendance/streaks
 }
 
 // ========== Staff Attendance ==========
@@ -1085,6 +1091,8 @@ model FeeCharge {
   installmentNo Int?
   allocations   PaymentAllocation[]
   createdAt     DateTime            @default(now())
+
+  @@index([assignmentId])
 }
 
 model UniformSelection {
@@ -1124,6 +1132,10 @@ model Payment {
   voidedById    String?
   allocations   PaymentAllocation[]
   paymentOrder  PaymentOrder?       // set when this payment came from an online PaymentOrder
+
+  @@index([studentId, yearId]) // student ledger
+  @@index([yearId, paidAt]) // year collections / receipt-no scan
+  @@index([paidAt]) // date-range collection reports
 }
 
 model PaymentAllocation {
@@ -1133,6 +1145,9 @@ model PaymentAllocation {
   feeChargeId String
   feeCharge   FeeCharge @relation(fields: [feeChargeId], references: [id], onDelete: Cascade)
   amount      Int
+
+  @@index([paymentId])
+  @@index([feeChargeId])
 }
 
 // ========== Online payments (reusable UPI collect integration) ==========
@@ -1209,6 +1224,8 @@ model Concession {
   decidedAt     DateTime?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+
+  @@index([assignmentId])
 }
 
 // ========== Parent communications ==========
@@ -1267,6 +1284,9 @@ model MessageDelivery {
   @@index([batchId])
   @@index([createdAt])
   @@index([wamid])
+
+  @@index([phone, createdAt]) // WhatsApp inbox thread
+  @@index([studentId, kind]) // per-student send dedupe (absence, monthly, receipts)
 }
 
 // A WhatsApp message in a conversation with a parent — inbound replies (IN) that
