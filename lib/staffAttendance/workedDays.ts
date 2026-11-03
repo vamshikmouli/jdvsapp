@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db';
-import { synthesizeDays, ATTENDANCE_START_KEY } from '@/lib/staffAttendance/schedule';
+import {
+  synthesizeDays, parseWeekSchedule, parseWorkPattern, parseWorkDays, ATTENDANCE_START_KEY,
+} from '@/lib/staffAttendance/schedule';
 
 // Days the staff member showed up (half day still counts as a day attended).
 const ATTENDED = new Set(['PRESENT', 'LATE', 'HALF_DAY']);
@@ -59,9 +61,9 @@ export async function workedDaysForStaff(
   for (const s of staff) byStaff.set(s.id, []);
   for (const d of stored) byStaff.get(d.staffId)?.push({ date: d.date.toISOString().slice(0, 10), status: String(d.status) });
 
-  // ONE school-wide working-days count (standard calendar: every non-weekly-off
-  // day that isn't a holiday, up to today), so every staff member shares the SAME
-  // denominator — a person who comes every day shows total/total, no more, no less.
+  // ONE school-wide working-days count on the STANDARD calendar (every non-weekly-off
+  // day that isn't a holiday, up to today). Every normal daily staff member shares
+  // this denominator, so it never drifts — a daily attender shows total/total.
   const schoolSynth = synthesizeDays({
     fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing: new Set(), holidays: holidaySet,
     weekSchedule: null, workPattern: 'FULL', workDays: null, weeklyOffDays: opts.weeklyOffDays,
@@ -72,9 +74,30 @@ export async function workedDaysForStaff(
     const rows = byStaff.get(s.id) || [];
     let attended = 0;
     for (const d of rows) if (ATTENDED.has(d.status)) attended++;
+
+    // Custom-schedule staff (alternate-day / their own week schedule) get THEIR OWN
+    // working-day count — e.g. an alternate-day teacher who never misses shows 60/60,
+    // not 60/120. Everyone else uses the shared school total.
+    const ws = parseWeekSchedule(s.weekSchedule);
+    const wd = parseWorkDays(s.workDays);
+    const wp = parseWorkPattern(s.workPattern);
+    const isCustom = ws !== null || wd !== null || wp !== 'FULL';
+
+    let workingDays = schoolWorkingDays;
+    if (isCustom) {
+      const existing = new Set(rows.map((d) => d.date));
+      const synth = synthesizeDays({
+        fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing, holidays: holidaySet,
+        weekSchedule: ws, workPattern: wp, workDays: wd, weeklyOffDays: opts.weeklyOffDays,
+      });
+      workingDays = 0;
+      for (const d of rows) if (WORKING.has(d.status)) workingDays++;
+      for (const d of synth) if (WORKING.has(d.status)) workingDays++;
+    }
+
     result.set(s.id, {
-      attended: Math.min(attended, schoolWorkingDays), // never exceed the shared total
-      workingDays: schoolWorkingDays,
+      attended: Math.min(attended, workingDays), // never exceed the total
+      workingDays,
       fromKey: opts.fromKey,
       toKey: opts.toKey,
     });
