@@ -24,6 +24,8 @@ interface Row {
   workedMinutes: number;
   locked: boolean;
   currentStreak: number;
+  attended: number;      // working days attended this academic year so far
+  workingDays: number;   // working days elapsed this academic year so far
 }
 interface Board { date: string; rows: Row[]; summary: Record<string, number>; }
 
@@ -143,48 +145,29 @@ export default function StaffAttendancePage() {
           <EmptyState icon="Users" title="No staff" body="Add staff to start tracking attendance." />
         ) : (
           <>
-            {/* Mobile: stacked cards — every desktop column surfaced as a labeled field. */}
+            {/* Mobile: compact list — one row per staff (status + year-to-date days + streak). */}
             <div className="md:hidden divide-y divide-slate-100">
               {board.rows.map((r) => (
-                <div key={r.staffId} className="p-3 space-y-2.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900">{r.name}</Link>
-                      {r.designation && <div className="text-xs text-slate-400 truncate">{r.designation}</div>}
-                    </div>
-                    {canManage && <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)} className="shrink-0">Manage</Button>}
-                  </div>
-
-                  <Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m late` : ''}</Chip>
-
-                  <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs">
-                    <div>
-                      <div className="text-slate-400">In</div>
-                      <div className="text-slate-700 font-medium">{fmtTime(r.firstIn)}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Out</div>
-                      <div className="text-slate-700 font-medium">{fmtTime(r.lastOut)}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Worked</div>
-                      <div className="text-slate-700 font-medium">{fmtMins(r.workedMinutes)}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Streak</div>
-                      {r.currentStreak > 0 ? (
-                        <div className="flex items-center gap-1 font-medium text-orange-600">
-                          <Icon name="Flame" size={13} className="text-orange-500" />{r.currentStreak}
-                        </div>
-                      ) : (
-                        <div className="text-slate-400">—</div>
+                <div key={r.staffId} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/admin/staff-attendance/${r.staffId}`} className="font-medium text-slate-900 block truncate">{r.name}</Link>
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1">
+                      <Chip tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}{r.late ? ` · ${r.lateMinutes}m` : ''}</Chip>
+                      {r.workingDays > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 tabular-nums" title="Days attended / working days so far this year">
+                          <Icon name="CalendarCheck" size={12} className="text-slate-400" />{r.attended}/{r.workingDays} days
+                        </span>
+                      )}
+                      {r.currentStreak > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-orange-600">
+                          <Icon name="Flame" size={11} className="text-orange-500" />{r.currentStreak}
+                        </span>
                       )}
                     </div>
-                    <div>
-                      <div className="text-slate-400">Device No</div>
-                      <div className="text-slate-700 font-medium tabular-nums">{r.deviceUserId || '—'}</div>
-                    </div>
                   </div>
+                  {canManage
+                    ? <Button size="sm" kind="tertiary" icon="Pencil" onClick={() => setActive(r)} className="shrink-0">Manage</Button>
+                    : <Icon name="ChevronRight" size={16} className="text-slate-300 shrink-0" />}
                 </div>
               ))}
             </div>
@@ -212,6 +195,9 @@ export default function StaffAttendancePage() {
                     <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('currentStreak')}>
                       <div className="flex items-center gap-1.5">Streak {sortKey === 'currentStreak' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
                     </th>
+                    <th className="px-4 py-2 font-medium cursor-pointer hover:text-slate-700 select-none" onClick={() => handleSort('attended')}>
+                      <div className="flex items-center gap-1.5">Days (year) {sortKey === 'attended' && <Icon name={sortDir === 'asc' ? 'ChevronUp' : 'ChevronDown'} size={14} />}</div>
+                    </th>
                     <th className="px-4 py-2 font-medium">Device No</th>
                     {canManage && <th className="px-4 py-2 font-medium text-right">Actions</th>}
                   </tr>
@@ -236,6 +222,11 @@ export default function StaffAttendancePage() {
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-2 tabular-nums" title="Days attended / working days so far this year">
+                        {r.workingDays > 0
+                          ? <span><span className="font-medium text-slate-800">{r.attended}</span><span className="text-slate-400">/{r.workingDays}</span></span>
+                          : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-2">
                         {r.deviceUserId

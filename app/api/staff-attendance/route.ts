@@ -5,6 +5,8 @@ import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, daySession, emptyStatusForSession, weekdayOfKey } from '@/lib/staffAttendance/schedule';
 import { currentStreak } from '@/lib/staffAttendance/streak';
+import { workedDaysForStaff, academicYearStartKey } from '@/lib/staffAttendance/workedDays';
+import { getActiveYear } from '@/lib/services/fees';
 
 // GET /api/staff-attendance?date=YYYY-MM-DD
 // Daily board: every active staff member with their roll-up for the date.
@@ -62,6 +64,16 @@ export async function GET(req: NextRequest) {
     const weekday = weekdayOfKey(dateKey);
     const weeklyOff = cfg.schedule.weeklyOffDays;
 
+    // Year-to-date worked days (attended / working days elapsed since the academic
+    // year start) — a running overall figure, always up to today.
+    const year = await getActiveYear();
+    const realTodayKey = localDayInfo(new Date(), cfg.timezone).dateKey;
+    const worked = await workedDaysForStaff(staff, {
+      fromKey: academicYearStartKey(year?.id),
+      toKey: realTodayKey,
+      weeklyOffDays: weeklyOff,
+    });
+
     const rows = staff.map((s) => {
       const day = byStaff.get(s.id);
       // No stored row → derive the expected status (holiday / off / absent) from
@@ -83,6 +95,8 @@ export async function GET(req: NextRequest) {
         workedMinutes: day?.workedMinutes ?? 0,
         locked: day?.locked ?? false,
         currentStreak: streakByStaff.get(s.id) ?? 0,
+        attended: worked.get(s.id)?.attended ?? 0,
+        workingDays: worked.get(s.id)?.workingDays ?? 0,
       };
     });
 

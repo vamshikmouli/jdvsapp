@@ -8,6 +8,7 @@ import { BrowserNotice } from '@/components/BrowserNotice';
 
 const TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
+  ask: 'Ask',
   attendance: 'Attendance',
   students: 'Students',
   'hall-tickets': 'Hall tickets',

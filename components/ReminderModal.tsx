@@ -60,10 +60,23 @@ export function ReminderModal({ open, onClose, onSaved, initial }: { open: boole
       : (initial?.entityType === 'Student' && initial?.entityId ? [{ id: initial.entityId, name: initial.entityLabel || initial.entityId, className: null }] : []);
     setStudents(pre);
     setSQuery(''); setSHits([]);
-    fetch('/api/reminders/assignees').then((r) => (r.ok ? r.json() : { items: [] })).then((d) => {
+    fetch('/api/reminders/assignees').then((r) => (r.ok ? r.json() : { items: [] })).then(async (d) => {
       const items: Assignee[] = d.items || [];
       setAssignees(items);
-      setSelected(initial?.assignedToId ? items.filter((a) => a.id === initial.assignedToId) : []);
+      if (initial?.id) {
+        // Editing: load ALL assignees in this reminder's group (not just the clicked copy).
+        try {
+          const gr = await fetch(`/api/reminders/${initial.id}`).then((r) => (r.ok ? r.json() : null));
+          const ids: string[] = Array.isArray(gr?.assignees) && gr.assignees.length
+            ? gr.assignees.map((a: any) => String(a.id))
+            : (initial.assignedToId ? [initial.assignedToId] : []);
+          setSelected(items.filter((a) => ids.includes(a.id)));
+        } catch {
+          setSelected(initial.assignedToId ? items.filter((a) => a.id === initial.assignedToId) : []);
+        }
+      } else {
+        setSelected(initial?.assignedToId ? items.filter((a) => a.id === initial.assignedToId) : []);
+      }
     }).catch(() => {});
   }, [open, initial]);
 
@@ -96,7 +109,7 @@ export function ReminderModal({ open, onClose, onSaved, initial }: { open: boole
       students: students.map((s) => ({ id: s.id, name: s.name, className: s.className ?? null })),
     };
     const payload: any = editing
-      ? { ...common, assignedToId: selected[0]?.id || null }
+      ? { ...common, assignees: selected.map((a) => a.id) }
       : { ...common, assignedToIds: selected.map((a) => a.id) };
     try {
       const r = await fetch(editing ? `/api/reminders/${initial!.id}` : '/api/reminders', {
@@ -137,7 +150,7 @@ export function ReminderModal({ open, onClose, onSaved, initial }: { open: boole
               <option value="">+ Add person…</option>
               {assignees.filter((a) => !selectedIds.has(a.id)).map((a) => <option key={a.id} value={a.id}>{a.name}{a.role ? ` · ${a.role}` : ''}</option>)}
             </Select>
-            {!editing && selected.length > 1 && <p className="text-xs text-slate-400">A separate reminder will be created for each person.</p>}
+            {selected.length > 1 && <p className="text-xs text-slate-400">Each person gets their own copy to tick off independently.</p>}
           </div>
         </Field>
 

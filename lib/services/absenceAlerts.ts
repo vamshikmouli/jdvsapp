@@ -50,13 +50,21 @@ function statusWord(s: string): string {
  */
 export async function sendAbsenceAlerts(
   sessionId: string,
-  sentById?: string | null
+  sentById?: string | null,
+  // Per-submit override of the global Settings.notifyAbsence toggle:
+  //   true  → send regardless of the global setting
+  //   false → don't send for this submit
+  //   undefined → fall back to the global setting
+  override?: boolean
 ): Promise<{ sent: number; skipped: number; failed: number }> {
   const zero = { sent: 0, skipped: 0, failed: 0 };
   try {
+    if (override === false) return zero;
     if (!whatsappConfigured()) return zero;
-    const settings = await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { notifyAbsence: true } });
-    if (!settings?.notifyAbsence) return zero;
+    if (override !== true) {
+      const settings = await prisma.settings.findUnique({ where: { id: 'singleton' }, select: { notifyAbsence: true } });
+      if (!settings?.notifyAbsence) return zero;
+    }
 
     const session = await prisma.attendanceSession.findUnique({
       where: { id: sessionId },

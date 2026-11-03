@@ -222,6 +222,7 @@ model Reminder {
   status        ReminderStatus @default(OPEN)
   createdById   String?        // who set it
   assignedToId  String?        // who should act (defaults to the creator)
+  groupId       String?        // links the per-assignee copies created together (one reminder, many staff)
   entityType    String?        // "Student" | "Payment" | "Staff" | …
   entityId      String?        // the primary linked entity (first student, for the index/link)
   entityLabel   String?        // e.g. "ASHA (JDVS123)" or "ASHA +2 more" for display
@@ -235,6 +236,7 @@ model Reminder {
 
   @@index([assignedToId, status, dueAt])
   @@index([entityType, entityId])
+  @@index([groupId])
 }
 
 // Active sessions per user/device — for multi-device listing + revocation.

@@ -19,6 +19,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ sessionI
 
     const body = await req.json();
     const locked = !!body.locked;
+    // Per-submit WhatsApp choice: true/false overrides the global Settings.notifyAbsence;
+    // undefined (older clients) falls back to the global setting.
+    const notify = typeof body.notify === 'boolean' ? body.notify : undefined;
 
     const target = await prisma.attendanceSession.findUnique({
       where: { id: params.sessionId },
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ sessionI
     // Best-effort: never let a WhatsApp hiccup fail the submit.
     let notified: number | undefined;
     if (locked) {
-      const r = await sendAbsenceAlerts(params.sessionId, (session.user as any)?.id ?? null);
+      const r = await sendAbsenceAlerts(params.sessionId, (session.user as any)?.id ?? null, notify);
       notified = r.sent;
     }
 

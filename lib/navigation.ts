@@ -8,6 +8,8 @@ export const STAFF_NAV: NavGroup[] = [
   {
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }, // always
+      // Natural-language Ask over fees + attendance (needs either view permission).
+      { id: 'ask', label: 'Ask', icon: 'Sparkles', perm: ['FEES_VIEW', 'ATTENDANCE_VIEW'] },
     ],
   },
   {

@@ -80,6 +80,7 @@ export default function StaffPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
+  const [historyFor, setHistoryFor] = useState<StaffMember | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -394,6 +395,9 @@ export default function StaffPage() {
                           >
                             <Icon name="Pencil" size={16} />
                           </button>
+                          <button onClick={() => setHistoryFor(member)} className="text-slate-400 hover:text-purple-600 p-1.5 rounded-md hover:bg-slate-100" title="Activity log">
+                            <Icon name="History" size={16} />
+                          </button>
                           {member.hasLogin && !(member as any).archived && (
                             <button onClick={() => resetPin(member)} disabled={resetting === member.id} className="text-slate-400 hover:text-info-600 p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-50" title="Reset login PIN">
                               <Icon name="KeyRound" size={16} />
@@ -447,6 +451,9 @@ export default function StaffPage() {
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button onClick={() => openEdit(member)} className="text-slate-400 hover:text-purple-600 p-1.5 rounded-md hover:bg-slate-100" title="Edit">
                     <Icon name="Pencil" size={15} />
+                  </button>
+                  <button onClick={() => setHistoryFor(member)} className="text-slate-400 hover:text-purple-600 p-1.5 rounded-md hover:bg-slate-100" title="Activity log">
+                    <Icon name="History" size={15} />
                   </button>
                   {member.hasLogin && !(member as any).archived && (
                     <button onClick={() => resetPin(member)} disabled={resetting === member.id} className="text-slate-400 hover:text-info-600 p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-50" title="Reset login PIN">
@@ -705,6 +712,8 @@ export default function StaffPage() {
 
       <StaffImportDrawer open={staffImportOpen} onClose={() => setStaffImportOpen(false)} onImported={fetchStaff} />
 
+      <StaffHistoryDrawer staff={historyFor} onClose={() => setHistoryFor(null)} />
+
       <Modal open={!!resetResult} onClose={() => setResetResult(null)} title="Temporary PIN created">
         {resetResult && (
           <div className="space-y-3">
@@ -893,6 +902,56 @@ function StaffImportDrawer({ open, onClose, onImported }: { open: boolean; onClo
               </div>
             </>
           )}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+/* ---------- Staff activity history drawer ---------- */
+interface StaffActivity { id: string; action: string; summary: string; user: string; changed: string[] | null; at: string }
+
+function fmtStaffWhen(iso: string) {
+  try { return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch { return iso; }
+}
+
+function StaffHistoryDrawer({ staff, onClose }: { staff: { id: string; name: string } | null; onClose: () => void }) {
+  const [items, setItems] = useState<StaffActivity[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!staff) { setItems(null); setError(''); return; }
+    setItems(null); setError('');
+    fetch(`/api/staff/${staff.id}/activity`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Failed (${r.status})`))))
+      .then((d) => setItems(d.items || []))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+  }, [staff]);
+
+  return (
+    <Drawer open={!!staff} onClose={onClose} title="Activity log" subtitle={staff?.name} width={460}>
+      {!items && !error && <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={52} rounded="lg" />)}</div>}
+      {error && <EmptyState icon="AlertCircle" title="Couldn't load" body={error} />}
+      {items && items.length === 0 && <EmptyState icon="History" title="No activity yet" body="Edits, archiving and other changes to this staff member will appear here." />}
+      {items && items.length > 0 && (
+        <div className="divide-y divide-slate-100">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-start gap-3 py-3">
+              <span className="mt-0.5 w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 bg-info-100 text-info-700"><Icon name="UserCog" size={15} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-800">{it.summary}</div>
+                {it.changed && it.changed.length > 0 && (
+                  <div className="text-[11.5px] text-slate-500 mt-0.5">Changed: {it.changed.join(', ')}</div>
+                )}
+                <div className="text-[11.5px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2">
+                  <span className="font-medium text-slate-600">{it.user}</span>
+                  <span className="text-slate-300">·</span>
+                  <span>{fmtStaffWhen(it.at)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </Drawer>

@@ -42,22 +42,6 @@ interface DeviceSession {
 
 type Tab = 'school' | 'attendance' | 'sectionlock' | 'backup' | 'deploy' | 'account';
 
-// Small toggle switch
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-        checked ? 'bg-purple-500' : 'bg-slate-300'
-      }`}
-    >
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-    </button>
-  );
-}
-
 function relativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
@@ -77,7 +61,6 @@ function deviceLabel(ua: string | null) {
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'school', label: 'School profile', icon: 'Building2' },
-  { id: 'attendance', label: 'Attendance', icon: 'Calendar' },
   { id: 'sectionlock', label: 'Section lock', icon: 'Lock' },
   { id: 'backup', label: 'Backup & restore', icon: 'Database' },
   { id: 'deploy', label: 'Deploy', icon: 'Rocket' },
@@ -156,23 +139,6 @@ export default function SettingsPage() {
     } finally { setSigUploading(false); }
   };
 
-  // --- session list editing ---
-  const updateSessions = (fn: (list: SessionDef[]) => SessionDef[]) =>
-    setSettings((s) => (s ? { ...s, sessions: fn(s.sessions || []) } : s));
-  const addSession = () =>
-    updateSessions((list) => [...list, { key: '', label: `Session ${list.length + 1}`, open: '', close: '' }]);
-  const editSession = (i: number, patch: Partial<SessionDef>) =>
-    updateSessions((list) => list.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-  const removeSession = (i: number) => updateSessions((list) => list.filter((_, idx) => idx !== i));
-  const moveSession = (i: number, dir: -1 | 1) =>
-    updateSessions((list) => {
-      const j = i + dir;
-      if (j < 0 || j >= list.length) return list;
-      const copy = [...list];
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-      return copy;
-    });
-
   const saveSettings = async () => {
     if (!settings) return;
     setSaving(true);
@@ -221,8 +187,8 @@ export default function SettingsPage() {
         <div className="mt-4 px-4 py-2.5 bg-danger-50 text-danger-700 rounded-md text-sm">{error}</div>
       )}
 
-      {/* SCHOOL + ATTENDANCE need settings loaded */}
-      {(tab === 'school' || tab === 'attendance') && (
+      {/* SCHOOL profile needs settings loaded */}
+      {tab === 'school' && (
         <div className="mt-6 max-w-3xl">
           {loading || !settings ? (
             <Card>
@@ -231,7 +197,7 @@ export default function SettingsPage() {
                 {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={38} />)}
               </div>
             </Card>
-          ) : tab === 'school' ? (
+          ) : (
             <Card title="School profile">
               {!canManage && (
                 <div className="mb-4 text-xs text-slate-500 bg-slate-50 rounded-md p-3 inline-flex items-center gap-2">
@@ -331,105 +297,6 @@ export default function SettingsPage() {
                       className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
                     />
                   </Field>
-                </div>
-              </div>
-              {canManage && (
-                <div className="flex justify-end mt-6">
-                  <Button kind="primary" onClick={saveSettings} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
-                </div>
-              )}
-            </Card>
-          ) : (
-            // ATTENDANCE
-            <Card title="Attendance">
-              {!canManage && (
-                <div className="mb-4 text-xs text-slate-500 bg-slate-50 rounded-md p-3 inline-flex items-center gap-2">
-                  <Icon name="Lock" size={14} /> View only — ask an admin to change attendance settings.
-                </div>
-              )}
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="text-sm font-medium text-slate-900">Attendance sessions</div>
-                    {canManage && (
-                      <Button size="sm" icon="Plus" onClick={addSession}>Add session</Button>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 mb-3">
-                    Add one session, or as many as you need. Each is a separate roll-call (name + time window).
-                  </p>
-
-                  {(settings.sessions || []).length === 0 && (
-                    <p className="text-sm text-slate-400 py-4 text-center border border-dashed border-slate-200 rounded-lg">
-                      No sessions yet — add at least one.
-                    </p>
-                  )}
-
-                  <div className="space-y-2">
-                    {(settings.sessions || []).map((s, i) => (
-                      <div key={i} className="flex items-end gap-2 p-3 border border-slate-200 rounded-lg">
-                        <div className="flex flex-col gap-1">
-                          <button
-                            type="button"
-                            onClick={() => moveSession(i, -1)}
-                            disabled={!canManage || i === 0}
-                            className="text-slate-300 hover:text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Move up"
-                          >
-                            <Icon name="ChevronUp" size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveSession(i, 1)}
-                            disabled={!canManage || i === settings.sessions.length - 1}
-                            className="text-slate-300 hover:text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Move down"
-                          >
-                            <Icon name="ChevronDown" size={14} />
-                          </button>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-[11px] text-slate-400 mb-1">Session name</label>
-                          <Input value={s.label} disabled={!canManage} onChange={(e) => editSession(i, { label: e.target.value })} placeholder="e.g. Morning" />
-                        </div>
-                        <div className="w-28">
-                          <label className="block text-[11px] text-slate-400 mb-1">Opens</label>
-                          <Input type="time" value={s.open} disabled={!canManage} onChange={(e) => editSession(i, { open: e.target.value })} />
-                        </div>
-                        <div className="w-28">
-                          <label className="block text-[11px] text-slate-400 mb-1">Closes</label>
-                          <Input type="time" value={s.close} disabled={!canManage} onChange={(e) => editSession(i, { close: e.target.value })} />
-                        </div>
-                        {canManage && (
-                          <button
-                            type="button"
-                            onClick={() => removeSession(i)}
-                            className="text-slate-400 hover:text-danger-600 p-2 mb-0.5"
-                            title="Remove session"
-                          >
-                            <Icon name="Trash2" size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border-t border-slate-100 pt-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">Auto-lock sessions</div>
-                      <p className="text-xs text-slate-500 mt-0.5">Automatically lock a session after its window closes.</p>
-                    </div>
-                    <Toggle checked={settings.autoLock} disabled={!canManage} onChange={(v) => set({ autoLock: v })} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">WhatsApp parents on absence</div>
-                      <p className="text-xs text-slate-500 mt-0.5">Send a WhatsApp message to the guardian when a student is marked absent or on leave (on attendance submit). Turn off to stop these messages.</p>
-                    </div>
-                    <Toggle checked={settings.notifyAbsence} disabled={!canManage} onChange={(v) => set({ notifyAbsence: v })} />
-                  </div>
                 </div>
               </div>
               {canManage && (

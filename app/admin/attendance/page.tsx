@@ -170,6 +170,9 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  // Per-submit: notify parents on WhatsApp? Defaults to the global Settings toggle,
+  // but the admin can flip it for this one submit.
+  const [notifyParents, setNotifyParents] = useState(true);
 
   // Per-class marked status for the selected date: { classId: { [slotKey]: status } }
   const [overview, setOverview] = useState<Record<string, Record<string, string>>>({});
@@ -201,6 +204,7 @@ export default function AttendancePage() {
       const list: SessionDef[] = Array.isArray(s.sessions) && s.sessions.length ? s.sessions : DEFAULT_SESSIONS;
       setSessions(list);
       setSlot((cur) => (list.some((x) => x.key === cur) ? cur : list[0].key));
+      setNotifyParents(!!s.notifyAbsence); // default the per-submit choice to the global setting
     } catch {
       /* keep defaults */
     }
@@ -323,7 +327,7 @@ export default function AttendancePage() {
         const lockRes = await fetch(`/api/attendance/${data.sessionId}/lock`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locked: true }),
+          body: JSON.stringify({ locked: true, notify: notifyParents }),
         });
         if (lockRes.ok) setLocked(true);
       }
@@ -615,9 +619,20 @@ export default function AttendancePage() {
               <Button kind="primary" icon="CheckCircle2" disabled>Submitted</Button>
             )
           ) : (
-            <Button kind="primary" icon="Check" onClick={save} disabled={!canSave || saving}>
-              {saving ? 'Submitting…' : 'Submit attendance'}
-            </Button>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none" title="When you submit, message the guardians of students marked absent or on leave">
+                <input
+                  type="checkbox"
+                  checked={notifyParents}
+                  onChange={(e) => setNotifyParents(e.target.checked)}
+                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20"
+                />
+                <span className="inline-flex items-center gap-1"><Icon name="MessageCircle" size={14} className="text-slate-400" /> Notify parents on WhatsApp</span>
+              </label>
+              <Button kind="primary" icon="Check" onClick={save} disabled={!canSave || saving}>
+                {saving ? 'Submitting…' : 'Submit attendance'}
+              </Button>
+            </div>
           )}
         </div>
       )}

@@ -15,7 +15,7 @@ export interface WaTemplatePreset {
   header: 'MONTHLY_CALENDAR' | 'NONE'; // MONTHLY_CALENDAR = image header (the app renders a sample for review)
 }
 
-export const MONTHLY_ATTENDANCE_TEMPLATE = 'monthly_attendance_report';
+export const MONTHLY_ATTENDANCE_TEMPLATE = 'student_monthly_attendance';
 export const ABSENCE_ALERT_TEMPLATE = 'student_absence_reminder';
 
 export const WA_TEMPLATE_PRESETS: WaTemplatePreset[] = [

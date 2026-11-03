@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Card, Chip, EmptyState, Skeleton } from '@/components/Primitives';
+import { Card, Chip, EmptyState, Skeleton, Drawer } from '@/components/Primitives';
 import { Icon } from '@/components/Icon';
 import { PushOptIn } from '@/components/PushOptIn';
 import { MonthlyLeavesCard } from '@/components/MonthlyLeavesCard';
@@ -36,12 +36,6 @@ function relativeTime(iso: string) {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
-
-const SESSION_STATUS: Record<string, { label: string; tone: 'success' | 'warn' | 'neutral' }> = {
-  taken: { label: 'Reopened', tone: 'warn' },
-  locked: { label: 'Submitted', tone: 'success' },
-  pending: { label: 'Pending', tone: 'neutral' },
-};
 
 const ACCENT: Record<string, { badge: string; ring: string }> = {
   purple: { badge: 'bg-purple-100 text-purple-700', ring: 'from-purple-500/10' },
@@ -84,6 +78,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Tap-to-view the absent / on-leave name list (hover tooltips don't work on touch / PWA).
+  const [namesOpen, setNamesOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -109,7 +105,6 @@ export default function DashboardPage() {
     return 'Good evening';
   })();
 
-  const maxPct = data ? Math.max(100, ...data.chart.map((c) => c.pct)) : 100;
   const presentNow = data ? data.today.present + data.today.late : 0;
 
   return (
@@ -171,19 +166,22 @@ export default function DashboardPage() {
               label="Students present"
               value={data.today.marked ? `${presentNow}/${data.today.marked}` : '0'}
               caption={
-                <span
-                  className={data.today.absent + data.today.leave > 0 ? 'cursor-help' : ''}
-                  title={
-                    data.today.absent + data.today.leave > 0
-                      ? [
-                          data.today.absentNames.length ? `Absent (${data.today.absent}):\n${data.today.absentNames.join('\n')}` : '',
-                          data.today.leaveNames.length ? `On leave (${data.today.leave}):\n${data.today.leaveNames.join('\n')}` : '',
-                        ].filter(Boolean).join('\n\n')
-                      : undefined
-                  }
-                >
-                  {data.today.absent} absent · {data.today.leave} leave
-                </span>
+                data.today.absent + data.today.leave > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setNamesOpen(true)}
+                    className="inline-flex items-center gap-1 text-left underline decoration-dotted underline-offset-2 hover:text-slate-700"
+                    title={[
+                      data.today.absentNames.length ? `Absent (${data.today.absent}):\n${data.today.absentNames.join('\n')}` : '',
+                      data.today.leaveNames.length ? `On leave (${data.today.leave}):\n${data.today.leaveNames.join('\n')}` : '',
+                    ].filter(Boolean).join('\n\n')}
+                  >
+                    {data.today.absent} absent · {data.today.leave} leave
+                    <Icon name="ChevronRight" size={12} className="text-slate-400" />
+                  </button>
+                ) : (
+                  <span>{data.today.absent} absent · {data.today.leave} leave</span>
+                )
               }
             />
             <Kpi
@@ -273,61 +271,8 @@ export default function DashboardPage() {
           {/* ===== Monthly attendance coverage (per class × per day) ===== */}
           <AttendanceCoverageCard />
 
-          {/* ===== Trend + Today's sessions ===== */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-            <div className="lg:col-span-2">
-              <Card title="Attendance — last 14 days" action={<Chip tone="info">Whole school</Chip>}>
-                {data.chart.every((c) => c.total === 0) ? (
-                  <div className="py-8">
-                    <EmptyState icon="BarChart3" title="No attendance data yet" body="Mark attendance to see the trend here." />
-                  </div>
-                ) : (
-                  <div className="flex items-end justify-between gap-2 h-24 pt-2">
-                    {data.chart.map((day) => {
-                      const heightPct = day.total ? (day.pct / maxPct) * 100 : 0;
-                      const d = new Date(day.date);
-                      return (
-                        <div key={day.date} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
-                          <div className="relative w-full flex justify-center">
-                            <div
-                              className="w-full max-w-[26px] rounded-t-md bg-gradient-to-t from-purple-600 to-purple-400 group-hover:brightness-110 transition-all"
-                              style={{ height: `${Math.max(heightPct, day.total ? 4 : 0)}%`, minHeight: day.total ? 4 : 0 }}
-                              title={`${day.pct}% · ${day.present}/${day.total}`}
-                            />
-                          </div>
-                          <span className="text-[10px] text-slate-400">{d.getDate()}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            </div>
-
-            <Card title="Today's sessions" padded={false}>
-              <div className="max-h-80 overflow-y-auto">
-                {data.todaySessions.map((s) => (
-                  <div key={s.classId} className="flex items-center justify-between px-6 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                    <div>
-                      <div className="font-medium text-slate-900 text-sm">{shortClassName(s.className)}</div>
-                      <div className="text-xs text-slate-500">{s.students} students</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5">
-                      {s.slots.map((sl) => (
-                        <div key={sl.key} className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-slate-400 truncate max-w-[80px]" title={sl.label}>{sl.label}</span>
-                          <Chip tone={SESSION_STATUS[sl.status].tone}>{SESSION_STATUS[sl.status].label}</Chip>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
-
-          {/* ===== Recent activity + breakdown ===== */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          {/* ===== Recent activity ===== */}
+          <div className="mt-6">
             <Card title="Recent activity" padded={false}>
               {data.activity.length === 0 ? (
                 <div className="py-8">
@@ -352,45 +297,39 @@ export default function DashboardPage() {
                 </div>
               )}
             </Card>
-
-            <Card title="Attendance breakdown — today">
-              {data.today.marked === 0 ? (
-                <div className="py-8">
-                  <EmptyState icon="ClipboardList" title="No attendance taken today" body="Head to Attendance to mark a class." />
-                </div>
-              ) : (
-                <div className="space-y-4 pt-2">
-                  {[
-                    { label: 'Present', value: data.today.present, color: 'bg-success-500', names: [] as string[] },
-                    { label: 'Late', value: data.today.late, color: 'bg-marigold-500', names: [] as string[] },
-                    { label: 'Leave', value: data.today.leave, color: 'bg-info-500', names: data.today.leaveNames },
-                    { label: 'Absent', value: data.today.absent, color: 'bg-danger-500', names: data.today.absentNames },
-                  ].map((row) => {
-                    const pct = data.today.marked ? Math.round((row.value / data.today.marked) * 100) : 0;
-                    const hasNames = row.names.length > 0;
-                    return (
-                      <div
-                        key={row.label}
-                        className={hasNames ? 'cursor-help' : ''}
-                        title={hasNames ? `${row.label} (${row.names.length}):\n${row.names.join('\n')}` : undefined}
-                      >
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="text-slate-700 inline-flex items-center gap-1">
-                            {row.label}
-                            {hasNames && <Icon name="Info" size={12} className="text-slate-400" />}
-                          </span>
-                          <span className="text-slate-900 font-medium">{row.value} · {pct}%</span>
-                        </div>
-                        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full ${row.color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
           </div>
+
+          {/* Absent / on-leave names — tap to view (works on mobile/PWA where hover doesn't). */}
+          <Drawer
+            open={namesOpen}
+            onClose={() => setNamesOpen(false)}
+            title="Absent & on leave — today"
+            subtitle={`${data.today.absent} absent · ${data.today.leave} on leave`}
+          >
+            <div className="space-y-5">
+              {[
+                { label: 'Absent', names: data.today.absentNames, dot: 'bg-danger-500' },
+                { label: 'On leave', names: data.today.leaveNames, dot: 'bg-info-500' },
+              ].map((g) => (
+                <div key={g.label}>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-2">
+                    <span className={`w-2 h-2 rounded-full ${g.dot}`} /> {g.label} ({g.names.length})
+                  </div>
+                  {g.names.length === 0 ? (
+                    <p className="text-sm text-slate-400">None</p>
+                  ) : (
+                    <ol className="space-y-1">
+                      {g.names.map((n, i) => (
+                        <li key={i} className="text-sm text-slate-700 flex gap-2">
+                          <span className="text-slate-400 tabular-nums w-5 text-right">{i + 1}.</span>{n}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Drawer>
         </>
       )}
     </>

@@ -18,6 +18,7 @@ interface MeData {
   device: { deviceName: string | null; createdAt: string } | null;
   nextAction: 'IN' | 'OUT';
   currentStreak: number;
+  yearStats: { attended: number; workingDays: number; fromKey: string; toKey: string } | null;
   today: { status: string; late: boolean; lateMinutes: number; firstIn: string | null; lastOut: string | null; workedMinutes: number; currentStreak: number } | null;
   punchesToday: { type: 'IN' | 'OUT'; at: string; source: string }[];
   todayKey: string;
@@ -324,6 +325,13 @@ export default function MyAttendancePage() {
                 <div className="mt-2 flex items-center justify-center gap-1">
                   <Icon name="Flame" size={18} className="text-orange-500" />
                   <span className="text-lg font-semibold text-orange-600">{data.currentStreak} day{data.currentStreak === 1 ? '' : 's'} streak</span>
+                </div>
+              )}
+              {data.yearStats && data.yearStats.workingDays > 0 && (
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm" title="Days you attended out of working days so far this academic year">
+                  <Icon name="CalendarCheck" size={15} className="text-slate-500" />
+                  <span className="font-semibold text-slate-800 tabular-nums">{data.yearStats.attended}/{data.yearStats.workingDays}</span>
+                  <span className="text-slate-500">days this year</span>
                 </div>
               )}
             </div>

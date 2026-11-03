@@ -58,7 +58,7 @@ export function BrandAssets({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className={compact ? 'space-y-2' : 'grid gap-2 sm:grid-cols-2'}>
+    <div className={compact ? 'space-y-2' : 'grid grid-cols-1 gap-2 sm:grid-cols-2'}>
       {assets.map((a) => {
         const isImg = a.mime.startsWith('image/');
         return (

@@ -16,6 +16,7 @@
     "test:integration": "vitest run -c vitest.integration.config.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
     "@napi-rs/canvas": "^1.0.3",
     "@prisma/client": "^5.13.0",
     "@simplewebauthn/browser": "^13.3.0",

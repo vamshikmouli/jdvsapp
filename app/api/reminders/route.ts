@@ -5,6 +5,7 @@ import { canAny } from '@/lib/rbac/roles';
 import { prisma } from '@/lib/db';
 import { listReminders, dueCount } from '@/lib/services/reminders';
 import { sendPushToUsers } from '@/lib/push';
+import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,11 +55,15 @@ export async function POST(req: NextRequest) {
     ? (students.length === 1 ? `${students[0].name} (${students[0].id})` : `${students[0].name} +${students.length - 1} more`)
     : null;
 
+  // Links the per-assignee copies so Edit can show/manage the whole group later
+  // (even when it starts as just one person).
+  const groupId = randomUUID();
   const base = {
     title: title.slice(0, 200),
     note: b.note ? String(b.note).trim().slice(0, 2000) : null,
     dueAt,
     createdById: me,
+    groupId,
     entityType: hasStudents ? 'Student' : null,
     entityId: hasStudents ? students[0].id : null,
     entityLabel,

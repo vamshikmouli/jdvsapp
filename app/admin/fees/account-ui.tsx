@@ -144,6 +144,17 @@ function TimelineColumn({ studentId, name, multi, onRemove, onCollect }: { stude
           </div>
         </div>
       )}
+      {data?.student && (
+        <div className="mb-3 text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {!multi && <span className="font-semibold text-slate-700">Class {shortClass(data.student.className)}</span>}
+          {data.student.fatherName && (
+            <span>Father: {data.student.fatherName}{data.student.fatherPhone && <> · <a href={`tel:${data.student.fatherPhone}`} className="text-purple-700 font-medium">{data.student.fatherPhone}</a></>}</span>
+          )}
+          {data.student.motherName && (
+            <span>Mother: {data.student.motherName}{data.student.motherPhone && <> · <a href={`tel:${data.student.motherPhone}`} className="text-purple-700 font-medium">{data.student.motherPhone}</a></>}</span>
+          )}
+        </div>
+      )}
       {s && (
         <div className={`grid mb-4 rounded-lg border border-slate-200 bg-slate-50 divide-x divide-slate-200 text-center ${s.concession > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
           {/* Tap Total fee / Concession / Paid / Balance to see the fee-head split (School fee, Van, Uniform…), same as the Collect drawer.

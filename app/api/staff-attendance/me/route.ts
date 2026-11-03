@@ -5,6 +5,8 @@ import { loadStaffAttConfig } from '@/lib/staffAttendance/config';
 import { localDayInfo } from '@/lib/staffAttendance/rules';
 import { parseWorkDays, parseWorkPattern, parseWeekSchedule, synthesizeDays } from '@/lib/staffAttendance/schedule';
 import { currentStreak } from '@/lib/staffAttendance/streak';
+import { workedDaysForStaff, academicYearStartKey } from '@/lib/staffAttendance/workedDays';
+import { getActiveYear } from '@/lib/services/fees';
 
 // GET /api/staff-attendance/me
 // Today's punch state + recent history + enrollment status for the signed-in
@@ -88,6 +90,14 @@ export async function GET(req: NextRequest) {
     });
     const monthDays = [...storedMonthDays, ...synthetic];
 
+    // Year-to-date worked days (attended / working days since the academic year start).
+    const yr = await getActiveYear();
+    const workedMap = await workedDaysForStaff(
+      [{ id: staffId, weekSchedule: staffRec?.weekSchedule, workPattern: staffRec?.workPattern, workDays: staffRec?.workDays }],
+      { fromKey: academicYearStartKey(yr?.id), toKey: todayKey, weeklyOffDays: cfg.schedule.weeklyOffDays },
+    );
+    const yearStats = workedMap.get(staffId) ?? null;
+
     const lastPunch = punchesToday[punchesToday.length - 1];
     const open = lastPunch?.type === 'IN';
 
@@ -99,6 +109,8 @@ export async function GET(req: NextRequest) {
       device: cred ?? null,
       nextAction: open ? 'OUT' : 'IN',
       currentStreak: streak,
+      yearStats, // { attended, workingDays, fromKey, toKey } — "159/180 days" this year
+
       today: today ? { ...today, currentStreak: streak } : null,
       punchesToday: punchesToday.filter((p) => localDayInfo(p.at, cfg.timezone).dateKey === todayKey),
       recent,

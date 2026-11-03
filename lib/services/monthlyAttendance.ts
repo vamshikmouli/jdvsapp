@@ -9,8 +9,6 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const SCHOOL = 'Jnana Deepika Vidhya Samsthe';
 // UTILITY template (see lib/waTemplatePresets): one variable per figure, factual wording only.
 const MONTHLY_TEMPLATE = process.env.WHATSAPP_MONTHLY_ATT_TEMPLATE || MONTHLY_ATTENDANCE_TEMPLATE;
-// The old 2-variable template ({{1}} parent, {{2}} whole message) is still supported if configured.
-const LEGACY_TWO_VAR = MONTHLY_TEMPLATE === 'student_monthly_attendance';
 const TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -297,7 +295,6 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
     if (!reps.length) { res.skipped++; res.details.push({ student: s.name, className: s.className, tier: s.tier, pct: s.pct, status: 'skipped', error: 'no WhatsApp number' }); continue; }
 
     const parentName = reps[0].name;
-    const message = buildMessage(s, monthLabel);
     const row = { student: s.name, className: s.className, tier: s.tier, pct: s.pct };
 
     // Split this student's recipients: already sent / held by the limit / to send now.
@@ -320,9 +317,8 @@ export async function sendMonthlyReports(opts: { month: string; classId?: string
       const mediaId = await uploadWhatsAppMedia(png);
       for (const rcp of toSend) {
         if (limitHit) { res.held++; res.details.push({ ...row, status: 'held', to: rcp.to, error: 'daily WhatsApp limit — send again tomorrow' }); continue; }
-        const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId, bodyParams: LEGACY_TWO_VAR
-          ? [rcp.name || parentName, message]
-          : [rcp.name || parentName, s.name, monthLabel, String(s.present), String(s.absent), String(s.leave), String(s.pct)] });
+        const send = await sendImageTemplate({ to: rcp.to, templateName: MONTHLY_TEMPLATE, lang: TEMPLATE_LANG, mediaId,
+          bodyParams: [rcp.name || parentName, s.name, monthLabel, String(s.present), String(s.absent), String(s.leave), String(s.pct)] });
         if (send.ok) { res.sent++; res.details.push({ ...row, status: 'sent', to: rcp.to }); }
         else if (LIMIT_ERROR.test(send.error || '')) {
           // Meta says we've hit the limit — hold this and everyone after it.
