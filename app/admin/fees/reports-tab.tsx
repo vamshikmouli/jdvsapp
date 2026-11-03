@@ -16,6 +16,7 @@ import { CollectionSettingsPanel } from './collection-settings';
 import { useQuery } from '@tanstack/react-query';
 import { jsonFetcher } from '@/lib/query';
 import { shortClass } from './_shared';
+import { DuplicateReceiptsCard } from './duplicate-receipts';
 import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
 
 /* ============================ Reports ============================ */
@@ -321,6 +322,8 @@ export function ReportsTab() {
       </div>}>
         <ReportRows head={['Student', 'Installment', 'Balance']} rows={data.installmentDue.map((r) => [r.name, `${r.label}${r.dueDate ? ' · ' + r.dueDate : ''}`, feeMoney(r.balance)])} empty="No pending installments" />
       </Card>
+
+      <DuplicateReceiptsCard />
 
       {headDrill && <HeadPaymentsDrawer headKey={headDrill.key} headName={headDrill.name} from={from} to={to} onClose={() => setHeadDrill(null)} />}
       {classDrill && <ClassStudentsDrawer classId={classDrill.classId} className={classDrill.name} onClose={() => setClassDrill(null)} />}
