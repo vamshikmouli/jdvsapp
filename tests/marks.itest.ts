@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
 import {
-  saveMarkSheet, listPendingSheets, getStudentReport, diagnoseParentReport, setAssessmentSubjectMaxes, decideMarkSheet,
+  saveMarkSheet, saveMarkSheets, listPendingSheets, getStudentReport, diagnoseParentReport, setAssessmentSubjectMaxes, decideMarkSheet,
 } from '@/lib/services/marks';
 
 // Marks flow against the local DB with throwaway data (own year-less assessment on the
@@ -63,6 +63,21 @@ describe('saving marks', () => {
       { studentId: S3, marksObtained: 10 }, { studentId: S3, marksObtained: 12, remark: 'retest' }, // duplicate → last wins
     ], 'submit', null);
     expect(await marksOf(subjA)).toEqual({ status: 'SUBMITTED', max: 50, marks: [[S1, 40, false, null], [S2, 33, false, null], [S3, 12, false, 'retest']] });
+  });
+
+  it('remarks: kept when a save does not send one, cleared when sent empty, replaced when sent', async () => {
+    // Class grid save (never sends remarks) — S3 keeps 'retest', marks still update.
+    await saveMarkSheets({ assessmentId, classId, sectionId: null }, [{ subjectId: subjA, action: 'submit', marks: [{ studentId: S3, marksObtained: 13, isAbsent: false }] }], null);
+    expect((await marksOf(subjA)).marks[2]).toEqual([S3, 13, false, 'retest']);
+    // Single-subject save without a remark field — kept too.
+    await saveMarkSheet({ assessmentId, classId, subjectId: subjA }, [{ studentId: S3, marksObtained: 12 }], 'submit', null);
+    expect((await marksOf(subjA)).marks[2]).toEqual([S3, 12, false, 'retest']);
+    // Sent → replaced; sent empty → cleared.
+    await saveMarkSheet({ assessmentId, classId, subjectId: subjA }, [{ studentId: S3, marksObtained: 12, remark: 'absent for 1 paper' }], 'submit', null);
+    expect((await marksOf(subjA)).marks[2][3]).toBe('absent for 1 paper');
+    await saveMarkSheet({ assessmentId, classId, subjectId: subjA }, [{ studentId: S3, marksObtained: 12, remark: '' }], 'submit', null);
+    expect((await marksOf(subjA)).marks[2][3]).toBeNull();
+    await saveMarkSheet({ assessmentId, classId, subjectId: subjA }, [{ studentId: S3, marksObtained: 12, remark: 'retest' }], 'submit', null);
   });
 
   it('rejects a mark over the max and changes nothing', async () => {

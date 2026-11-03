@@ -147,6 +147,7 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
   };
 }
 
+// remark: undefined = not sent → keep the existing remark; null / '' clears it.
 export interface MarkInput { studentId: string; marksObtained: number | null; isAbsent?: boolean; remark?: string | null }
 
 /** What saving needs about an exam + class, read once and shared by every subject saved. */
@@ -244,8 +245,10 @@ async function saveOneSheet(ctx: SaveContext, sel: SheetSelector, marks: MarkInp
  */
 async function writeMarks(markSheetId: string, marks: MarkInput[]) {
   // Later entries for the same student win, as they did with sequential upserts.
-  const byStudent = new Map<string, { marksObtained: number | null; isAbsent: boolean; remark: string | null }>();
-  for (const m of marks) byStudent.set(m.studentId, { marksObtained: m.isAbsent ? null : m.marksObtained, isAbsent: !!m.isAbsent, remark: m.remark || null });
+  // A save that doesn't send a remark (the class grid / full-screen entry never do) keeps
+  // the student's existing remark instead of blanking it.
+  const byStudent = new Map<string, { marksObtained: number | null; isAbsent: boolean; remark?: string | null }>();
+  for (const m of marks) byStudent.set(m.studentId, { marksObtained: m.isAbsent ? null : m.marksObtained, isAbsent: !!m.isAbsent, ...(m.remark !== undefined ? { remark: m.remark || null } : {}) });
   if (!byStudent.size) return;
   const existing = await prisma.mark.findMany({
     where: { markSheetId, studentId: { in: Array.from(byStudent.keys()) } },
@@ -253,11 +256,11 @@ async function writeMarks(markSheetId: string, marks: MarkInput[]) {
   });
   const have = new Map(existing.map((e) => [e.studentId, e]));
   const toCreate: { markSheetId: string; studentId: string; marksObtained: number | null; isAbsent: boolean; remark: string | null }[] = [];
-  const toUpdate: { id: string; data: { marksObtained: number | null; isAbsent: boolean; remark: string | null } }[] = [];
+  const toUpdate: { id: string; data: { marksObtained: number | null; isAbsent: boolean; remark?: string | null } }[] = [];
   for (const [studentId, v] of byStudent) {
     const e = have.get(studentId);
-    if (!e) toCreate.push({ markSheetId, studentId, ...v });
-    else if (e.marksObtained !== v.marksObtained || e.isAbsent !== v.isAbsent || (e.remark ?? null) !== v.remark) toUpdate.push({ id: e.id, data: v });
+    if (!e) toCreate.push({ markSheetId, studentId, marksObtained: v.marksObtained, isAbsent: v.isAbsent, remark: v.remark ?? null });
+    else if (e.marksObtained !== v.marksObtained || e.isAbsent !== v.isAbsent || (v.remark !== undefined && (e.remark ?? null) !== v.remark)) toUpdate.push({ id: e.id, data: v });
   }
   await prisma.$transaction([
     ...(toCreate.length ? [prisma.mark.createMany({ data: toCreate, skipDuplicates: true })] : []),
@@ -272,7 +275,7 @@ async function writeMarks(markSheetId: string, marks: MarkInput[]) {
       await prisma.$transaction(stale.map((c) => prisma.mark.upsert({
         where: { markSheetId_studentId: { markSheetId, studentId: c.studentId } },
         create: c,
-        update: { marksObtained: c.marksObtained, isAbsent: c.isAbsent, remark: c.remark },
+        update: { marksObtained: c.marksObtained, isAbsent: c.isAbsent, ...(byStudent.get(c.studentId)!.remark !== undefined ? { remark: c.remark } : {}) },
       })));
     }
   }
