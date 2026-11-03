@@ -227,12 +227,27 @@ export async function importFeeSheet(rawRows: any[], opts: { dryRun: boolean; ye
 
   let paymentsCreated = 0;
   const yearId = opts.yearId;
+  // Every student's current charges + payments, read in two queries up front (was two per
+  // row). A student whose row has been written is re-read if they appear again further
+  // down, so later rows still see what earlier rows created — exactly as before.
+  const assignmentInclude = { charges: { include: { allocations: { select: { amount: true } } } } } as const;
+  const rowStudentIds = Array.from(new Set(parsedRows.map((r) => r.student.id)));
+  const [preAssignments, prePays] = rowStudentIds.length ? await Promise.all([
+    prisma.studentFeeAssignment.findMany({ where: { yearId, studentId: { in: rowStudentIds } }, include: assignmentInclude }),
+    prisma.payment.findMany({ where: { yearId, studentId: { in: rowStudentIds } }, select: { studentId: true, paidAt: true, method: true, total: true } }),
+  ]) : [[], []];
+  const assignmentCache = new Map<string, (typeof preAssignments)[number] | null>(rowStudentIds.map((id) => [id, preAssignments.find((a) => a.studentId === id) ?? null]));
+  const paysCache = new Map<string, { paidAt: Date; method: PayMethod; total: number }[]>(rowStudentIds.map((id) => [id, []]));
+  for (const p of prePays) paysCache.get(p.studentId)!.push(p);
+  const dirty = new Set<string>();
   for (const row of parsedRows) {
-    const existing = await prisma.studentFeeAssignment.findUnique({
-      where: { studentId_yearId: { studentId: row.student.id, yearId } },
-      include: { charges: { include: { allocations: { select: { amount: true } } } } },
-    });
-    const existPays = await prisma.payment.findMany({ where: { studentId: row.student.id, yearId }, select: { paidAt: true, method: true, total: true } });
+    const sid = row.student.id;
+    let existing = assignmentCache.get(sid) ?? null;
+    let existPays = paysCache.get(sid) || [];
+    if (dirty.has(sid)) {
+      existing = await prisma.studentFeeAssignment.findUnique({ where: { studentId_yearId: { studentId: sid, yearId } }, include: assignmentInclude });
+      existPays = await prisma.payment.findMany({ where: { studentId: sid, yearId }, select: { paidAt: true, method: true, total: true } });
+    }
     const existKeys = new Set(existPays.map((p) => iso(p.paidAt) + '|' + p.method + '|' + p.total));
 
     interface Slot { line: Line; chargeId?: string; existAmount: number; setAmount: number; free: number }
@@ -281,6 +296,7 @@ export async function importFeeSheet(rawRows: any[], opts: { dryRun: boolean; ye
         paymentsCreated += 1;
       }
     });
+    dirty.add(sid);
   }
 
   return { dryRun: false, appliedStudents: matchedIds.size, appliedGroups: parsedRows.length, paymentsCreated, totals, unmatched, errors };

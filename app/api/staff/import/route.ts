@@ -97,6 +97,12 @@ export async function POST(req: NextRequest) {
     let logins = 0;   // new login accounts
     let merged = 0;   // existing parent upgraded to staff role → dual (staff + parent)
     let usedExisting = 0; // existing account kept as-is (no staff role to grant)
+    // Which existing accounts already have a staff record — read once (was one query per
+    // row) and kept current as this import links accounts.
+    const existingUserIds = Array.from(new Set(prepared.map((p) => p.existingUserId).filter(Boolean))) as string[];
+    const hasStaffRecord = new Set(existingUserIds.length
+      ? (await prisma.staff.findMany({ where: { userId: { in: existingUserIds } }, select: { userId: true } })).map((x) => x.userId as string)
+      : []);
     for (const p of prepared) {
       let linkUserId: string | undefined;
 
@@ -119,8 +125,7 @@ export async function POST(req: NextRequest) {
           usedExisting++; // Office Staff / Driver — no staff role to grant; keep their parent login
         }
         // Link the staff record to that account if it has none yet.
-        const hasStaff = await prisma.staff.findFirst({ where: { userId: p.existingUserId }, select: { id: true } });
-        if (!hasStaff) linkUserId = p.existingUserId;
+        if (!hasStaffRecord.has(p.existingUserId)) linkUserId = p.existingUserId;
       }
 
       await prisma.staff.create({
@@ -131,6 +136,7 @@ export async function POST(req: NextRequest) {
           userId: linkUserId || undefined,
         },
       });
+      if (linkUserId) hasStaffRecord.add(linkUserId);
       created++;
     }
 
