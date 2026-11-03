@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can } from '@/lib/rbac/roles';
 import { ensureParentUser } from '@/lib/services/parents';
-import { getActiveYear, autoAssignClassFees } from '@/lib/services/fees';
+import { getActiveYear, autoAssignClassFees, loadClassFeeConfig } from '@/lib/services/fees';
 import { upsertEnrollment } from '@/lib/services/enrollment';
 import { generateAdmissionNo } from '@/lib/services/admissionNo';
 
@@ -300,6 +300,18 @@ export async function POST(req: NextRequest) {
     let updated = 0;
     let skipped = 0;
     const writeErrors: { row: number; name: string; reason: string }[] = [];
+    // Read once for the whole file instead of per row: the class fee heads / amounts, and
+    // each parent phone's login (siblings share one — same answer every time).
+    const feeConfig = await loadClassFeeConfig(activeYear.id);
+    const parentByPhone = new Map<string, string | null>();
+    const parentFor = async (name: string, phone: string) => {
+      if (!parentByPhone.has(phone)) {
+        const id = await ensureParentUser(name, phone);
+        if (!id) return id; // not created (e.g. bad phone) — don't remember, same as before
+        parentByPhone.set(phone, id);
+      }
+      return parentByPhone.get(phone)!;
+    };
     for (const p of prepared) {
       try {
         if (p.op === 'update') {
@@ -307,7 +319,7 @@ export async function POST(req: NextRequest) {
           if (Object.keys(p.data).length === 0) { skipped++; continue; }
           let guardianUserId: string | undefined;
           if (p.data.guardianPhone) {
-            guardianUserId = await ensureParentUser(p.data.guardianName || 'PARENT', p.data.guardianPhone) || undefined;
+            guardianUserId = await parentFor(p.data.guardianName || 'PARENT', p.data.guardianPhone) || undefined;
           }
           await prisma.student.update({
             where: { id: p.id },
@@ -316,11 +328,11 @@ export async function POST(req: NextRequest) {
           updated++;
           continue;
         }
-        const guardianUserId = p.primaryPhone ? await ensureParentUser(p.primaryName, p.primaryPhone) : undefined;
+        const guardianUserId = p.primaryPhone ? await parentFor(p.primaryName, p.primaryPhone) : undefined;
         await prisma.student.create({ data: { ...p.data, guardianUserId: guardianUserId || undefined } });
         if (p.classId) {
           try { await upsertEnrollment(p.id, activeYear.id, p.classId, null, p.data.roll); } catch (e) { console.error('enrollment failed for', p.id, e); }
-          try { await autoAssignClassFees(p.id, p.classId, activeYear.id); } catch (e) { console.error('auto-assign failed for', p.id, e); }
+          try { await autoAssignClassFees(p.id, p.classId, activeYear.id, false, feeConfig); } catch (e) { console.error('auto-assign failed for', p.id, e); }
         }
         created++;
       } catch (e) {

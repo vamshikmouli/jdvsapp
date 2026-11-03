@@ -10,7 +10,7 @@ import {
   updateFeeType,
   reorderFeeTypes,
   deleteFeeType,
-  autoAssignClassFees,
+  autoAssignClassFees, loadClassFeeConfig,
   setClassFeeInstallments,
 } from '@/lib/services/fees';
 import { FeeBillingMode } from '@prisma/client';
@@ -134,8 +134,9 @@ export async function POST(req: NextRequest) {
         select: { id: true, classId: true },
       });
       let assigned = 0, charged = 0;
+      const feeConfig = await loadClassFeeConfig(year.id); // fee heads + class amounts read once for everyone
       for (const s of students) {
-        try { const n = await autoAssignClassFees(s.id, s.classId!, year.id); if (n > 0) assigned++; charged += n; } catch (e) { console.error('assign failed', s.id, e); }
+        try { const n = await autoAssignClassFees(s.id, s.classId!, year.id, false, feeConfig); if (n > 0) assigned++; charged += n; } catch (e) { console.error('assign failed', s.id, e); }
       }
       return NextResponse.json({ ok: true, assigned, charged, total: students.length });
     }

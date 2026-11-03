@@ -49,13 +49,12 @@ export async function generateAdmissionNo(opts: {
 
   const base = `JDVS${yearCode(opts.yearId)}${cc}${rr.padStart(2, '0')}`;
 
-  const exists = async (id: string) =>
-    !!opts.taken?.has(id) || !!(await prisma.student.findUnique({ where: { id }, select: { id: true } }));
-
-  if (!(await exists(base))) { opts.taken?.add(base); return base; }
-  for (let i = 2; i < 100; i++) {
-    const cand = `${base}-${i}`;
-    if (!(await exists(cand))) { opts.taken?.add(cand); return cand; }
-  }
-  return null;
+  // The base, then "-2" … "-99": the first one not taken in the database or this batch.
+  // All candidates are checked in one query.
+  const candidates = [base, ...Array.from({ length: 98 }, (_, k) => `${base}-${k + 2}`)];
+  const inDb = new Set((await prisma.student.findMany({ where: { id: { in: candidates } }, select: { id: true } })).map((s) => s.id));
+  const free = candidates.find((id) => !opts.taken?.has(id) && !inDb.has(id));
+  if (!free) return null;
+  opts.taken?.add(free);
+  return free;
 }

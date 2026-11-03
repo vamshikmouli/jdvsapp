@@ -1650,10 +1650,25 @@ export async function getHeadPayments(yearId: string, headKey: string, opts: { f
 // (applied automatically on admission). Pass `allClassAmount` for the manual
 // "Assign to all students" action, which should apply EVERY configured class fee.
 // Returns the number of heads newly charged.
-export async function autoAssignClassFees(studentId: string, classId: string, yearId: string, allClassAmount = false): Promise<number> {
+// The fee heads + class amounts autoAssignClassFees needs — load once and pass to every
+// call when assigning many students (bulk "assign to all", Excel import).
+export type ClassFeeConfig = Awaited<ReturnType<typeof loadClassFeeConfig>>;
+export async function loadClassFeeConfig(yearId: string, allClassAmount = false, classId?: string) {
   const feeTypes = await prisma.feeType.findMany({
     where: { billingMode: 'CLASS_AMOUNT', active: true, ...(allClassAmount ? {} : { autoAssign: true }) },
   });
+  const classFees = feeTypes.length ? await prisma.classFee.findMany({
+    where: { yearId, feeTypeId: { in: feeTypes.map((f) => f.id) }, ...(classId ? { classId } : {}) },
+    include: { installments: { orderBy: { n: 'asc' } } },
+  }) : [];
+  return { yearId, allClassAmount, feeTypes, classFees: new Map(classFees.map((cf) => [`${cf.classId}|${cf.feeTypeId}`, cf])) };
+}
+
+export async function autoAssignClassFees(studentId: string, classId: string, yearId: string, allClassAmount = false, config?: ClassFeeConfig): Promise<number> {
+  const cfg = config && config.yearId === yearId && config.allClassAmount === allClassAmount
+    ? config
+    : await loadClassFeeConfig(yearId, allClassAmount, classId);
+  const { feeTypes } = cfg;
   if (feeTypes.length === 0) return 0;
 
   const assignment = await prisma.studentFeeAssignment.upsert({
@@ -1664,32 +1679,27 @@ export async function autoAssignClassFees(studentId: string, classId: string, ye
   });
   const already = new Set(assignment.charges.map((c) => c.feeTypeId));
 
+  // All new charges in one insert. Charges are listed by creation time, so each head gets
+  // its own timestamp in the same order the heads used to be inserted one by one (a
+  // head's installments share one, as before).
+  const base = Date.now();
+  const data: { assignmentId: string; feeTypeId: string; label: string; amount: number; dueDate?: Date; installmentNo?: number; createdAt: Date }[] = [];
   let created = 0;
   for (const ft of feeTypes) {
     if (already.has(ft.id)) continue;
-    const cf = await prisma.classFee.findUnique({
-      where: { yearId_classId_feeTypeId: { yearId, classId, feeTypeId: ft.id } },
-      include: { installments: { orderBy: { n: 'asc' } } },
-    });
+    const cf = cfg.classFees.get(`${classId}|${ft.id}`);
     if (!cf || cf.amount <= 0) continue; // skip heads with no amount set for this class
+    const createdAt = new Date(base + created);
     if (ft.installmentable && cf.installments.length > 0) {
-      await prisma.feeCharge.createMany({
-        data: cf.installments.map((inst) => ({
-          assignmentId: assignment.id,
-          feeTypeId: ft.id,
-          label: `${ft.name} — Installment ${inst.n}`,
-          amount: inst.amount,
-          dueDate: inst.dueDate,
-          installmentNo: inst.n,
-        })),
-      });
+      for (const inst of cf.installments) {
+        data.push({ assignmentId: assignment.id, feeTypeId: ft.id, label: `${ft.name} — Installment ${inst.n}`, amount: inst.amount, dueDate: inst.dueDate, installmentNo: inst.n, createdAt });
+      }
     } else {
-      await prisma.feeCharge.create({
-        data: { assignmentId: assignment.id, feeTypeId: ft.id, label: ft.name, amount: cf.amount },
-      });
+      data.push({ assignmentId: assignment.id, feeTypeId: ft.id, label: ft.name, amount: cf.amount, createdAt });
     }
     created++;
   }
+  if (data.length) await prisma.feeCharge.createMany({ data });
   return created;
 }
 
