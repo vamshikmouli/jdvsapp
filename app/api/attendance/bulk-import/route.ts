@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { importAttendanceGroups } from '@/lib/services/attendanceRegister';
 import * as XLSX from 'xlsx';
 import type { AttendanceStatus } from '@prisma/client';
 import { getServerSession } from 'next-auth';
@@ -106,23 +107,9 @@ export async function POST(req: NextRequest) {
       groups.set(key, g);
     }
 
-    let sessionsTouched = 0, recordsUpserted = 0, skippedLocked = 0;
-    for (const g of groups.values()) {
-      let s = await prisma.attendanceSession.findUnique({ where: { classId_date_slot: { classId: g.classId, date: g.date, slot: g.slot } } });
-      if (s?.locked) { skippedLocked += g.recs.length; continue; }
-      if (!s) s = await prisma.attendanceSession.create({ data: { classId: g.classId, date: g.date, slot: g.slot, takenById: meId } });
-      await prisma.$transaction(
-        g.recs.map((rec) =>
-          prisma.attendanceRecord.upsert({
-            where: { sessionId_studentId: { sessionId: s!.id, studentId: rec.studentId } },
-            update: { status: rec.status },
-            create: { sessionId: s!.id, studentId: rec.studentId, status: rec.status },
-          }),
-        ),
-      );
-      sessionsTouched++;
-      recordsUpserted += g.recs.length;
-    }
+    // Locked (submitted) days are skipped; others are created if missing and the marks
+    // written — all groups together in a few queries.
+    const { sessionsTouched, recordsUpserted, skippedLocked } = await importAttendanceGroups(Array.from(groups.values()), meId);
 
     return NextResponse.json({ ok: true, sessions: sessionsTouched, records: recordsUpserted, skippedLocked, errors });
   } catch (err) {

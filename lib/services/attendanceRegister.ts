@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import type { AttendanceStatus } from '@prisma/client';
+import type { AttendanceStatus, Prisma } from '@prisma/client';
 
 /**
  * Write a month register's marks: for each day, the class's session at `slot` (created
@@ -42,7 +42,23 @@ export async function writeRegisterDays(
     written += recs.length;
   }
 
+  const toLock = sessions.filter((s) => wanted.has(s.id) && !s.locked).map((s) => s.id);
+  await writeAttendanceRecords(wanted, toLock.length ? [prisma.attendanceSession.updateMany({ where: { id: { in: toLock } }, data: { locked: true } })] : []);
+  return written;
+}
+
+/**
+ * Make each (session, student) hold the wanted status — same end state as one upsert per
+ * student: existing records read once, new ones inserted together, changed ones updated
+ * one query per status. `extra` writes join the same transaction. If someone else inserted
+ * the same student meanwhile (rare), our values still win, as upserts would.
+ */
+export async function writeAttendanceRecords(
+  wanted: Map<string, Map<string, AttendanceStatus>>,
+  extra: Prisma.PrismaPromise<unknown>[] = [],
+) {
   const sessionIds = Array.from(wanted.keys());
+  if (!sessionIds.length) { if (extra.length) await prisma.$transaction(extra); return; }
   const existing = await prisma.attendanceRecord.findMany({ where: { sessionId: { in: sessionIds } }, select: { id: true, sessionId: true, studentId: true, status: true } });
   const current = new Map(existing.map((r) => [`${r.sessionId}|${r.studentId}`, r]));
   const toCreate: { sessionId: string; studentId: string; status: AttendanceStatus }[] = [];
@@ -54,16 +70,11 @@ export async function writeRegisterDays(
       else if (r.status !== status) (toUpdate.get(status) || toUpdate.set(status, []).get(status)!).push(r.id);
     }
   }
-  const toLock = sessions.filter((s) => wanted.has(s.id) && !s.locked).map((s) => s.id);
-
   await prisma.$transaction([
     ...(toCreate.length ? [prisma.attendanceRecord.createMany({ data: toCreate, skipDuplicates: true })] : []),
     ...Array.from(toUpdate.entries()).map(([status, ids]) => prisma.attendanceRecord.updateMany({ where: { id: { in: ids } }, data: { status } })),
-    ...(toLock.length ? [prisma.attendanceSession.updateMany({ where: { id: { in: toLock } }, data: { locked: true } })] : []),
+    ...extra,
   ]);
-
-  // Someone else saved the same student in between (rare): make sure our values win, as
-  // the per-student upserts did.
   if (toCreate.length) {
     const after = await prisma.attendanceRecord.findMany({ where: { sessionId: { in: Array.from(new Set(toCreate.map((c) => c.sessionId))) } }, select: { sessionId: true, studentId: true, status: true } });
     const got = new Map(after.map((r) => [`${r.sessionId}|${r.studentId}`, r.status]));
@@ -76,5 +87,43 @@ export async function writeRegisterDays(
       })));
     }
   }
-  return written;
+}
+
+/**
+ * Attendance Excel import: per (class, date, session) group — skip the day if it's
+ * locked (submitted), else create it (unlocked) if missing and write the marks.
+ * Same results as the per-group lookups + per-student upserts it replaces.
+ */
+export async function importAttendanceGroups(
+  groups: { classId: string; date: Date; slot: string; recs: { studentId: string; status: AttendanceStatus }[] }[],
+  takenById: string | null,
+) {
+  let sessionsTouched = 0, recordsUpserted = 0, skippedLocked = 0;
+  if (!groups.length) return { sessionsTouched, recordsUpserted, skippedLocked };
+  const k = (classId: string, date: Date, slot: string) => `${classId}|${date.toISOString().slice(0, 10)}|${slot}`;
+  const find = async () => {
+    const rows = await prisma.attendanceSession.findMany({
+      where: { classId: { in: Array.from(new Set(groups.map((g) => g.classId))) }, date: { in: groups.map((g) => g.date) }, slot: { in: Array.from(new Set(groups.map((g) => g.slot))) } },
+      select: { id: true, classId: true, date: true, slot: true, locked: true },
+    });
+    return new Map(rows.map((r) => [k(r.classId, r.date, r.slot), r]));
+  };
+  let sessions = await find();
+  const missing = groups.filter((g) => !sessions.has(k(g.classId, g.date, g.slot)));
+  if (missing.length) {
+    await prisma.attendanceSession.createMany({ data: missing.map((g) => ({ classId: g.classId, date: g.date, slot: g.slot, takenById })), skipDuplicates: true });
+    sessions = await find();
+  }
+  const wanted = new Map<string, Map<string, AttendanceStatus>>();
+  for (const g of groups) {
+    const s = sessions.get(k(g.classId, g.date, g.slot));
+    if (!s) continue;
+    if (s.locked) { skippedLocked += g.recs.length; continue; }
+    const m = wanted.get(s.id) || wanted.set(s.id, new Map()).get(s.id)!;
+    for (const r of g.recs) m.set(r.studentId, r.status);
+    sessionsTouched++;
+    recordsUpserted += g.recs.length;
+  }
+  await writeAttendanceRecords(wanted);
+  return { sessionsTouched, recordsUpserted, skippedLocked };
 }
