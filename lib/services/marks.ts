@@ -149,17 +149,61 @@ export async function getClassGrid(sel: { assessmentId: string; classId: string;
 
 export interface MarkInput { studentId: string; marksObtained: number | null; isAbsent?: boolean; remark?: string | null }
 
+/** What saving needs about an exam + class, read once and shared by every subject saved. */
+interface SaveContext {
+  assessment: { id: string; defaultMax: number };
+  sheets: Map<string, Awaited<ReturnType<typeof findSheet>>>; // subjectId → existing sheet (or null)
+  setup: { subjectId: string; maxMarks: number }[] | null;   // the class's exam setup
+  overrides: Map<string, number>;                             // exam's per-subject max overrides
+}
+
+async function loadSaveContext(base: Omit<SheetSelector, 'subjectId'>, subjectIds: string[]): Promise<SaveContext> {
+  const assessment = await prisma.assessment.findUnique({ where: { id: base.assessmentId }, select: { id: true, defaultMax: true } });
+  if (!assessment) throw new Error('Assessment not found');
+  const [rows, setup, overrides] = await Promise.all([
+    prisma.markSheet.findMany({ where: { assessmentId: base.assessmentId, classId: base.classId, sectionId: base.sectionId ?? null, subjectId: { in: subjectIds } } }),
+    classExamSetup(base.assessmentId, base.classId),
+    prisma.assessmentSubject.findMany({ where: { assessmentId: base.assessmentId, subjectId: { in: subjectIds } }, select: { subjectId: true, maxMarks: true } }),
+  ]);
+  const sheets = new Map<string, Awaited<ReturnType<typeof findSheet>>>();
+  for (const id of subjectIds) sheets.set(id, rows.find((r) => r.subjectId === id) ?? null);
+  return { assessment, sheets, setup, overrides: new Map(overrides.map((o) => [o.subjectId, o.maxMarks])) };
+}
+
 /**
  * Save the grid (create sheet on first save). action: 'save' → DRAFT, 'submit' → SUBMITTED.
  * keepApproved: an approver correcting an already-approved sheet — it stays APPROVED, so
  * published report cards update at once instead of the marks vanishing until re-approval.
  */
 export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], action: 'save' | 'submit', userId: string | null, opts: { keepApproved?: boolean } = {}) {
-  const assessment = await prisma.assessment.findUnique({ where: { id: sel.assessmentId } });
-  if (!assessment) throw new Error('Assessment not found');
+  const ctx = await loadSaveContext(sel, [sel.subjectId]);
+  return saveOneSheet(ctx, sel, marks, action, userId, opts);
+}
 
-  let sheet = await findSheet(sel);
-  const maxMarks = sheet?.maxMarks ?? await resolveMax(sel.assessmentId, sel.subjectId, assessment.defaultMax, sel.classId);
+/** Save several subjects of one exam + class at once (the class grid) — lookups shared. */
+export async function saveMarkSheets(
+  base: Omit<SheetSelector, 'subjectId'>,
+  items: { subjectId: string; marks: MarkInput[]; action: 'save' | 'submit' }[],
+  userId: string | null,
+  opts: { keepApproved?: boolean } = {},
+) {
+  if (!items.length) return [];
+  const ctx = await loadSaveContext(base, items.map((it) => it.subjectId));
+  const out: { subjectId: string; sheetId: string; status: MarkSheetStatus }[] = [];
+  for (const it of items) {
+    const res = await saveOneSheet(ctx, { ...base, subjectId: it.subjectId }, it.marks, it.action, userId, opts);
+    out.push({ subjectId: it.subjectId, ...res });
+  }
+  return out;
+}
+
+async function saveOneSheet(ctx: SaveContext, sel: SheetSelector, marks: MarkInput[], action: 'save' | 'submit', userId: string | null, opts: { keepApproved?: boolean }) {
+  let sheet = ctx.sheets.get(sel.subjectId) ?? null;
+  // The configured max: the class's exam setup, else the exam's override, else defaultMax.
+  const maxMarks = sheet?.maxMarks
+    ?? ctx.setup?.find((x) => x.subjectId === sel.subjectId)?.maxMarks
+    ?? ctx.overrides.get(sel.subjectId)
+    ?? ctx.assessment.defaultMax;
 
   // Validate marks against the max.
   for (const m of marks) {
@@ -189,24 +233,49 @@ export async function saveMarkSheet(sel: SheetSelector, marks: MarkInput[], acti
         : { status, enteredById: userId, submittedAt: action === 'submit' ? new Date() : sheet.submittedAt },
     });
   }
-
-  // Upsert each student's mark.
-  await prisma.$transaction(
-    marks.map((m) =>
-      prisma.mark.upsert({
-        where: { markSheetId_studentId: { markSheetId: sheet!.id, studentId: m.studentId } },
-        create: {
-          markSheetId: sheet!.id, studentId: m.studentId,
-          marksObtained: m.isAbsent ? null : m.marksObtained, isAbsent: !!m.isAbsent, remark: m.remark || null,
-        },
-        update: {
-          marksObtained: m.isAbsent ? null : m.marksObtained, isAbsent: !!m.isAbsent, remark: m.remark || null,
-        },
-      })
-    )
-  );
-
+  ctx.sheets.set(sel.subjectId, sheet);
+  await writeMarks(sheet.id, marks);
   return { sheetId: sheet.id, status };
+}
+
+/**
+ * Store each student's mark — same end result as one upsert per student, but: new rows go
+ * in one insert, and only rows whose value actually changed are updated.
+ */
+async function writeMarks(markSheetId: string, marks: MarkInput[]) {
+  // Later entries for the same student win, as they did with sequential upserts.
+  const byStudent = new Map<string, { marksObtained: number | null; isAbsent: boolean; remark: string | null }>();
+  for (const m of marks) byStudent.set(m.studentId, { marksObtained: m.isAbsent ? null : m.marksObtained, isAbsent: !!m.isAbsent, remark: m.remark || null });
+  if (!byStudent.size) return;
+  const existing = await prisma.mark.findMany({
+    where: { markSheetId, studentId: { in: Array.from(byStudent.keys()) } },
+    select: { id: true, studentId: true, marksObtained: true, isAbsent: true, remark: true },
+  });
+  const have = new Map(existing.map((e) => [e.studentId, e]));
+  const toCreate: { markSheetId: string; studentId: string; marksObtained: number | null; isAbsent: boolean; remark: string | null }[] = [];
+  const toUpdate: { id: string; data: { marksObtained: number | null; isAbsent: boolean; remark: string | null } }[] = [];
+  for (const [studentId, v] of byStudent) {
+    const e = have.get(studentId);
+    if (!e) toCreate.push({ markSheetId, studentId, ...v });
+    else if (e.marksObtained !== v.marksObtained || e.isAbsent !== v.isAbsent || (e.remark ?? null) !== v.remark) toUpdate.push({ id: e.id, data: v });
+  }
+  await prisma.$transaction([
+    ...(toCreate.length ? [prisma.mark.createMany({ data: toCreate, skipDuplicates: true })] : []),
+    ...toUpdate.map((u) => prisma.mark.update({ where: { id: u.id }, data: u.data })),
+  ]);
+  // Someone else saved the same student in between (rare): fall back to upserts so our
+  // values still win, exactly as the per-student upserts did.
+  if (toCreate.length) {
+    const now = await prisma.mark.findMany({ where: { markSheetId, studentId: { in: toCreate.map((c) => c.studentId) } }, select: { studentId: true, marksObtained: true, isAbsent: true, remark: true } });
+    const stale = toCreate.filter((c) => { const n = now.find((x) => x.studentId === c.studentId); return !n || n.marksObtained !== c.marksObtained || n.isAbsent !== c.isAbsent || (n.remark ?? null) !== c.remark; });
+    if (stale.length) {
+      await prisma.$transaction(stale.map((c) => prisma.mark.upsert({
+        where: { markSheetId_studentId: { markSheetId, studentId: c.studentId } },
+        create: c,
+        update: { marksObtained: c.marksObtained, isAbsent: c.isAbsent, remark: c.remark },
+      })));
+    }
+  }
 }
 
 /** Admin approves or returns a submitted sheet. */
@@ -258,14 +327,22 @@ export async function getStudentReport(studentId: string, yearId: string) {
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
   });
 
+  // Approved sheets that hold a mark for this child — whatever class / section they were
+  // entered under (section-wise or whole-class), so a section mismatch can't hide them.
+  // One query for every published exam, grouped per exam below.
+  const allSheets = assessments.length ? await prisma.markSheet.findMany({
+    where: { assessmentId: { in: assessments.map((a) => a.id) }, status: 'APPROVED', marks: { some: { studentId } } },
+    include: { subject: { select: { name: true, order: true, gradeOnly: true } }, marks: { where: { studentId } } },
+  }) : [];
+  const sheetsByAssessment = new Map<string, typeof allSheets>();
+  for (const sh of allSheets) {
+    const list = sheetsByAssessment.get(sh.assessmentId);
+    if (list) list.push(sh); else sheetsByAssessment.set(sh.assessmentId, [sh]);
+  }
+
   const out: any[] = [];
   for (const a of assessments) {
-    // Approved sheets that hold a mark for this child — whatever class / section they were
-    // entered under (section-wise or whole-class), so a section mismatch can't hide them.
-    const sheets = await prisma.markSheet.findMany({
-      where: { assessmentId: a.id, status: 'APPROVED', marks: { some: { studentId } } },
-      include: { subject: { select: { name: true, order: true, gradeOnly: true } }, marks: { where: { studentId } } },
-    });
+    const sheets = sheetsByAssessment.get(a.id) || [];
 
     const subjects: { name: string; order: number; marks: number | null; isAbsent: boolean; max: number; grade: string | null; gradeOnly: boolean }[] = [];
     let totObt = 0, totMax = 0;
@@ -320,35 +397,43 @@ export async function setAssessmentSubjectMaxes(assessmentId: string, items: { s
   const a = await prisma.assessment.findUnique({ where: { id: assessmentId }, select: { defaultMax: true } });
   if (!a) throw new Error('Assessment not found');
   // Refuse a max below a mark already entered (checked for all subjects before saving any).
-  for (const it of items) {
-    const max = Math.round(Number(it.max));
+  // Everything the check needs is read in two queries, then checked subject by subject in
+  // the given order (same rule and message as before).
+  const subjectIds = items.map((it) => it.subjectId);
+  let customRows: { subjectId: string; classId: string }[] = [];
+  try { customRows = await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: { in: subjectIds } }, select: { subjectId: true, classId: true } }); } catch { /* table not created yet */ }
+  const customBySubject = new Map<string, Set<string>>();
+  for (const r of customRows) (customBySubject.get(r.subjectId) || customBySubject.set(r.subjectId, new Set()).get(r.subjectId)!).add(r.classId);
+  const maxes = items.map((it) => Math.round(Number(it.max)));
+  const lowest = Math.min(...maxes.filter((m) => m > 0), Infinity);
+  const candidates = Number.isFinite(lowest) ? await prisma.mark.findMany({
+    where: { marksObtained: { gt: lowest }, markSheet: { assessmentId, subjectId: { in: subjectIds } } },
+    select: { marksObtained: true, markSheet: { select: { subjectId: true, classId: true, subject: { select: { name: true } }, class: { select: { name: true } } } } },
+    orderBy: { marksObtained: 'desc' },
+  }) : [];
+  items.forEach((it, i) => {
+    const max = maxes[i];
     if (!(max > 0)) throw new Error('Max marks must be greater than 0');
-    let customCls: string[] = [];
-    try { customCls = (await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: it.subjectId }, select: { classId: true } })).map((x) => x.classId); } catch { /* table not created yet */ }
-    const over = await prisma.mark.findFirst({
-      where: { marksObtained: { gt: max }, markSheet: { assessmentId, subjectId: it.subjectId, ...(customCls.length ? { classId: { notIn: customCls } } : {}) } },
-      select: { marksObtained: true, markSheet: { select: { subject: { select: { name: true } }, class: { select: { name: true } } } } },
-      orderBy: { marksObtained: 'desc' },
-    });
+    const custom = customBySubject.get(it.subjectId);
+    const over = candidates.find((m) => m.markSheet.subjectId === it.subjectId && (m.marksObtained ?? 0) > max && !custom?.has(m.markSheet.classId));
     if (over) throw new Error(`${over.markSheet.subject.name}: a mark of ${over.marksObtained} is already entered in ${over.markSheet.class.name.replace(/\s?STD$/i, '')} — max can't be below that.`);
-  }
-  for (const it of items) {
-    const max = Math.round(Number(it.max));
-    if (max === a.defaultMax) {
-      await prisma.assessmentSubject.deleteMany({ where: { assessmentId, subjectId: it.subjectId } });
-    } else {
-      await prisma.assessmentSubject.upsert({
-        where: { assessmentId_subjectId: { assessmentId, subjectId: it.subjectId } },
-        create: { assessmentId, subjectId: it.subjectId, maxMarks: max },
-        update: { maxMarks: max },
-      });
-    }
-    // Keep already-created sheets (approved ones too) in sync with the new max — except in
-    // classes whose exam setup sets their own max for this subject.
-    let custom: string[] = [];
-    try { custom = (await prisma.assessmentClassSubject.findMany({ where: { assessmentId, subjectId: it.subjectId }, select: { classId: true } })).map((x) => x.classId); } catch { /* table not created yet */ }
-    await prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, ...(custom.length ? { classId: { notIn: custom } } : {}) }, data: { maxMarks: max } });
-  }
+  });
+  // Save all subjects together; existing sheets (approved ones too) follow the new max —
+  // except in classes whose exam setup sets their own max for this subject.
+  await prisma.$transaction(items.flatMap((it, i) => {
+    const max = maxes[i];
+    const custom = Array.from(customBySubject.get(it.subjectId) || []);
+    return [
+      max === a.defaultMax
+        ? prisma.assessmentSubject.deleteMany({ where: { assessmentId, subjectId: it.subjectId } })
+        : prisma.assessmentSubject.upsert({
+          where: { assessmentId_subjectId: { assessmentId, subjectId: it.subjectId } },
+          create: { assessmentId, subjectId: it.subjectId, maxMarks: max },
+          update: { maxMarks: max },
+        }),
+      prisma.markSheet.updateMany({ where: { assessmentId, subjectId: it.subjectId, ...(custom.length ? { classId: { notIn: custom } } : {}) }, data: { maxMarks: max } }),
+    ];
+  }));
   return { ok: true };
 }
 
@@ -366,10 +451,20 @@ export async function listPendingSheets() {
       _count: { select: { marks: true } },
     },
   });
-  // roster size per (class, section) to show coverage
+  // Roster size per (class, section) to show coverage — one grouped count for all sheets
+  // (same rule as before: active students of the class, of the section if the sheet has one).
+  const classIds = Array.from(new Set(sheets.map((s) => s.classId)));
+  const groups = classIds.length
+    ? await prisma.student.groupBy({ by: ['classId', 'sectionId'], where: { status: 'ACTIVE', classId: { in: classIds } }, _count: { _all: true } })
+    : [];
+  const bySection = new Map<string, number>(), byClass = new Map<string, number>();
+  for (const g of groups) {
+    bySection.set(`${g.classId}|${g.sectionId ?? ''}`, g._count._all);
+    byClass.set(g.classId!, (byClass.get(g.classId!) || 0) + g._count._all);
+  }
   const result = [] as any[];
   for (const s of sheets) {
-    const roster = await prisma.student.count({ where: { classId: s.classId, ...(s.sectionId ? { sectionId: s.sectionId } : {}), status: 'ACTIVE' } });
+    const roster = s.sectionId ? (bySection.get(`${s.classId}|${s.sectionId}`) || 0) : (byClass.get(s.classId) || 0);
     result.push({
       id: s.id,
       assessment: s.assessment.name, type: s.assessment.type,
@@ -468,12 +563,19 @@ export async function diagnoseParentReport(studentId: string, yearId: string) {
   });
   const classId = enrollment?.classId || student.classId;
   const assessments = await prisma.assessment.findMany({ where: { yearId }, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] });
+  // One query for every exam's sheets (this class's, or any holding a mark for the child).
+  const allSheets = assessments.length ? await prisma.markSheet.findMany({
+    where: { assessmentId: { in: assessments.map((a) => a.id) }, OR: [...(classId ? [{ classId }] : []), { marks: { some: { studentId } } }] },
+    include: { subject: { select: { name: true, order: true } }, section: { select: { name: true } }, marks: { where: { studentId }, select: { marksObtained: true, isAbsent: true } } },
+  }) : [];
+  const sheetsByAssessment = new Map<string, typeof allSheets>();
+  for (const sh of allSheets) {
+    const list = sheetsByAssessment.get(sh.assessmentId);
+    if (list) list.push(sh); else sheetsByAssessment.set(sh.assessmentId, [sh]);
+  }
   const out = [];
   for (const a of assessments) {
-    const sheets = await prisma.markSheet.findMany({
-      where: { assessmentId: a.id, OR: [...(classId ? [{ classId }] : []), { marks: { some: { studentId } } }] },
-      include: { subject: { select: { name: true, order: true } }, section: { select: { name: true } }, marks: { where: { studentId }, select: { marksObtained: true, isAbsent: true } } },
-    });
+    const sheets = sheetsByAssessment.get(a.id) || [];
     const subjects = sheets
       .sort((x, y) => x.subject.order - y.subject.order)
       .map((sh) => {

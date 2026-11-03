@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/authOptions';
 import { can, getClassScope } from '@/lib/rbac/roles';
-import { getClassGrid, saveMarkSheet } from '@/lib/services/marks';
+import { getClassGrid, saveMarkSheets } from '@/lib/services/marks';
 
 async function classAllowed(session: any, classId: string) {
   if (can(session, 'MARKS_APPROVE')) return true;
@@ -52,7 +52,7 @@ export async function PUT(req: NextRequest) {
   const current = await getClassGrid({ assessmentId, classId, sectionId });
   const statusBySubject = new Map((current?.subjects || []).map((s) => [s.id, s.status]));
 
-  const results: { subjectId: string; status: string }[] = [];
+  const items: { subjectId: string; marks: { studentId: string; marksObtained: number | null; isAbsent: boolean }[]; action: 'save' | 'submit' }[] = [];
   try {
     for (const sub of inputSubjects) {
       const subjectId = String(sub.subjectId || '');
@@ -69,9 +69,12 @@ export async function PUT(req: NextRequest) {
       const hasEntry = marks.some((m: any) => m.isAbsent || m.marksObtained != null);
       const effective: 'save' | 'submit' = action === 'submit' && hasEntry ? 'submit' : 'save';
 
-      const res = await saveMarkSheet({ assessmentId, classId, subjectId, sectionId }, marks, effective, userId);
-      results.push({ subjectId, status: res.status });
+      items.push({ subjectId, marks, action: effective });
     }
+    // All subjects in one go (shared lookups, bulk mark writes). An approver correcting
+    // approved marks keeps them approved — same rule as the single-subject save.
+    const saved = await saveMarkSheets({ assessmentId, classId, sectionId }, items, userId, { keepApproved: isAdmin });
+    const results = saved.map((r) => ({ subjectId: r.subjectId, status: r.status }));
     return NextResponse.json({ ok: true, results });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to save' }, { status: 400 });
