@@ -1,7 +1,5 @@
 import { prisma } from '@/lib/db';
-import {
-  synthesizeDays, parseWeekSchedule, parseWorkPattern, parseWorkDays, ATTENDANCE_START_KEY,
-} from '@/lib/staffAttendance/schedule';
+import { synthesizeDays, ATTENDANCE_START_KEY } from '@/lib/staffAttendance/schedule';
 
 // Days the staff member showed up (half day still counts as a day attended).
 const ATTENDED = new Set(['PRESENT', 'LATE', 'HALF_DAY']);
@@ -61,27 +59,25 @@ export async function workedDaysForStaff(
   for (const s of staff) byStaff.set(s.id, []);
   for (const d of stored) byStaff.get(d.staffId)?.push({ date: d.date.toISOString().slice(0, 10), status: String(d.status) });
 
+  // ONE school-wide working-days count (standard calendar: every non-weekly-off
+  // day that isn't a holiday, up to today), so every staff member shares the SAME
+  // denominator — a person who comes every day shows total/total, no more, no less.
+  const schoolSynth = synthesizeDays({
+    fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing: new Set(), holidays: holidaySet,
+    weekSchedule: null, workPattern: 'FULL', workDays: null, weeklyOffDays: opts.weeklyOffDays,
+  });
+  const schoolWorkingDays = schoolSynth.filter((d) => WORKING.has(d.status)).length;
+
   for (const s of staff) {
     const rows = byStaff.get(s.id) || [];
-    const existing = new Set(rows.map((d) => d.date));
-    const synthetic = synthesizeDays({
-      fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing, holidays: holidaySet,
-      weekSchedule: parseWeekSchedule(s.weekSchedule),
-      workPattern: parseWorkPattern(s.workPattern),
-      workDays: parseWorkDays(s.workDays),
-      weeklyOffDays: opts.weeklyOffDays,
+    let attended = 0;
+    for (const d of rows) if (ATTENDED.has(d.status)) attended++;
+    result.set(s.id, {
+      attended: Math.min(attended, schoolWorkingDays), // never exceed the shared total
+      workingDays: schoolWorkingDays,
+      fromKey: opts.fromKey,
+      toKey: opts.toKey,
     });
-
-    let attended = 0, workingDays = 0;
-    for (const d of rows) {
-      if (WORKING.has(d.status)) workingDays++;
-      if (ATTENDED.has(d.status)) attended++;
-    }
-    for (const d of synthetic) {
-      if (WORKING.has(d.status)) workingDays++;
-      if (ATTENDED.has(d.status)) attended++;
-    }
-    result.set(s.id, { attended, workingDays, fromKey: opts.fromKey, toKey: opts.toKey });
   }
   return result;
 }
