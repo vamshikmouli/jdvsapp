@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@/lib/db';
-import { importFeeSheet } from '@/lib/services/feeSheet';
+import { importFeeSheet, buildFeeSheet } from '@/lib/services/feeSheet';
 
 // Wide fee-sheet import against the local DB with throwaway fee heads / students.
 // Pins: charges created / updated, receipts per payment date, a student spanning two
@@ -82,11 +82,37 @@ describe('importFeeSheet', () => {
     });
   });
 
-  it('re-importing a student\'s single-row sheet is a no-op', async () => {
-    // NOTE: re-importing a student whose payments span SEVERAL rows currently adds a
-    // duplicate receipt (existing behaviour, unrelated to the query batching) — not pinned here.
+  it('re-importing the same sheet is a no-op (also for a student spanning two rows)', async () => {
     const before = await snapshot();
-    const r: any = await importFeeSheet(rows.filter((x) => x['Student ID'] === S2), { dryRun: false, yearId, userId: null });
+    const r: any = await importFeeSheet(rows, { dryRun: false, yearId, userId: null });
+    expect(r.paymentsCreated).toBe(0);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('a payment already recorded by UPI on that date is not duplicated', async () => {
+    const asg = await prisma.studentFeeAssignment.findUnique({ where: { studentId_yearId: { studentId: S2, yearId } }, include: { charges: true } });
+    const pay = await prisma.payment.create({ data: { studentId: S2, yearId, receiptNo: `${T}-UPI`, method: 'UPI', total: 250, paidAt: new Date('2026-09-05T00:00:00Z') } });
+    await prisma.paymentAllocation.create({ data: { paymentId: pay.id, feeChargeId: asg!.charges[0].id, amount: 250 } });
+    const before = await snapshot();
+    const r: any = await importFeeSheet([{ 'Student ID': S2, Name: S2, [`${TU} — Assigned`]: '', [`${TU} — Paid`]: 250, [`${TU} — Date`]: '05/09/2026' }], { dryRun: false, yearId, userId: null });
+    expect(r.paymentsCreated).toBe(0);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('raising a paid amount in the sheet records only the difference', async () => {
+    const r: any = await importFeeSheet([{ 'Student ID': S1, Name: S1, [`${TU} — Assigned`]: '', [`${TU} — Paid`]: 450, [`${TU} — Date`]: '01/07/2026', [`${BO} — Assigned`]: '', [`${BO} — Paid`]: 100, [`${BO} — Date`]: '01/07/2026' }], { dryRun: false, yearId, userId: null });
+    expect(r.paymentsCreated).toBe(1);
+    const p = (await snapshot())[S1].payments;
+    expect(p).toContainEqual(['2026-07-01', 'CASH', 50, 'Imported (fee sheet)', [[TU, 50]]]);
+    expect(p.length).toBe(3);
+  });
+
+  it('Export → upload the exported sheet straight back = no change', async () => {
+    const sheet = await buildFeeSheet(yearId, classId);
+    const objs = sheet.rows.map((r) => Object.fromEntries(sheet.header.map((h, i) => [h, r[i]])));
+    expect(objs.length).toBeGreaterThan(0);
+    const before = await snapshot();
+    const r: any = await importFeeSheet(objs, { dryRun: false, yearId, userId: null });
     expect(r.paymentsCreated).toBe(0);
     expect(await snapshot()).toEqual(before);
   });

@@ -234,8 +234,19 @@ export async function importFeeSheet(rawRows: any[], opts: { dryRun: boolean; ye
   const rowStudentIds = Array.from(new Set(parsedRows.map((r) => r.student.id)));
   const [preAssignments, prePays] = rowStudentIds.length ? await Promise.all([
     prisma.studentFeeAssignment.findMany({ where: { yearId, studentId: { in: rowStudentIds } }, include: assignmentInclude }),
-    prisma.payment.findMany({ where: { yearId, studentId: { in: rowStudentIds } }, select: { studentId: true, paidAt: true, method: true, total: true } }),
+    prisma.payment.findMany({ where: { yearId, studentId: { in: rowStudentIds } }, select: { studentId: true, paidAt: true, method: true, total: true, allocations: { select: { amount: true, feeCharge: { select: { feeTypeId: true, label: true } } } } } }),
   ]) : [[], []];
+  // What was already recorded BEFORE this upload, per student + date + fee head (any
+  // payment mode; voided receipts have no allocations so they don't count). A sheet line
+  // records only what's missing — so re-uploading the same sheet adds nothing, even when
+  // a student's payments span several rows or were paid by UPI / card.
+  const headKey = (sid: string, date: string, feeTypeId: string, label: string) =>
+    `${sid}|${date}|${feeTypeId}|${uniformType && feeTypeId === uniformType.id ? norm(stripUni(label)) : ''}`;
+  const recordedBefore = new Map<string, number>();
+  for (const p of prePays) for (const a of p.allocations) {
+    const k = headKey(p.studentId, iso(p.paidAt), a.feeCharge.feeTypeId, a.feeCharge.label);
+    recordedBefore.set(k, (recordedBefore.get(k) || 0) + a.amount);
+  }
   const assignmentCache = new Map<string, (typeof preAssignments)[number] | null>(rowStudentIds.map((id) => [id, preAssignments.find((a) => a.studentId === id) ?? null]));
   const paysCache = new Map<string, { paidAt: Date; method: PayMethod; total: number }[]>(rowStudentIds.map((id) => [id, []]));
   for (const p of prePays) paysCache.get(p.studentId)!.push(p);
@@ -269,7 +280,11 @@ export async function importFeeSheet(rawRows: any[], opts: { dryRun: boolean; ye
     const receipts: { date: Date; allocs: { slot: Slot; amount: number }[] }[] = [];
     for (const [k, ss] of byDate) {
       const allocs: { slot: Slot; amount: number }[] = [];
-      for (const s of ss) { const give = Math.min(s.line.paid, s.free); if (give > 0) { allocs.push({ slot: s, amount: give }); s.free -= give; } }
+      for (const s of ss) {
+        const missing = s.line.paid - (recordedBefore.get(headKey(sid, k, s.line.feeTypeId, s.line.label)) || 0);
+        const give = Math.min(missing, s.free);
+        if (give > 0) { allocs.push({ slot: s, amount: give }); s.free -= give; }
+      }
       const total = allocs.reduce((t, a) => t + a.amount, 0);
       if (total > 0 && !existKeys.has(k + '|CASH|' + total)) receipts.push({ date: new Date(k + 'T00:00:00.000Z'), allocs });
     }
