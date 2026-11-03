@@ -48,12 +48,13 @@ export async function recomputeStreakForward(staffId: string, fromDateKey: strin
     orderBy: { date: 'asc' },
     select: { id: true, status: true, currentStreak: true },
   });
+  const updates: { id: string; streak: number }[] = [];
   for (const d of days) {
     streak = d.status === 'PRESENT' ? streak + 1 : 0;
-    if (d.currentStreak !== streak) {
-      await prisma.staffAttendanceDay.update({ where: { id: d.id }, data: { currentStreak: streak } });
-    }
+    if (d.currentStreak !== streak) updates.push({ id: d.id, streak });
   }
+  // Only the days whose streak changed, sent together (was one round trip per day).
+  if (updates.length) await prisma.$transaction(updates.map((u) => prisma.staffAttendanceDay.update({ where: { id: u.id }, data: { currentStreak: u.streak } })));
 }
 
 /** Recompute and persist the StaffAttendanceDay roll-up for one local day. */
