@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
           weekSchedule: true,
           workPattern: true,
           workDays: true,
+          joiningDate: true,
           attCredentials: { where: { active: true }, select: { id: true } },
         },
       }),

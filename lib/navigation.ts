@@ -10,6 +10,8 @@ export const STAFF_NAV: NavGroup[] = [
       { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }, // always
       // Natural-language Ask over fees + attendance (needs either view permission).
       { id: 'ask', label: 'Ask', icon: 'Sparkles', perm: ['FEES_VIEW', 'ATTENDANCE_VIEW'] },
+      // Live building board (who is teaching where right now) — all staff, full-screen in a new tab.
+      { id: 'whos-where', label: "Who's where", icon: 'School', newTab: true },
     ],
   },
   {

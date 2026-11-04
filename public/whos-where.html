@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en" data-src="/api/timetable">
+<!-- Who's where board, generated from the timetable app (D:\apps\timetableapp\static\board.html).
+     Edit it there and run sync_board_to_erp.py. data-src makes it read the
+     published timetable from /api/timetable. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who's Where — Jnana Deepika</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Segoe UI,Arial,sans-serif;color:var(--ink);background:#dfeefb}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:8px 18px;background:#fff;border-bottom:1px solid var(--line);position:relative;z-index:5}
+  header h1{font-size:20px;margin:0}
+  .hleft{display:flex;align-items:center;gap:10px}
+  .hbtn{display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;
+    background:#fff;color:var(--ink);font:600 14px Segoe UI,Arial,sans-serif;text-decoration:none;cursor:pointer;white-space:nowrap}
+  .hbtn:hover{background:#f1f5f9}
+  .status{font-size:19px;font-weight:700}
+  .status small{display:block;font-weight:500;color:var(--muted);font-size:14px}
+  .clock{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right;line-height:1.1}
+  .clock small{display:block;font-size:15px;font-weight:600;color:var(--muted)}
+  #fit{overflow:hidden}
+  /* Drawn at a fixed size and scaled to the screen, so the building never reflows. */
+  #scene{width:1990px;transform-origin:top left;position:relative;padding:8px 0 0;
+    background:linear-gradient(#a9d3f5 0%,#d4e9fa 45%,#eef6fc 80%)}
+  .cloud{position:absolute;background:#fff;border-radius:50px;opacity:.85}
+  .cloud::before,.cloud::after{content:"";position:absolute;background:#fff;border-radius:50%}
+  .cloud::before{width:60%;height:160%;left:15%;top:-70%}
+  .cloud::after{width:40%;height:130%;left:50%;top:-45%}
+
+  .yard{position:relative;display:flex;align-items:flex-end;padding:0 10px}
+  .tree{flex:none;margin-right:-8px;position:relative;z-index:0}
+
+  .building{position:relative;z-index:1;width:1500px;flex:none}
+  .nameboard{position:relative;z-index:3;width:1040px;margin:0 auto -4px;padding:12px 10px;text-align:center;white-space:nowrap;
+    background:linear-gradient(#93242b,#6c151b);color:#f7d77e;border:3px solid #caa24c;border-radius:4px;
+    font:800 30px/1.1 Georgia,"Times New Roman",serif;letter-spacing:.07em;box-shadow:0 6px 12px rgba(0,0,0,.3)}
+  .nameboard::before,.nameboard::after{content:"";position:absolute;bottom:-16px;width:8px;height:14px;background:#6b6257}
+  .nameboard::before{left:60px}.nameboard::after{right:60px}
+  .parapet{position:relative;z-index:2;height:28px;background:linear-gradient(#f1e4c8,#dcc79f);
+    border-top:7px solid #b49b72;box-shadow:0 7px 9px -3px rgba(0,0,0,.35)}
+
+  .storey{position:relative;background:#e1cba1;border-left:20px solid #d4bd92;border-right:20px solid #d4bd92;
+    padding:30px 0 10px}
+  .flabel{position:absolute;left:16px;top:5px;font:800 18px/1.2 Segoe UI,Arial,sans-serif;color:#7a6446;
+    text-transform:uppercase;letter-spacing:.12em}
+  .slab{position:relative;z-index:2;height:16px;background:linear-gradient(#c3bba9,#9a917f);
+    box-shadow:0 7px 9px -2px rgba(0,0,0,.33)}
+  .bays{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;padding:0 14px}
+  .railing{position:relative;z-index:1;height:26px;margin-top:-26px;
+    background:linear-gradient(#5f4b3b,#4d3b2e) top/100% 5px no-repeat,
+               repeating-linear-gradient(90deg,#6c5644 0 5px,transparent 5px 18px)}
+  .plinth{height:18px;background:linear-gradient(#a9a49b,#8d877c);border-left:20px solid #9d978c;border-right:20px solid #9d978c}
+  .ground{height:26px;background:linear-gradient(#86b862,#5e8f3f);margin-top:-2px}
+
+  /* the separate 2nd-standard block standing in front */
+  .annex{position:relative;z-index:4;flex:none;width:370px;margin-left:-14px;align-self:stretch;
+    display:flex;flex-direction:column;justify-content:flex-end;
+    filter:drop-shadow(-8px 6px 8px rgba(0,0,0,.28))}
+
+  /* staff notice board in the open space above the 2nd block: who is free right now */
+  .freebox{flex:1;min-height:0;margin:0 6px 34px 30px;display:flex;flex-direction:column}
+  .cork{flex:1;min-height:0;overflow:hidden;padding:12px 12px 14px;border:11px solid #7c5333;border-radius:4px;
+    background:radial-gradient(circle at 20% 30%,rgba(255,255,255,.08) 0 2px,transparent 3px) 0 0/14px 14px,
+               radial-gradient(circle at 70% 60%,rgba(80,50,20,.18) 0 2px,transparent 3px) 0 0/17px 17px,#c79a62;
+    box-shadow:inset 0 0 12px rgba(0,0,0,.35);font-size:21px;display:flex;flex-direction:column;gap:.45em}
+  .ftitle{align-self:center;padding:.3em .9em;background:#fffdf3;color:#5b4636;transform:rotate(-1deg);
+    font:800 1.1em/1.1 Georgia,serif;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+  .fsub{align-self:center;font:700 .75em Segoe UI,Arial,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .chips{display:flex;flex-wrap:wrap;gap:.45em;justify-content:center}
+  .chip{position:relative;padding:.35em .6em .3em;background:#fff6c9;color:#3f392f;box-shadow:0 2px 3px rgba(0,0,0,.3);
+    font:700 1em/1.15 Segoe UI,Arial,sans-serif;text-align:center}
+  .chip small{display:block;font-size:.66em;font-weight:600;color:#7a6446}
+  .chip::before{content:"";position:absolute;top:-.25em;left:50%;width:.4em;height:.4em;margin-left:-.2em;border-radius:50%;background:#2f6db3}
+  .fnone{align-self:center;margin-top:.6em;padding:.4em .8em;background:#fffdf3;font:700 .9em Segoe UI,Arial,sans-serif;color:#5b4636}
+  .annex .nameboard{width:250px;font-size:22px;padding:8px 6px;margin-bottom:-4px}
+  .annex .nameboard::before{left:24px}.annex .nameboard::after{right:24px}
+  .annex .bays{grid-template-columns:1fr;padding:0 12px}
+  .annex .storey{background:#e8d3ab}
+  .annex .flabel{font-size:15px}
+
+  /* a classroom, seen through its open front */
+  .bay{position:relative;height:262px;overflow:hidden;border-radius:2px;
+    background:linear-gradient(#fbf5e8,#f1e5cc);
+    box-shadow:inset 0 0 0 3px #c9ae84,inset 0 20px 26px -14px rgba(0,0,0,.3)}
+  .bay .tiles{position:absolute;left:0;right:0;bottom:0;height:30px;
+    background:conic-gradient(#d9c7a7 25%,#c7b18b 0 50%,#d9c7a7 0 75%,#c7b18b 0) 0 0/22px 22px;
+    box-shadow:inset 0 4px 4px -2px rgba(0,0,0,.2)}
+  .bay .desks{position:absolute;left:18px;right:18px;bottom:8px;height:12px;
+    background:repeating-linear-gradient(90deg,#8b5d37 0 36px,transparent 36px 54px);opacity:.9}
+  .plate{position:absolute;z-index:2;top:7px;left:50%;transform:translateX(-50%);white-space:nowrap;
+    padding:5px 18px;border-radius:3px;background:linear-gradient(#f6de93,#c99e3e);color:#3a2905;
+    font:800 25px/1 Georgia,"Times New Roman",serif;box-shadow:0 2px 4px rgba(0,0,0,.35)}
+  .board{position:absolute;top:46px;left:10px;right:10px;height:150px;padding:6px 12px;
+    background:radial-gradient(ellipse at 30% 30%,#2f6049,#1d4434);border:6px solid #7c5333;border-radius:3px;
+    box-shadow:0 3px 6px rgba(0,0,0,.4);display:flex;flex-direction:column;justify-content:center;gap:4px;
+    font-family:"Segoe Print","Bradley Hand","Comic Sans MS",cursive;font-size:30px;color:#f5f5ee;overflow:hidden}
+  /* labelled chalk lines: a small SUBJECT / TEACHER label, then the value. Sizes are in em
+     so a board with long names can shrink its writing to fit (see fitBoards). */
+  .board .row{display:flex;flex-direction:column;line-height:1.1}
+  .board .lbl{font:800 .44em/1.1 Segoe UI,Arial,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#9fd8bb}
+  .board .subj{font-size:1em;font-weight:700;line-height:1.1}
+  .board .who{font-size:.8em;color:#ffe7a0;line-height:1.15}
+  .board .big{font-size:1em;font-weight:700;text-align:center}
+  .board .line{font-size:.64em;line-height:1.2}
+  .board .line b{color:#fff}
+  .board .line span{color:#ffe7a0}
+  .note{position:absolute;z-index:2;left:10px;right:10px;top:204px;padding:4px 8px;
+    background:#fffdf3;color:#3f392f;font-size:18px;font-weight:600;line-height:1.3;box-shadow:0 2px 3px rgba(0,0,0,.25);
+    transform:rotate(-.6deg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .note::before{content:"";position:absolute;top:-4px;left:50%;width:8px;height:8px;margin-left:-4px;
+    border-radius:50%;background:#c0392b}
+  .bay.away::after,.bay.dark::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none}
+  .bay.away::after{background:rgba(40,40,60,.18)}
+  .bay.dark::after{background:rgba(25,35,60,.38)}
+  .bay.lab{background:linear-gradient(#eef8f4,#d7ece3)}
+  .bay.comp{background:linear-gradient(#eef4fb,#d8e5f4)}
+  .bay.comp .desks{height:18px;bottom:7px;
+    background:repeating-linear-gradient(90deg,#2f3a48 0 22px,transparent 22px 30px,#8b5d37 30px 38px,transparent 38px 54px)}
+  .bay.office{background:linear-gradient(#f6f1ea,#e9e0d3)}
+  .bay.office .sign{position:absolute;top:96px;left:50%;transform:translateX(-50%);padding:12px 22px;white-space:nowrap;
+    background:#fff;border:2px solid #a8916c;border-radius:4px;font:700 26px Georgia,serif;color:#5b4636}
+
+  footer{position:fixed;bottom:0;left:0;right:0;z-index:5;background:#fff;border-top:1px solid var(--line);
+    padding:6px 18px;display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap}
+  footer select,footer input{border:1px solid #cbd5e1;border-radius:6px;padding:3px 6px;font-size:13px}
+  footer label{display:flex;gap:4px;align-items:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="hleft">
+    <a class="hbtn" id="back" href="/">← Back</a>
+    <button class="hbtn" id="fs" type="button" hidden>⛶ Full screen</button>
+    <h1>🏫 Who's where</h1>
+  </div>
+  <div class="status" id="status">Loading…</div>
+  <div class="clock" id="clock"></div>
+</header>
+<div id="fit"><div id="scene"></div></div>
+<footer>
+  <label><input type="checkbox" id="live" checked> Live</label>
+  <span>or preview:</span>
+  <select id="pday"></select>
+  <input type="time" id="ptime" value="10:00">
+  <span id="pub" style="margin-left:auto;color:#6b7280"></span>
+</footer>
+<script>
+// Where the timetable comes from: the PC timetable app's latest generated file, or — when
+// this same page is served by the ERP (<html data-src="/api/timetable">) — the published one.
+const DATA_URL = document.documentElement.dataset.src || "/out/timetable.json";
+const IN_ERP = !!document.documentElement.dataset.src;
+// Opened as a file, the browser can't read the timetable — go to the app's address instead.
+const APP_BOARD = "http://localhost:5000/board";
+if (!IN_ERP && location.protocol === "file:") location.replace(APP_BOARD);
+
+// The main building, top storey first; rooms left-to-right. 2nd standard is in a
+// separate small block standing in front of the main building.
+const SCHOOL = "JNANA DEEPIKA VIDHYA SAMSTHE, KYALANUR";
+const PLAN = [
+  {floor: "Second floor", rooms: ["5th", "4th", "3rd", "7th", "6th"]},
+  {floor: "First floor",  rooms: ["8th", "9th", "10th", "Computer room", "Office"]},
+  {floor: "Ground floor", rooms: ["LKG", "UKG", "Kreedo Lab", "Pre-KG", "1st"]},
+];
+const ANNEX = {name: "2nd Std Block", rooms: ["2nd"]};
+const LAB = "Kreedo Lab", COMPUTER = "Computer room", OFFICE = "Office";
+
+// Bell times (from the school's sheets). Friday's P5 is before lunch.
+const P = [["09:50","10:30"],["10:30","11:10"],["11:10","11:50"],["11:50","12:30"]];
+const BELLS = {
+  Friday:   {periods: [...P, ["12:30","13:10"], ["13:50","14:30"], ["14:30","15:10"], ["15:10","15:50"]], lunch: ["13:10","13:50"]},
+  Saturday: {periods: P, lunch: null},
+  _:        {periods: [...P, ["13:10","13:50"], ["13:50","14:30"], ["14:30","15:10"], ["15:10","15:50"]], lunch: ["12:30","13:10"]},
+};
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const mins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const fmt = t => { let [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(m).padStart(2, "0")} ${ap}`; };
+
+let TT = null;
+const $ = id => document.getElementById(id);
+const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+function where(day, m) {
+  const b = BELLS[day] || BELLS._;
+  if (day === "Sunday") return {kind: "closed"};
+  for (let i = 0; i < b.periods.length; i++) {
+    const [s, e] = b.periods[i];
+    if (m >= mins(s) && m < mins(e)) return {kind: "period", idx: i, start: s, end: e, next: i + 1 < b.periods.length ? i + 1 : null};
+  }
+  if (b.lunch && m >= mins(b.lunch[0]) && m < mins(b.lunch[1])) {
+    const nxt = b.periods.findIndex(p => mins(p[0]) >= mins(b.lunch[1]));
+    return {kind: "lunch", end: b.lunch[1], next: nxt};
+  }
+  if (m < mins(b.periods[0][0])) return {kind: "before", next: 0, end: b.periods[0][0]};
+  return {kind: "after"};
+}
+
+const isLab = s => /\(Lab\)$/.test(s || "");
+const isComputer = s => s === "Computer";
+const people = c => [c.teacher, c.co, c.support].filter(Boolean);
+const cellOf = (cls, day, idx) => (idx == null ? null : TT.classes[cls]?.[day]?.[idx]) || null;
+
+// ---- scenery
+function tree(scale) {
+  const ns = "http://www.w3.org/2000/svg";
+  const s = document.createElementNS(ns, "svg");
+  s.setAttribute("viewBox", "0 0 140 220"); s.setAttribute("class", "tree");
+  s.setAttribute("width", 140 * scale); s.setAttribute("height", 220 * scale);
+  s.innerHTML = `<rect x="62" y="120" width="16" height="100" rx="4" fill="#7a5235"/>
+    <circle cx="70" cy="86" r="52" fill="#4f8a3a"/><circle cx="40" cy="110" r="34" fill="#5c9a44"/>
+    <circle cx="102" cy="108" r="36" fill="#478235"/><circle cx="74" cy="52" r="34" fill="#63a24a"/>
+    <circle cx="56" cy="74" r="14" fill="#78b85d" opacity=".7"/>`;
+  return s;
+}
+function cloud(x, y, w) {
+  const c = el("div", "cloud");
+  Object.assign(c.style, {left: x + "px", top: y + "px", width: w + "px", height: w * .32 + "px"});
+  return c;
+}
+
+function storey(label, rooms, day, w, inRoom, last) {
+  const s = el("div", "storey");
+  s.append(el("div", "flabel", label));
+  const bays = el("div", "bays");
+  for (const name of rooms) bays.append(bay(name, day, w, inRoom));
+  s.append(bays);
+  return s;
+}
+
+function render() {
+  if (!TT) return;
+  const now = new Date(), live = $("live").checked;
+  let day, m;
+  if (live) {
+    day = DAYS[now.getDay()]; m = now.getHours() * 60 + now.getMinutes();
+    // keep the preview boxes on today, so switching to preview starts from now
+    if ([...$("pday").options].some(o => o.value === day)) $("pday").value = day;
+    $("ptime").value = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  } else { day = $("pday").value; m = mins($("ptime").value || "10:00"); }
+  const clock = $("clock");
+  clock.textContent = live ? now.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}) : fmt($("ptime").value);
+  clock.append(el("small", null, live ? now.toLocaleDateString([], {weekday: "long", day: "numeric", month: "long"})
+                                      : `${day} · preview`));
+
+  const w = where(day, m);
+  const st = $("status");
+  st.textContent = {
+    period: () => `${day} · Period ${w.idx + 1} (${fmt(w.start)} – ${fmt(w.end)})`,
+    lunch: () => `${day} · Lunch break`,
+    before: () => `${day} · School starts ${fmt(w.end)}`,
+    after: () => `${day} · School is over for today`,
+    closed: () => "Sunday · No school today",
+  }[w.kind]();
+  if (w.end && (w.kind === "period" || w.kind === "lunch")) st.append(el("small", null, `next bell in ${mins(w.end) - m} min`));
+
+  // Who is in the lab / computer room this period
+  const inRoom = {[LAB]: [], [COMPUTER]: []};
+  if (w.kind === "period") for (const cls of Object.keys(TT.classes)) {
+    const c = cellOf(cls, day, w.idx);
+    if (!c) continue;
+    if (isLab(c.subject)) inRoom[LAB].push([cls, c]);
+    else if (isComputer(c.subject)) inRoom[COMPUTER].push([cls, c]);
+  }
+
+  const scene = $("scene");
+  scene.textContent = "";
+  scene.append(cloud(20, 30, 120), cloud(1840, 40, 130));
+
+  const b = el("div", "building");
+  b.append(el("div", "nameboard", SCHOOL), el("div", "parapet"));
+  PLAN.forEach((f, fi) => {
+    b.append(storey(f.floor, f.rooms, day, w, inRoom));
+    if (fi < PLAN.length - 1) b.append(el("div", "railing"), el("div", "slab"));
+  });
+  b.append(el("div", "plinth"));
+
+  const a = el("div", "annex");
+  a.append(freeBoard(day, w), el("div", "nameboard", ANNEX.name), el("div", "parapet"),
+           storey("In front", ANNEX.rooms, day, w, inRoom), el("div", "plinth"));
+
+  const yard = el("div", "yard");
+  yard.append(tree(0.9), b, a);
+  scene.append(yard, el("div", "ground"));
+  fitBoards();
+  fitCork();
+  fit();
+}
+
+// Cork notice board: teachers with no class this period, and where they go next.
+function freeBoard(day, w) {
+  const box = el("div", "freebox"), cork = el("div", "cork");
+  box.append(cork);
+  cork.append(el("div", "ftitle", "Free teachers"));
+  if (w.kind !== "period") {
+    cork.append(el("div", "fnone", {lunch: "Lunch break", before: `School starts ${fmt(w.end || "09:50")}`}[w.kind] || "School is closed"));
+    return box;
+  }
+  cork.append(el("div", "fsub", `Period ${w.idx + 1} · ${fmt(w.start)} – ${fmt(w.end)}`));
+  const cells = Object.keys(TT.classes).map(c => cellOf(c, day, w.idx)).filter(Boolean);
+  if (cells.length && cells.every(c => c.reserved)) { cork.append(el("div", "fnone", cells[0].subject || "Assembly")); return box; }
+  const free = Object.keys(TT.teachers).filter(t => !TT.teachers[t][day]?.[w.idx]).sort();
+  if (!free.length) { cork.append(el("div", "fnone", "Everyone is teaching")); return box; }
+  const chips = el("div", "chips");
+  free.forEach((t, i) => {
+    const c = el("div", "chip", t);
+    c.style.transform = `rotate(${(i % 3 - 1) * 1.3}deg)`;
+    const nx = w.next == null ? null : TT.teachers[t][day]?.[w.next];
+    c.append(el("small", null, w.next == null ? "last period" : nx ? `next: ${nx.class} ${nx.subject}` : "free next too"));
+    chips.append(c);
+  });
+  cork.append(chips);
+  return box;
+}
+
+// Shrink the notice board's writing if many teachers are free at once.
+function fitCork() {
+  const c = document.querySelector(".cork");
+  if (!c) return;
+  let size = 30;
+  c.style.fontSize = size + "px";
+  while (c.scrollHeight > c.clientHeight + 1 && size > 12) c.style.fontSize = --size + "px";
+}
+
+// Shrink the chalk writing on any board whose text doesn't fit (long or several names).
+function fitBoards() {
+  for (const b of document.querySelectorAll(".board")) {
+    let size = 30;
+    while ((b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1) && size > 15) {
+      b.style.fontSize = --size + "px";
+    }
+  }
+}
+
+function nextText(cls, day, w) {
+  const c = cellOf(cls, day, w.next);
+  if (!c || !c.subject) return null;
+  return `${w.kind === "lunch" ? "After lunch" : "Next"}: ${c.subject} — ${people(c).join(" + ") || "—"}`;
+}
+
+// A chalkboard of labelled lines: [label, value, style]. No label = one big centred line.
+function board(...rows) {
+  const bd = el("div", "board");
+  for (const [lbl, val, cls] of rows) {
+    if (!val) continue;
+    if (!lbl) { bd.append(el("div", "big", val)); continue; }
+    const r = el("div", "row");
+    r.append(el("div", "lbl", lbl), el("div", cls, val));
+    bd.append(r);
+  }
+  return bd;
+}
+const teacherLbl = list => (list.length > 1 ? "Teachers" : "Teacher");
+
+function bay(name, day, w, inRoom) {
+  const r = el("div", "bay");
+  r.append(el("div", "tiles"), el("div", "desks"), el("div", "plate", name));
+
+  if (name === OFFICE) {
+    r.classList.add("office");
+    r.append(el("div", "sign", "School Office"));
+    if (w.kind !== "period" && w.kind !== "lunch" && w.kind !== "before") r.classList.add("dark");
+    return r;
+  }
+
+  if (name === LAB || name === COMPUTER) {
+    r.classList.add(name === LAB ? "lab" : "comp");
+    const here = inRoom[name];
+    if (w.kind !== "period") { r.append(board([null, w.kind === "lunch" ? "Lunch break" : "—"])); if (w.kind !== "lunch") r.classList.add("dark"); return r; }
+    if (!here.length) { r.append(board([null, "Free"])); r.classList.add("away"); return r; }
+    if (here.length === 1) {
+      const [cls, c] = here[0];
+      r.append(board(["Class · Subject", `${cls} · ${c.subject}`, "subj"], [teacherLbl(people(c)), people(c).join(" + "), "who"]));
+      return r;
+    }
+    // two classes share the room: one compact line each
+    const bd = el("div", "board");
+    for (const [cls, c] of here) {
+      const ln = el("div", "line");
+      ln.append(el("b", null, `${cls} · ${c.subject}`), " ", el("span", null, people(c).join(" + ")));
+      bd.append(ln);
+    }
+    r.append(bd);
+    return r;
+  }
+
+  if (w.kind === "lunch") {
+    r.append(board([null, "Lunch break"]));
+    const n = nextText(name, day, w); if (n) r.append(el("div", "note", n));
+    return r;
+  }
+  if (w.kind !== "period") {
+    r.classList.add("dark");
+    if (w.kind === "before") { r.append(board([null, "Good morning!"])); const n = nextText(name, day, w); if (n) r.append(el("div", "note", n)); }
+    return r;
+  }
+
+  const c = cellOf(name, day, w.idx);
+  if (!c || !c.subject) { r.append(board([null, "—"])); return r; }
+  if (isLab(c.subject) || isComputer(c.subject)) {
+    r.classList.add("away");
+    r.append(board(["Subject", c.subject, "subj"], ["Gone to", isLab(c.subject) ? LAB : COMPUTER, "who"]));
+  } else {
+    const who = people(c);
+    r.append(board(["Subject", c.subject, "subj"],
+                   [c.supervised ? "Supervising" : teacherLbl(who), who.join(" + "), "who"]));
+  }
+  const n = nextText(name, day, w); if (n) r.append(el("div", "note", n));
+  return r;
+}
+
+// Scale the fixed-size scene to the screen. On a landscape screen (PC, TV) the whole
+// building fits in view; on a portrait phone it fills the width and scrolls.
+function fit() {
+  const sc = $("scene"), box = $("fit");
+  const availW = box.clientWidth;
+  const availH = innerHeight - document.querySelector("header").offsetHeight - document.querySelector("footer").offsetHeight;
+  let s = availW / sc.offsetWidth;
+  if (innerWidth > innerHeight) s = Math.min(s, availH / sc.offsetHeight);
+  s = Math.min(2.2, s);
+  sc.style.transform = `scale(${s})`;
+  sc.style.marginLeft = Math.max(0, (availW - sc.offsetWidth * s) / 2) + "px";
+  box.style.height = sc.offsetHeight * s + document.querySelector("footer").offsetHeight + "px";
+}
+window.addEventListener("resize", fit);
+
+async function load() {
+  try {
+    const r = await fetch(`${DATA_URL}?t=${Date.now()}`, {credentials: "same-origin"});
+    if (!r.ok) {
+      let msg = "HTTP " + r.status;
+      try { msg = (await r.json()).error || msg; } catch {}
+      if (r.status === 401) msg = "please sign in to the ERP first";
+      else if (r.status === 404 && !IN_ERP) msg = "no timetable generated yet — Generate one in the app first";
+      throw new Error(msg);
+    }
+    TT = await r.json();
+  } catch (e) {
+    const st = $("status");
+    st.textContent = location.protocol === "file:"
+      ? "Start the timetable app (start.bat), then open: "
+      : "Couldn't load the timetable: " + e.message;
+    if (location.protocol === "file:") { const a = el("a", null, APP_BOARD); a.href = APP_BOARD; st.append(a); }
+    return;
+  }
+  $("pday").innerHTML = "";
+  for (const d of TT.days) { const o = el("option", null, d); o.value = d; $("pday").append(o); }
+  $("pub").textContent = `Timetable ${TT.academicYear} · ` +
+    (TT.publishedAt ? `published ${new Date(TT.publishedAt).toLocaleString()}` : `solved for ${TT.forDate}`);
+  render();
+}
+// Back: to the ERP dashboard (or the timetable app on the PC). The ERP shows the board
+// inside a frame, so leave via the top window.
+$("back").href = IN_ERP ? "/admin/dashboard" : "/";
+$("back").onclick = e => { e.preventDefault(); window.top.location.href = $("back").href; };
+
+// Full screen for a TV or phone; the same button exits (as do Esc and the phone's back gesture).
+if (document.fullscreenEnabled) {
+  const fsBtn = $("fs");
+  fsBtn.hidden = false;
+  fsBtn.onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  document.addEventListener("fullscreenchange", () => {
+    fsBtn.textContent = document.fullscreenElement ? "✕ Exit full screen" : "⛶ Full screen";
+    fit();
+  });
+}
+
+$("live").onchange = render; $("pday").onchange = () => { $("live").checked = false; render(); };
+$("ptime").oninput = () => { $("live").checked = false; render(); };
+setInterval(render, 30000);          // move to the next teacher when the bell changes
+setInterval(load, 10 * 60 * 1000);   // pick up a newly published timetable
+load();
+</script>
+</body>
+</html>

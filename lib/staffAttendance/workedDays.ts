@@ -20,6 +20,14 @@ export interface StaffSched {
   weekSchedule: unknown;
   workPattern: unknown;
   workDays: unknown;
+  joiningDate?: Date | string | null; // counts from here if later than the year start
+}
+
+/** A Date / ISO string / date-key → YYYY-MM-DD key, or null. */
+function dateKeyOf(d: Date | string | null | undefined): string | null {
+  if (!d) return null;
+  if (typeof d === 'string') return d.slice(0, 10);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -61,44 +69,38 @@ export async function workedDaysForStaff(
   for (const s of staff) byStaff.set(s.id, []);
   for (const d of stored) byStaff.get(d.staffId)?.push({ date: d.date.toISOString().slice(0, 10), status: String(d.status) });
 
-  // ONE school-wide working-days count on the STANDARD calendar (every non-weekly-off
-  // day that isn't a holiday, up to today). Every normal daily staff member shares
-  // this denominator, so it never drifts — a daily attender shows total/total.
-  const schoolSynth = synthesizeDays({
-    fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing: new Set(), holidays: holidaySet,
-    weekSchedule: null, workPattern: 'FULL', workDays: null, weeklyOffDays: opts.weeklyOffDays,
-  });
-  const schoolWorkingDays = schoolSynth.filter((d) => WORKING.has(d.status)).length;
-
   for (const s of staff) {
-    const rows = byStaff.get(s.id) || [];
-    let attended = 0;
-    for (const d of rows) if (ATTENDED.has(d.status)) attended++;
+    // Each staff member is counted ONLY from the later of the academic-year start
+    // and their own joining date — so someone who joined in September isn't measured
+    // against (and penalised for) the months before they started. Their own schedule
+    // (alternate-day / custom week) and any extra days off fall out naturally, since
+    // the denominator is built from their own working days, not a shared total.
+    const joinKey = dateKeyOf(s.joiningDate);
+    const fromKey = joinKey && joinKey > opts.fromKey ? joinKey : opts.fromKey;
 
-    // Custom-schedule staff (alternate-day / their own week schedule) get THEIR OWN
-    // working-day count — e.g. an alternate-day teacher who never misses shows 60/60,
-    // not 60/120. Everyone else uses the shared school total.
+    const rows = (byStaff.get(s.id) || []).filter((d) => d.date >= fromKey);
     const ws = parseWeekSchedule(s.weekSchedule);
     const wd = parseWorkDays(s.workDays);
     const wp = parseWorkPattern(s.workPattern);
-    const isCustom = ws !== null || wd !== null || wp !== 'FULL';
 
-    let workingDays = schoolWorkingDays;
-    if (isCustom) {
-      const existing = new Set(rows.map((d) => d.date));
-      const synth = synthesizeDays({
-        fromKey: opts.fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing, holidays: holidaySet,
-        weekSchedule: ws, workPattern: wp, workDays: wd, weeklyOffDays: opts.weeklyOffDays,
-      });
-      workingDays = 0;
-      for (const d of rows) if (WORKING.has(d.status)) workingDays++;
-      for (const d of synth) if (WORKING.has(d.status)) workingDays++;
-    }
+    // Fill the gaps (no stored row) with their expected status, so a working day they
+    // didn't record counts as a working day not attended — but a weekly-off / holiday
+    // doesn't count toward the denominator.
+    const existing = new Set(rows.map((d) => d.date));
+    const synth = synthesizeDays({
+      fromKey, toKey: opts.toKey, todayKey: opts.toKey, existing, holidays: holidaySet,
+      weekSchedule: ws, workPattern: wp, workDays: wd, weeklyOffDays: opts.weeklyOffDays,
+    });
+
+    let attended = 0;
+    let workingDays = 0;
+    for (const d of rows) { if (ATTENDED.has(d.status)) attended++; if (WORKING.has(d.status)) workingDays++; }
+    for (const d of synth) if (WORKING.has(d.status)) workingDays++;
 
     result.set(s.id, {
       attended: Math.min(attended, workingDays), // never exceed the total
       workingDays,
-      fromKey: opts.fromKey,
+      fromKey,
       toKey: opts.toKey,
     });
   }

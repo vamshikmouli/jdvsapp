@@ -58,6 +58,11 @@ export default function AdminLayout({
     return <div className="min-h-screen bg-slate-50">{children}</div>;
   }
 
+  // The Who's where board is a full-screen display (often on a staffroom TV).
+  if (pathname.startsWith('/admin/whos-where')) {
+    return <div className="h-screen overflow-hidden">{children}</div>;
+  }
+
   // The monthly attendance register is a wide grid — give it the full window (no
   // sidebar, no max-width shell) so all the day columns fit. Opened in a new tab.
   if (pathname.startsWith('/admin/attendance/register')) {

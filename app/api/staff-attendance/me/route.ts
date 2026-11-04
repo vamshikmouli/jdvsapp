@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         where: { staffId, date: { gte: monthStart, lte: monthEnd } },
         orderBy: { date: 'asc' },
       }),
-      prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true, pinHash: true } }),
+      prisma.staff.findUnique({ where: { id: staffId }, select: { weekSchedule: true, workPattern: true, workDays: true, joiningDate: true, pinHash: true } }),
       prisma.holiday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
       // All stored days up to today — enough to compute the running streak live.
       prisma.staffAttendanceDay.findMany({
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
     // Year-to-date worked days (attended / working days since the academic year start).
     const yr = await getActiveYear();
     const workedMap = await workedDaysForStaff(
-      [{ id: staffId, weekSchedule: staffRec?.weekSchedule, workPattern: staffRec?.workPattern, workDays: staffRec?.workDays }],
+      [{ id: staffId, weekSchedule: staffRec?.weekSchedule, workPattern: staffRec?.workPattern, workDays: staffRec?.workDays, joiningDate: staffRec?.joiningDate }],
       { fromKey: academicYearStartKey(yr?.id), toKey: todayKey, weeklyOffDays: cfg.schedule.weeklyOffDays },
     );
     const yearStats = workedMap.get(staffId) ?? null;

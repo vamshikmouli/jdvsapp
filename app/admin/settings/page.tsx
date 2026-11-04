@@ -40,7 +40,7 @@ interface DeviceSession {
   isCurrent: boolean;
 }
 
-type Tab = 'school' | 'attendance' | 'sectionlock' | 'backup' | 'deploy' | 'account';
+type Tab = 'school' | 'attendance' | 'sectionlock' | 'backup' | 'deploy' | 'slowqueries' | 'account';
 
 function relativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -64,6 +64,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'sectionlock', label: 'Section lock', icon: 'Lock' },
   { id: 'backup', label: 'Backup & restore', icon: 'Database' },
   { id: 'deploy', label: 'Deploy', icon: 'Rocket' },
+  { id: 'slowqueries', label: 'Slow queries', icon: 'Gauge' },
   { id: 'account', label: 'My account', icon: 'UserCircle' },
 ];
 
@@ -167,7 +168,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        {TABS.filter((t) => ((t.id !== 'backup' && t.id !== 'sectionlock' && t.id !== 'deploy') || canManage)).map((t) => (
+        {TABS.filter((t) => ((t.id !== 'backup' && t.id !== 'sectionlock' && t.id !== 'deploy' && t.id !== 'slowqueries') || canManage)).map((t) => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setError(''); }}
@@ -315,8 +316,117 @@ export default function SettingsPage() {
 
       {tab === 'sectionlock' && canManage && <SectionLockTab />}
 
+      {tab === 'slowqueries' && canManage && <SlowQueriesTab />}
+
       {tab === 'account' && <AccountTab session={session} />}
     </>
+  );
+}
+
+// ---------- Slow queries tab ----------
+interface SlowRow { id: string; model: string | null; operation: string; durationMs: number; argKeys: string | null; at: string }
+interface SlowSummary { key: string; count: number; avgMs: number; maxMs: number }
+interface SlowData { total: number; thresholdMs: number; summary: SlowSummary[]; rows: SlowRow[] }
+
+function SlowQueriesTab() {
+  const [data, setData] = useState<SlowData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr('');
+    try {
+      const r = await fetch('/api/settings/slow-queries');
+      const d = await r.json().catch(() => null);
+      if (!d) throw new Error('Took too long to load. Please try again.');
+      if (!r.ok) throw new Error(d.error || 'Could not load slow queries');
+      setData(d);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not load slow queries'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const clearLog = async () => {
+    if (!window.confirm('Clear the whole slow-query log? This cannot be undone.')) return;
+    try {
+      const r = await fetch('/api/settings/slow-queries', { method: 'DELETE' });
+      if (!r.ok) throw new Error('Could not clear');
+      toast.success('Slow-query log cleared.');
+      load();
+    } catch { toast.error('Could not clear the log.'); }
+  };
+
+  const fmtAt = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
+
+  return (
+    <Card className="mt-4">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <div className="text-base font-bold text-slate-900">Slow queries</div>
+          <div className="text-[13px] text-slate-500 mt-0.5">
+            Database operations slower than {data ? <b>{data.thresholdMs}ms</b> : 'the threshold'}, captured automatically. Arg values aren’t stored — only which fields (where / orderBy / …).
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button icon="RefreshCw" onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
+          <a href="/api/settings/slow-queries?format=csv" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+            <Icon name="Download" size={15} /> Download CSV
+          </a>
+        </div>
+      </div>
+
+      {err && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-lg p-2.5 text-sm text-danger-700">{err}</div>}
+      {loading && !data && <div className="mt-4 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={40} />)}</div>}
+
+      {data && !loading && (
+        data.total === 0 ? (
+          <div className="mt-6 text-center text-sm text-slate-400 py-8">
+            <Icon name="CheckCircle2" size={26} className="mx-auto mb-2 text-success-500" />
+            No slow queries recorded. Everything is running under {data.thresholdMs}ms.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-5">
+            {/* Worst offenders, grouped */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Worst offenders ({data.total} total)</div>
+              <div className="rounded-lg border border-slate-100 divide-y divide-slate-50 overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 bg-slate-50/60">
+                  <span>Query</span><span className="text-right">Count</span><span className="text-right">Avg</span><span className="text-right">Max</span>
+                </div>
+                {data.summary.slice(0, 20).map((s) => (
+                  <div key={s.key} className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-[13px] items-center">
+                    <span className="font-medium text-slate-800 truncate">{s.key}</span>
+                    <span className="text-right text-slate-600 tabular-nums">{s.count.toLocaleString('en-IN')}</span>
+                    <span className="text-right text-slate-600 tabular-nums">{s.avgMs}ms</span>
+                    <span className={`text-right font-semibold tabular-nums ${s.maxMs >= 2000 ? 'text-danger-600' : 'text-marigold-700'}`}>{s.maxMs}ms</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent events */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Most recent (last {data.rows.length})</div>
+              <div className="rounded-lg border border-slate-100 divide-y divide-slate-50 max-h-96 overflow-y-auto">
+                {data.rows.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-800 truncate">{r.model ? `${r.model}.` : ''}{r.operation}</div>
+                      <div className="text-[11.5px] text-slate-400 truncate">{fmtAt(r.at)}{r.argKeys ? ` · ${r.argKeys}` : ''}</div>
+                    </div>
+                    <span className={`flex-shrink-0 font-semibold tabular-nums ${r.durationMs >= 2000 ? 'text-danger-600' : 'text-marigold-700'}`}>{r.durationMs}ms</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button icon="Trash2" onClick={clearLog}>Clear log</Button>
+            </div>
+          </div>
+        )
+      )}
+    </Card>
   );
 }
 

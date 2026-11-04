@@ -244,6 +244,100 @@ export async function sendAuthTemplate(opts: {
   return { ok: true, id: j?.messages?.[0]?.id };
 }
 
+// ---- Billing analytics: per-template spend (Meta template_analytics) ----
+// Meta's template_analytics returns, per template per day, how many messages were
+// sent/delivered and the amount spent (`cost` → `amount_spent`). It needs analytics
+// turned on for the WABA first (a one-way `is_enabled_for_insights=true`), covers at
+// most the last 90 days, and accepts up to 10 template ids per request.
+
+/** Is analytics/insights collection turned on for this WABA? null = couldn't tell. */
+export async function getWaInsightsEnabled(): Promise<boolean | null> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const waba = process.env.WHATSAPP_WABA_ID;
+  if (!token || !waba) return null;
+  const r = await fetch(`${GRAPH}/${waba}?fields=is_enabled_for_insights&access_token=${token}`);
+  const j: any = await r.json().catch(() => ({}));
+  if (j.error || typeof j.is_enabled_for_insights !== 'boolean') return null;
+  return j.is_enabled_for_insights;
+}
+
+/** Turn analytics on for this WABA. One-way — Meta can't turn it back off. */
+export async function enableWaInsights(): Promise<{ ok: boolean; error?: string }> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const waba = process.env.WHATSAPP_WABA_ID;
+  if (!token || !waba) return { ok: false, error: 'WhatsApp WABA is not configured.' };
+  const r = await fetch(`${GRAPH}/${waba}?is_enabled_for_insights=true&access_token=${token}`, { method: 'POST' });
+  const j: any = await r.json().catch(() => ({}));
+  if (j.error) return { ok: false, error: j.error.error_user_msg || j.error.message || 'Could not enable analytics.' };
+  return { ok: true };
+}
+
+export interface TemplateSpendRow {
+  templateId: string;
+  name: string;
+  category: string | null;
+  sent: number;
+  delivered: number;
+  amountSpent: number;
+}
+export interface TemplateSpendReport {
+  rows: TemplateSpendRow[];
+  total: number;
+  error?: string;
+}
+
+/**
+ * Per-template amount spent between two YYYY-MM-DD dates (inclusive), from Meta.
+ * `end` is sent as the next day's 00:00 UTC so the final day is counted.
+ */
+export async function getTemplateSpend(startDate: string, endDate: string): Promise<TemplateSpendReport> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const waba = process.env.WHATSAPP_WABA_ID;
+  if (!token || !waba) return { rows: [], total: 0, error: 'WhatsApp is not configured on the server.' };
+
+  // 1) Every template, id → name/category.
+  const tr = await fetch(`${GRAPH}/${waba}/message_templates?fields=id,name,category&limit=500&access_token=${token}`);
+  const tj: any = await tr.json().catch(() => ({}));
+  if (tj.error) return { rows: [], total: 0, error: tj.error.message || 'Could not list templates.' };
+  const templates: { id: string; name: string; category: string | null }[] =
+    (tj.data || []).map((t: any) => ({ id: String(t.id), name: t.name, category: t.category ?? null }));
+  if (!templates.length) return { rows: [], total: 0 };
+
+  const toUnix = (d: string, addDays = 0) =>
+    Math.floor(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10) + addDays) / 1000);
+  const start = toUnix(startDate);
+  const end = toUnix(endDate, 1);
+
+  const byId = new Map<string, TemplateSpendRow>();
+  for (const t of templates) byId.set(t.id, { templateId: t.id, name: t.name, category: t.category, sent: 0, delivered: 0, amountSpent: 0 });
+
+  // 2) template_analytics — 10 ids per request (Meta's cap).
+  for (let i = 0; i < templates.length; i += 10) {
+    const ids = templates.slice(i, i + 10).map((t) => t.id);
+    const url = `${GRAPH}/${waba}/template_analytics?granularity=DAILY&start=${start}&end=${end}`
+      + `&metric_types=COST,SENT,DELIVERED&template_ids=${ids.join(',')}&access_token=${token}`;
+    const r = await fetch(url);
+    const j: any = await r.json().catch(() => ({}));
+    if (j.error) return { rows: [], total: 0, error: j.error.error_user_msg || j.error.message || 'Could not load spend from Meta.' };
+    for (const series of (j.data || [])) {
+      for (const dp of (series.data_points || [])) {
+        const row = byId.get(String(dp.template_id));
+        if (!row) continue;
+        row.sent += Number(dp.sent || 0);
+        row.delivered += Number(dp.delivered || 0);
+        const spent = Array.isArray(dp.cost) ? (dp.cost.find((c: any) => c.type === 'amount_spent')?.value ?? 0) : 0;
+        row.amountSpent += Number(spent || 0);
+      }
+    }
+  }
+
+  const rows = Array.from(byId.values())
+    .filter((r) => r.sent > 0 || r.amountSpent > 0)
+    .sort((a, b) => b.amountSpent - a.amountSpent);
+  const total = rows.reduce((s, r) => s + r.amountSpent, 0);
+  return { rows, total };
+}
+
 /** Upload a PNG to the WhatsApp media store; returns the media id used in a send. */
 export async function uploadWhatsAppMedia(png: Buffer): Promise<string> {
   const token = process.env.WHATSAPP_TOKEN;

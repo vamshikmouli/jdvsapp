@@ -13,7 +13,7 @@ interface CircularItem {
 interface ClassOpt { id: string; name: string }
 
 export default function CommunicationsPage() {
-  const [tab, setTab] = useState<'circulars' | 'reminders' | 'monthly' | 'devices' | 'analytics'>('circulars');
+  const [tab, setTab] = useState<'circulars' | 'reminders' | 'monthly' | 'spend' | 'devices' | 'analytics'>('circulars');
   const [items, setItems] = useState<CircularItem[] | null>(null);
   const [classes, setClasses] = useState<ClassOpt[]>([]);
   const [composeCircular, setComposeCircular] = useState(false);
@@ -30,7 +30,7 @@ export default function CommunicationsPage() {
   // "new parent reply" push notification).
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t && ['circulars', 'reminders', 'monthly', 'analytics', 'devices'].includes(t)) setTab(t as typeof tab);
+    if (t && ['circulars', 'reminders', 'monthly', 'spend', 'analytics', 'devices'].includes(t)) setTab(t as typeof tab);
   }, []);
 
   const del = async (id: string) => {
@@ -56,7 +56,7 @@ export default function CommunicationsPage() {
       />
 
       <div className="flex flex-nowrap items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
+        {([['circulars', 'Circulars', 'Megaphone'], ['reminders', 'Fee reminders', 'IndianRupee'], ['monthly', 'Monthly attendance', 'CalendarCheck'], ['spend', 'WhatsApp spend', 'Wallet'], ['analytics', 'Analytics', 'BarChart3'], ['devices', 'Installed devices', 'Smartphone']] as const).map(([id, label, icon]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`inline-flex flex-shrink-0 whitespace-nowrap items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             <Icon name={icon as any} size={16} />{label}
@@ -66,9 +66,10 @@ export default function CommunicationsPage() {
 
       {tab === 'devices' && <DevicesPanel />}
       {tab === 'analytics' && <AnalyticsPanel />}
+      {tab === 'spend' && <SpendPanel />}
       {tab === 'monthly' && <><ContinuousAbsentees /><MonthlyAttendancePanel classes={classes} /></>}
 
-      {tab !== 'devices' && tab !== 'analytics' && tab !== 'monthly' && (
+      {tab !== 'devices' && tab !== 'analytics' && tab !== 'spend' && tab !== 'monthly' && (
       <div className="mt-5 space-y-3 max-w-3xl">
         <label className="flex items-center justify-end gap-2 text-xs text-slate-500 cursor-pointer">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500/20" />
@@ -183,7 +184,7 @@ function ContinuousAbsentees() {
 /* ---------- Monthly attendance: appreciation/improvement image + message ---------- */
 type Tier = 'perfect' | 'great' | 'good' | 'low';
 interface MonthStudent { student: string; className: string | null; tier: Tier; pct: number; status: string; to?: string; error?: string }
-interface MonthResult { monthLabel: string; total: number; sent: number; failed: number; skipped: number; already: number; held: number; dailyLimit: number; usedToday: number; tiers: Record<Tier, number>; details: MonthStudent[]; waConfigured?: boolean }
+interface MonthResult { monthLabel: string; total: number; sent: number; failed: number; skipped: number; already: number; tiers: Record<Tier, number>; details: MonthStudent[]; waConfigured?: boolean }
 const TIER_META: Record<Tier, { label: string; chip: string; dot: string }> = {
   perfect: { label: 'All present', chip: 'bg-success-50 text-success-700 border-success-100', dot: 'bg-success-500' },
   great: { label: '90%+', chip: 'bg-info-50 text-info-700 border-info-100', dot: 'bg-info-500' },
@@ -207,12 +208,19 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
   const [dFilter, setDFilter] = useState<DeliveryState | 'ALL'>('ALL');
   const [dBusy, setDBusy] = useState(false);
 
+  // A long request can be cut off by a proxy/network timeout and come back as a
+  // non-JSON error page. r.json() would then throw a raw browser error ("The string
+  // did not match the expected pattern"), so parse defensively and return null.
+  const readJson = async (r: Response) => { try { return await r.json(); } catch { return null; } };
+
   const checkDelivery = async () => {
     setDBusy(true); setErr('');
     try {
       const sp = new URLSearchParams({ month, delivery: '1' }); if (classId) sp.set('classId', classId);
       const r = await fetch(`/api/attendance/monthly-report?${sp}`);
-      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Could not load delivery report');
+      const d = await readJson(r);
+      if (!d) throw new Error('The delivery report took too long to load. Please try again.');
+      if (!r.ok) throw new Error(d.error || 'Could not load delivery report');
       setDelivery(d); setDFilter('ALL');
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not load delivery report'); }
     finally { setDBusy(false); }
@@ -223,7 +231,9 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
     try {
       const sp = new URLSearchParams({ month }); if (classId) sp.set('classId', classId);
       const r = await fetch(`/api/attendance/monthly-report?${sp}`);
-      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Preview failed');
+      const d = await readJson(r);
+      if (!d) throw new Error('The preview took too long to load. Please try again.');
+      if (!r.ok) throw new Error(d.error || 'Preview failed');
       setPreview(d);
     } catch (e) { setErr(e instanceof Error ? e.message : 'Preview failed'); }
     finally { setBusy(''); }
@@ -235,8 +245,19 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
     try {
       const body: any = { month }; if (classId) body.classId = classId; if (test) body.to = testTo.trim();
       const r = await fetch('/api/attendance/monthly-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Send failed');
-      setResult(d);
+      const d = await readJson(r);
+      if (d) {
+        if (!r.ok) throw new Error(d.error || 'Send failed');
+        setResult(d);
+      } else if (!test) {
+        // No JSON came back: a big send ran long and the connection dropped before the
+        // server could reply — but the messages are still going out and the send is
+        // resumable. Guide the user instead of showing a raw browser error.
+        setErr('This send ran long and the connection dropped before it finished — but the messages are still going out. Opening the delivery report below; press “Send” again to continue the rest (parents who already got it are skipped).');
+        checkDelivery();
+      } else {
+        throw new Error('Could not send the test — please try again.');
+      }
     } catch (e) { setErr(e instanceof Error ? e.message : 'Send failed'); }
     finally { setBusy(''); }
   };
@@ -266,7 +287,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">{view.monthLabel}</div>
-              <div className="text-[13px] text-slate-500">{result ? <>Sent {result.sent} · failed {result.failed} · no number {result.skipped}{result.already ? <> · already sent {result.already}</> : null}{result.held ? <> · held {result.held}</> : null}</> : <>{view.total} student{view.total === 1 ? '' : 's'} with attendance data · {view.sent} to send{view.already ? <> · {view.already} already sent</> : null}{view.held ? <> · {view.held} held</> : null}</>}</div>
+              <div className="text-[13px] text-slate-500">{result ? <>Sent {result.sent} · failed {result.failed} · no number {result.skipped}{result.already ? <> · already sent {result.already}</> : null}</> : <>{view.total} student{view.total === 1 ? '' : 's'} with attendance data · {view.sent} to send{view.already ? <> · {view.already} already sent</> : null}</>}</div>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(['perfect', 'great', 'good', 'low'] as Tier[]).map((t) => (
@@ -278,17 +299,6 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
           </div>
 
           {view.waConfigured === false && <div className="mt-3 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">WhatsApp isn't configured on the server, so nothing can be sent yet.</div>}
-
-          {typeof view.dailyLimit === 'number' && (
-            <div className="mt-3 text-[12.5px] text-slate-500">
-              WhatsApp daily limit: <b>{view.usedToday}</b> of <b>{view.dailyLimit}</b> parent numbers used in the last 24 hours (fee receipts and alerts count too).
-            </div>
-          )}
-          {view.held > 0 && (
-            <div className="mt-2 bg-marigold-50 border border-marigold-100 rounded-lg p-2.5 text-[13px] text-marigold-700">
-              {view.held} parent number(s) are over today&apos;s WhatsApp limit and were held back. Come back tomorrow and press Send again. Parents who already got this month&apos;s report are skipped automatically.
-            </div>
-          )}
 
           {!result && view.sent > 0 && (
             <div className="mt-4 border-t border-slate-100 pt-4">
@@ -306,7 +316,7 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
           )}
 
           <div className="mt-4 max-h-[46vh] overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-50">
-            {view.details.map((d, i) => (
+            {[...view.details].sort((a, b) => b.pct - a.pct || a.student.localeCompare(b.student)).map((d, i) => (
               <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
                 <div className="min-w-0"><span className="font-medium text-slate-800">{d.student}</span> <span className="text-slate-400">{d.className || ''}</span></div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -315,7 +325,6 @@ function MonthlyAttendancePanel({ classes }: { classes: ClassOpt[] }) {
                   {d.status === 'failed' && <span className="text-danger-600 text-[11.5px]" title={d.error || ''}>failed</span>}
                   {d.status === 'skipped' && <span className="text-slate-400 text-[11.5px]" title={d.error || ''}>no number</span>}
                   {d.status === 'already' && <span className="text-slate-400 text-[11.5px] inline-flex items-center gap-0.5"><Icon name="CheckCheck" size={13} />already sent</span>}
-                  {d.status === 'held' && <span className="text-marigold-700 text-[11.5px]" title={d.error || ''}>held · tomorrow</span>}
                 </div>
               </div>
             ))}
@@ -338,7 +347,7 @@ const DELIVERY_META: Record<DeliveryState, { label: string; hint: string; chip: 
   DELIVERED: { label: 'Delivered', hint: 'Reached the parent’s phone', chip: 'bg-success-50 text-success-700 border-success-100', text: 'text-success-700' },
   SENT: { label: 'Sent', hint: 'Accepted by WhatsApp, no delivery receipt yet', chip: 'bg-info-50 text-info-700 border-info-100', text: 'text-info-700' },
   FAILED: { label: 'Failed', hint: 'Not delivered — see reason', chip: 'bg-danger-50 text-danger-700 border-danger-100', text: 'text-danger-700' },
-  NOT_SENT: { label: 'Not sent', hint: 'Never sent (e.g. held by the daily limit)', chip: 'bg-marigold-50 text-marigold-700 border-marigold-100', text: 'text-marigold-700' },
+  NOT_SENT: { label: 'Not sent', hint: 'No send attempt logged yet for this number', chip: 'bg-marigold-50 text-marigold-700 border-marigold-100', text: 'text-marigold-700' },
   NO_NUMBER: { label: 'No number', hint: 'No WhatsApp number on the student profile', chip: 'bg-slate-50 text-slate-500 border-slate-200', text: 'text-slate-400' },
 };
 const DELIVERY_ORDER: DeliveryState[] = ['READ', 'DELIVERED', 'SENT', 'FAILED', 'NOT_SENT', 'NO_NUMBER'];
@@ -589,6 +598,102 @@ const KIND_LABEL: Record<string, string> = {
 };
 const kindLabel = (k: string) => KIND_LABEL[k] || k.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const defaultTitle = (k: string) => KIND_LABEL[k] ? KIND_LABEL[k].replace(/s$/, '') : 'Message';
+
+/* ---------- WhatsApp spend: per-template amount spent (from Meta) ---------- */
+interface SpendRow { templateId: string; name: string; category: string | null; sent: number; delivered: number; amountSpent: number }
+interface SpendReport { rows: SpendRow[]; total: number; currency?: string; insightsEnabled?: boolean; error?: string }
+
+const istToday = () => new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+const istMonthStart = () => istToday().slice(0, 8) + '01';
+// Meta keeps at most 90 days; cap the earliest selectable date there.
+const minSpendDate = () => new Date(Date.now() + 5.5 * 3600 * 1000 - 89 * 86400000).toISOString().slice(0, 10);
+
+function SpendPanel() {
+  const [start, setStart] = useState(istMonthStart());
+  const [end, setEnd] = useState(istToday());
+  const [data, setData] = useState<SpendReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [enabling, setEnabling] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true); setErr(''); setData(null);
+    try {
+      const r = await fetch(`/api/whatsapp/template-spend?start=${start}&end=${end}`);
+      const d = await r.json().catch(() => null);
+      if (!d) throw new Error('The report took too long to load. Please try again.');
+      if (!r.ok) throw new Error(d.error || 'Could not load spend');
+      setData(d);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not load spend'); }
+    finally { setBusy(false); }
+  }, [start, end]);
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const enable = async () => {
+    if (!confirm('Turn on WhatsApp analytics for this account? It lets the app read your per-template spend from Meta. This is a one-time setting and cannot be turned off again.')) return;
+    setEnabling(true); setErr('');
+    try {
+      const r = await fetch('/api/whatsapp/template-spend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'enable' }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) throw new Error(d?.error || 'Could not enable analytics');
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not enable analytics'); }
+    finally { setEnabling(false); }
+  };
+
+  const money = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <div className="mt-5 max-w-3xl space-y-4">
+      <p className="text-sm text-slate-500">How much each WhatsApp template cost over a date range, pulled live from Meta. Amounts are in your WhatsApp billing currency (₹ assumed). Meta keeps up to the last 90 days.</p>
+
+      <Card>
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+          <Field label="From"><Input type="date" value={start} min={minSpendDate()} max={end} onChange={(e) => setStart(e.target.value)} /></Field>
+          <Field label="To"><Input type="date" value={end} min={start} max={istToday()} onChange={(e) => setEnd(e.target.value)} /></Field>
+          <Button icon="Search" onClick={load} disabled={busy}>{busy ? 'Loading…' : 'Show spend'}</Button>
+        </div>
+        {err && <div className="mt-3 bg-danger-50 border border-danger-100 rounded-lg p-2.5 text-sm text-danger-700">{err}</div>}
+      </Card>
+
+      {busy && <Skeleton height={160} rounded="lg" />}
+
+      {!busy && data?.insightsEnabled === false && (
+        <Card>
+          <EmptyState icon="BarChart3" title="WhatsApp analytics is off"
+            body="Meta needs analytics turned on for your WhatsApp account before it can report per-template spend. This is a one-time, irreversible setting." />
+          <div className="flex justify-center mt-3">
+            <Button kind="primary" icon="Check" onClick={enable} disabled={enabling}>{enabling ? 'Enabling…' : 'Enable WhatsApp analytics'}</Button>
+          </div>
+        </Card>
+      )}
+
+      {!busy && data && data.insightsEnabled !== false && (
+        data.rows.length === 0 ? (
+          <Card><EmptyState icon="Receipt" title="No spend in this range" body="No template messages were billed between these dates." /></Card>
+        ) : (
+          <Card padded={false}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-bold text-slate-900">Total spent</div>
+              <div className="text-base font-bold text-slate-900">{money(data.total)}</div>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {data.rows.map((r) => (
+                <div key={r.templateId} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]">
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-800 truncate">{r.name}</div>
+                    <div className="text-[11.5px] text-slate-400">{r.category || '—'} · {r.sent.toLocaleString('en-IN')} sent{r.delivered ? ` · ${r.delivered.toLocaleString('en-IN')} delivered` : ''}</div>
+                  </div>
+                  <div className="font-semibold text-slate-900 flex-shrink-0">{money(r.amountSpent)}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )
+      )}
+    </div>
+  );
+}
 
 function AnalyticsPanel() {
   const [groups, setGroups] = useState<DeliveryGroup[] | null>(null);

@@ -1555,3 +1555,33 @@ model WaVerification {
   @@index([phone])
   @@index([createdAt])
 }
+
+// Slow DB operations captured by the query-timing extension in lib/db.ts (only
+// those over SLOW_QUERY_MS). For analysing slow queries in Settings → Slow queries.
+// We store the model + operation + duration + top-level arg KEYS only (never values).
+model SlowQueryLog {
+  id         String   @id @default(cuid())
+  model      String?  // Prisma model, or null for a raw query
+  operation  String   // findMany / create / $queryRaw / …
+  durationMs Int
+  argKeys    String?  // top-level argument names (where, orderBy, …) — no values
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([durationMs])
+}
+
+// ========== Timetable ==========
+// Timetables are built in the offline timetable app (D:\apps\timetableapp) and
+// pushed here via POST /api/timetable/publish. Each publish is a new row; the
+// latest row is the live timetable (older rows are kept as history).
+model PublishedTimetable {
+  id           String   @id @default(cuid())
+  academicYear String?
+  forDate      String?  // date the timetable was solved for (YYYY-MM-DD)
+  data         Json     // { days, periodsPerDay, classes: {class: {day: [cell]}}, teachers: {...} }
+  report       Json?    // solver summary: shortfalls, clashes, …
+  publishedAt  DateTime @default(now())
+
+  @@index([publishedAt])
+}

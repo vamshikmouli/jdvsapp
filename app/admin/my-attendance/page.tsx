@@ -295,6 +295,36 @@ export default function MyAttendancePage() {
       {error && <div className="rounded-md bg-danger-50 text-danger-700 text-sm px-3 py-2">{error}</div>}
       {flash && <div className="rounded-md bg-success-50 text-success-700 text-sm px-3 py-2">{flash}</div>}
 
+      {/* Staff who punch on the biometric terminal never enrol a phone passkey, so the
+          stats card below (gated on `enrolled`) is hidden for them. Show their status,
+          streak and year pill here from their device-recorded attendance. */}
+      {data?.enabled && data.configured && !data.enrolled && (data.today || data.currentStreak > 0 || (data.yearStats?.workingDays ?? 0) > 0) && (
+        <Card>
+          <div className="flex flex-col items-center text-center py-3">
+            <div className="text-sm font-semibold text-slate-700 mb-2">Your attendance</div>
+            {data.today ? (
+              <Chip tone={statusTone(data.today.status)}>{STATUS_LABEL[data.today.status] ?? data.today.status}{data.today.late ? ' · Late' : ''}</Chip>
+            ) : (
+              <Chip tone="neutral">Not punched in yet</Chip>
+            )}
+            {data.currentStreak > 0 && (
+              <div className="mt-2 flex items-center justify-center gap-1">
+                <Icon name="Flame" size={18} className="text-orange-500" />
+                <span className="text-lg font-semibold text-orange-600">{data.currentStreak} day{data.currentStreak === 1 ? '' : 's'} streak</span>
+              </div>
+            )}
+            {data.yearStats && data.yearStats.workingDays > 0 && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm" title="Days you attended out of working days so far this academic year">
+                <Icon name="CalendarCheck" size={15} className="text-slate-500" />
+                <span className="font-semibold text-slate-800 tabular-nums">{data.yearStats.attended}/{data.yearStats.workingDays}</span>
+                <span className="text-slate-500">days this year</span>
+              </div>
+            )}
+            <p className="text-xs text-slate-400 mt-3">Recorded from your punches on the biometric machine.</p>
+          </div>
+        </Card>
+      )}
+
       {data?.enabled && data.configured && !data.enrolled && (
         <Card title="Set up this phone">
           <p className="text-sm text-slate-600 mb-3">
