@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // Ask itself is opt-in per role; the answers are then scoped to fees / attendance view.
+  if (!can(session, 'ASK_ACCESS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
   const canFees = can(session, 'FEES_VIEW');
   const canAttendance = can(session, 'ATTENDANCE_VIEW');
   if (!canFees && !canAttendance) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

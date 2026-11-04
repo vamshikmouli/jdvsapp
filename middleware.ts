@@ -27,6 +27,7 @@ const ADMIN_ROUTE_PERMS: { prefix: string; perm: string | string[] }[] = [
   { prefix: '/admin/stocks', perm: ['STOCK_VIEW', 'SETTINGS_MANAGE'] },
   { prefix: '/admin/promotions', perm: 'SETTINGS_MANAGE' },
   { prefix: '/admin/schedulers', perm: 'SETTINGS_MANAGE' },
+  { prefix: '/admin/ask', perm: 'ASK_ACCESS' },
   // /admin/dashboard and /admin/settings need no specific permission
 ];
 

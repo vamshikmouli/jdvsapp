@@ -8,8 +8,9 @@ export const STAFF_NAV: NavGroup[] = [
   {
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' }, // always
-      // Natural-language Ask over fees + attendance (needs either view permission).
-      { id: 'ask', label: 'Ask', icon: 'Sparkles', perm: ['FEES_VIEW', 'ATTENDANCE_VIEW'] },
+      // Natural-language Ask over fees + attendance — its own permission (Roles & access →
+      // Reporting & Admin), off by default; only the Administrator role holds it.
+      { id: 'ask', label: 'Ask', icon: 'Sparkles', perm: 'ASK_ACCESS' },
       // Live building board (who is teaching where right now) — all staff. Opens in the same
       // tab; the board's own ← Back button returns to the dashboard.
       { id: 'whos-where', label: "Who's where", icon: 'School' },

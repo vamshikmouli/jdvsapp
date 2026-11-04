@@ -122,6 +122,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: 'SETTINGS_MANAGE', label: 'Manage settings', desc: 'Change school-wide settings' },
       { key: 'ROLES_MANAGE', label: 'Manage roles & access', desc: 'Create roles and set permissions' },
       { key: 'USERS_MANAGE', label: 'Manage user accounts', desc: 'Assign roles to people' },
+      { key: 'ASK_ACCESS', label: 'Ask (AI questions)', desc: 'Use Ask to get answers about fees and attendance — answers stay limited to what the role can view. Off by default; admins only' },
     ],
   },
   {

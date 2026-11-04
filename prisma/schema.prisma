@@ -71,6 +71,7 @@ enum Permission {
   ROLES_MANAGE
   USERS_MANAGE
   ALL_CLASSES_ACCESS // see data for ALL classes; without it, scoped to assigned classes
+  ASK_ACCESS // use Ask (AI questions over fees/attendance); default admins only
   PAYROLL_VIEW    // view salary register / payslips
   PAYROLL_MANAGE  // legacy umbrella = create+update+delete (kept for compatibility)
   PAYROLL_CREATE  // generate a salary run
