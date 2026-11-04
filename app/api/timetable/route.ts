@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
       if (!week) return NextResponse.json({ error: `No timetable for teacher ${teacher}` }, { status: 404 });
       return NextResponse.json({ ...meta, teacher, week });
     }
-    return NextResponse.json({ ...meta, classes: data.classes, teachers: data.teachers, report: latest.report });
+    return NextResponse.json({
+      ...meta, classes: data.classes, teachers: data.teachers,
+      availability: data.availability ?? {}, report: latest.report,
+    });
   } catch (err) {
     const { status, body } = authErrorResponse(err);
     return NextResponse.json(body, { status });

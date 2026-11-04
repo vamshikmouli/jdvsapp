@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { academicYear, forDate, days, periodsPerDay, classes, teachers, report } = body ?? {};
+    const { academicYear, forDate, days, periodsPerDay, classes, teachers, availability, report } = body ?? {};
     if (!Array.isArray(days) || !classes || typeof classes !== 'object' || !Object.keys(classes).length) {
       return NextResponse.json({ error: 'days and classes are required' }, { status: 400 });
     }
@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
       data: {
         academicYear: academicYear ? String(academicYear) : null,
         forDate: forDate ? String(forDate) : null,
-        data: { days, periodsPerDay: periodsPerDay ?? {}, classes, teachers: teachers ?? {} },
+        // availability: { teacher: { day: [inSchool per period] } } — their weekly schedule,
+        // so the Who's where board only lists a teacher as free when they are here.
+        data: { days, periodsPerDay: periodsPerDay ?? {}, classes, teachers: teachers ?? {}, availability: availability ?? {} },
         report: report ?? undefined,
       },
       select: { id: true, publishedAt: true },

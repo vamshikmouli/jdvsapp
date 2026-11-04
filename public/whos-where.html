@@ -75,6 +75,7 @@
     font:700 1em/1.15 Segoe UI,Arial,sans-serif;text-align:center}
   .chip small{display:block;font-size:.66em;font-weight:600;color:#7a6446}
   .chip::before{content:"";position:absolute;top:-.25em;left:50%;width:.4em;height:.4em;margin-left:-.2em;border-radius:50%;background:#2f6db3}
+  .faway{align-self:center;text-align:center;font:600 .62em Segoe UI,Arial,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55)}
   .fnone{align-self:center;margin-top:.6em;padding:.4em .8em;background:#fffdf3;font:700 .9em Segoe UI,Arial,sans-serif;color:#5b4636}
   .annex .nameboard{width:250px;font-size:22px;padding:8px 6px;margin-bottom:-4px}
   .annex .nameboard::before{left:24px}.annex .nameboard::after{right:24px}
@@ -301,7 +302,11 @@ function freeBoard(day, w) {
   cork.append(el("div", "fsub", `Period ${w.idx + 1} · ${fmt(w.start)} – ${fmt(w.end)}`));
   const cells = Object.keys(TT.classes).map(c => cellOf(c, day, w.idx)).filter(Boolean);
   if (cells.length && cells.every(c => c.reserved)) { cork.append(el("div", "fnone", cells[0].subject || "Assembly")); return box; }
-  const free = Object.keys(TT.teachers).filter(t => !TT.teachers[t][day]?.[w.idx]).sort();
+  // In school now = their schedule (availability, e.g. Avin only Mon afternoon) says so.
+  const here = t => TT.availability?.[t]?.[day]?.[w.idx] !== false;
+  const free = Object.keys(TT.teachers).filter(t => here(t) && !TT.teachers[t][day]?.[w.idx]).sort();
+  const away = Object.keys(TT.availability || {}).filter(t => !here(t)).sort();
+  if (away.length) cork.append(el("div", "faway", `Not in school now: ${away.join(", ")}`));
   if (!free.length) { cork.append(el("div", "fnone", "Everyone is teaching")); return box; }
   const chips = el("div", "chips");
   free.forEach((t, i) => {
