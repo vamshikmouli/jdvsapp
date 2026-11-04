@@ -3,14 +3,18 @@ import {
   synthesizeDays, parseWeekSchedule, parseWorkPattern, parseWorkDays, ATTENDANCE_START_KEY,
 } from '@/lib/staffAttendance/schedule';
 
-// Days the staff member showed up (half day still counts as a day attended).
-const ATTENDED = new Set(['PRESENT', 'LATE', 'HALF_DAY']);
+// Credit for a day: a full day attended = 1, a half day = 0.5 (so two half days
+// = one day lost). Anything else (absent / leave / off) = 0.
+const ATTENDED_CREDIT: Record<string, number> = { PRESENT: 1, LATE: 1, HALF_DAY: 0.5 };
+// Statuses that show the person was actually on the rolls that day — used to find
+// their first recorded day when no joining date is set.
+const ACTIVE = new Set(['PRESENT', 'LATE', 'HALF_DAY', 'LEAVE']);
 // Days that count toward the denominator (holidays / weekly-offs excluded).
 const WORKING = new Set(['PRESENT', 'LATE', 'HALF_DAY', 'ABSENT', 'LEAVE']);
 
 export interface WorkedDays {
-  attended: number;     // 159
-  workingDays: number;  // 180  → "159/180 days"
+  attended: number;     // 158.5 (half days count 0.5)
+  workingDays: number;  // 180  → "158.5/180 days"
   fromKey: string;
   toKey: string;
 }
@@ -75,10 +79,14 @@ export async function workedDaysForStaff(
     // against (and penalised for) the months before they started. Their own schedule
     // (alternate-day / custom week) and any extra days off fall out naturally, since
     // the denominator is built from their own working days, not a shared total.
-    const joinKey = dateKeyOf(s.joiningDate);
-    const fromKey = joinKey && joinKey > opts.fromKey ? joinKey : opts.fromKey;
+    // No joining date on file → start from their first recorded day instead, so a
+    // late joiner isn't marked absent for the months before they started.
+    const allRows = byStaff.get(s.id) || [];
+    const firstKey = allRows.filter((d) => ACTIVE.has(d.status)).map((d) => d.date).sort()[0] ?? null;
+    const startKey = dateKeyOf(s.joiningDate) ?? firstKey;
+    const fromKey = startKey && startKey > opts.fromKey ? startKey : opts.fromKey;
 
-    const rows = (byStaff.get(s.id) || []).filter((d) => d.date >= fromKey);
+    const rows = allRows.filter((d) => d.date >= fromKey);
     const ws = parseWeekSchedule(s.weekSchedule);
     const wd = parseWorkDays(s.workDays);
     const wp = parseWorkPattern(s.workPattern);
@@ -94,7 +102,7 @@ export async function workedDaysForStaff(
 
     let attended = 0;
     let workingDays = 0;
-    for (const d of rows) { if (ATTENDED.has(d.status)) attended++; if (WORKING.has(d.status)) workingDays++; }
+    for (const d of rows) { attended += ATTENDED_CREDIT[d.status] ?? 0; if (WORKING.has(d.status)) workingDays++; }
     for (const d of synth) if (WORKING.has(d.status)) workingDays++;
 
     result.set(s.id, {
