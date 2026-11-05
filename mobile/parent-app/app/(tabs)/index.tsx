@@ -12,6 +12,7 @@ import { deriveStars, deriveSimpleBadges, GameChild, Badge } from '@/lib/game';
 import { greeting, money, initials, givenName, CELL_COLOR } from '@/lib/format';
 import { C, G, S, R, E, T, type } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BirthdayModal } from '@/components/BirthdayModal';
 
 interface HomeChild extends GameChild {
   id: string;
@@ -237,6 +238,8 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      <BirthdayModal />
 
       {/* Account menu — bottom sheet (replaces the OS alert) */}
       <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)} statusBarTranslucent>

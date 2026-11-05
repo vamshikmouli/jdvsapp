@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { Icon } from '@/components/Icon';
 import { feeMoney } from '@/lib/fees';
 import { PushOptIn } from '@/components/PushOptIn';
+import { BirthdayGreeting } from '@/components/BirthdayGreeting';
 import { useBranding } from '@/components/useBranding';
 import { StreakCard } from '@/components/StreakCard';
 import { fmtDate, fmtDateWeekday } from '@/lib/dateFormat';
@@ -797,6 +798,7 @@ export default function ParentPage() {
 
   return (
     <ChildProvider>
+    <BirthdayGreeting />
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="sticky top-0 z-10 bg-gradient-to-br from-purple-700 to-purple-500 text-white px-4 pt-5 pb-6">
         <div className="max-w-md mx-auto flex items-start justify-between">

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { BrowserNotice } from '@/components/BrowserNotice';
+import { BirthdayGreeting } from '@/components/BirthdayGreeting';
 
 const TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -79,7 +80,7 @@ export default function AdminLayout({
         <TopBar title={title} onMenu={() => setNavOpen(true)} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden pt-20 pb-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><BrowserNotice />{children}</div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><BrowserNotice /><BirthdayGreeting />{children}</div>
         </main>
       </div>
     </div>
